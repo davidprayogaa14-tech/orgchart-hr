@@ -557,7 +557,22 @@ def clean_df(df):
 
 @st.cache_data(ttl=300)
 def load_data():
-    # ── Coba via Service Account ──
+    # ── Coba via Streamlit Secrets (untuk deployment online) ──
+    try:
+        if "gcp_service_account" in st.secrets:
+            creds = Credentials.from_service_account_info(
+                dict(st.secrets["gcp_service_account"]),
+                scopes=SCOPES
+            )
+            client = gspread.authorize(creds)
+            sheet  = client.open_by_key(SHEET_ID).sheet1
+            data   = sheet.get_all_records()
+            df     = pd.DataFrame(data)
+            return clean_df(df), "google_sheets"
+    except Exception as e:
+        st.warning(f"⚠️ Gagal membaca via Secrets: {str(e)[:80]}")
+
+    # ── Coba via credentials.json lokal (untuk run di laptop) ──
     if os.path.exists(CREDS_FILE):
         try:
             creds  = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
