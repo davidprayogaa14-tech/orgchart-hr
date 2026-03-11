@@ -2,6 +2,15 @@ import streamlit as st
 import pandas as pd
 import json
 from io import BytesIO
+import hashlib
+import reportlab
+
+# Patch untuk kompatibilitas Python 3.9+ dengan reportlab lama
+try:
+    import _md5
+except ImportError:
+    pass
+
 from reportlab.lib.pagesizes import A3, landscape
 from reportlab.pdfgen import canvas as rl_canvas
 from reportlab.lib import colors
