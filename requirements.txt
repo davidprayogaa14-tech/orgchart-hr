@@ -1,0 +1,7 @@
+streamlit==1.40.0
+pandas
+gspread
+google-auth
+google-auth-oauthlib
+reportlab==3.6.13
+openpyxl
