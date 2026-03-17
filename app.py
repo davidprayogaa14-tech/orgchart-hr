@@ -826,18 +826,28 @@ with tab1:
 
     if view_mode == "Per Divisi":
 
-        col_a, col_b, col_c = st.columns([2, 2, 2])
+        col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
         with col_a:
             bu_list = sorted(df["Business Unit"].dropna().unique().tolist())
             selected_bu = st.selectbox("🏢 Business Unit", bu_list, key="sel_bu")
         with col_b:
             div_list = sorted(df[df["Business Unit"] == selected_bu]["Division"].dropna().unique().tolist())
             selected_div = st.selectbox("📁 Divisi", div_list, key="sel_div")
+        with col_c:
+            sbu_opts_raw = df[
+                (df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)
+            ]["SBU/Tribe"].dropna().unique().tolist()
+            sbu_opts_raw = [s for s in sbu_opts_raw if s.strip() != ""]
+            sbu_opts = ["Semua SBU"] + sorted(sbu_opts_raw)
+            selected_sbu = st.selectbox("🏷️ SBU/Tribe", sbu_opts, key="sel_sbu")
 
         filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
+        if selected_sbu != "Semua SBU":
+            filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
+
         all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
 
-        with col_c:
+        with col_d:
             leader_opts = ["Semua (divisi penuh)"] + sorted(all_leaders)
             selected_leader = st.selectbox("👤 Filter by Leader", leader_opts, key="sel_leader")
 
@@ -937,7 +947,7 @@ with tab1:
 # ══════════════════════════════════════════
 with tab2:
     st.subheader("📋 Data Karyawan")
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         search = st.text_input("🔍 Cari nama karyawan")
     with c2:
@@ -948,6 +958,17 @@ with tab2:
             else df["Division"].unique().tolist()
         )
         div_f = st.selectbox("Filter Divisi", div_opts, key="t2div")
+    with c4:
+        sbu_source = df.copy()
+        if bu_f != "Semua":
+            sbu_source = sbu_source[sbu_source["Business Unit"] == bu_f]
+        if div_f != "Semua":
+            sbu_source = sbu_source[sbu_source["Division"] == div_f]
+        sbu_opts_t2 = ["Semua"] + sorted([
+            s for s in sbu_source["SBU/Tribe"].dropna().unique().tolist()
+            if s.strip() != ""
+        ])
+        sbu_f = st.selectbox("Filter SBU/Tribe", sbu_opts_t2, key="t2sbu")
 
     data_view = df.copy()
     if search:
@@ -956,6 +977,8 @@ with tab2:
         data_view = data_view[data_view["Business Unit"] == bu_f]
     if div_f != "Semua":
         data_view = data_view[data_view["Division"] == div_f]
+    if sbu_f != "Semua":
+        data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
 
     st.caption(f"Menampilkan **{len(data_view)}** karyawan")
     st.dataframe(data_view, use_container_width=True, height=480)
