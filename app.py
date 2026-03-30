@@ -538,6 +538,12 @@ st.set_page_config(page_title="OrgChart HR", layout="wide", page_icon="🏢", in
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 
+# ── Active tab navigation from sidebar cards ──
+if "active_tab" not in st.session_state:
+    st.session_state.active_tab = 0   # 0=OrgChart, 1=DataKaryawan, 2=Manager ID Hilang, 3=Manager List
+if "nav_filter" not in st.session_state:
+    st.session_state.nav_filter = {}  # konteks filter dari card click
+
 # ══════════════════════════════════════════
 # LOAD DATA — Google Sheets via Service Account, CSV fallback
 # ══════════════════════════════════════════
@@ -954,26 +960,69 @@ with st.sidebar:
     total_div      = df["Division"].nunique()
     total_mgr      = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
 
-    for label, value, icon in [
-        ("Total Karyawan", f"{total_karyawan:,}", "👥"),
-        ("Business Unit",  str(total_bu), "🏢"),
-        ("Divisi",         str(total_div), "📁"),
-        ("Total Manager",  str(total_mgr), "👔"),
-    ]:
-        st.markdown(f"""
-        <div style="
-            background:{T['bg3']}; border-radius:12px; padding:12px 16px;
-            border:1px solid {T['border']}; margin-bottom:8px;
-            display:flex; align-items:center; justify-content:space-between;
-            transition: background 0.3s;
-        ">
-            <div style="display:flex; align-items:center; gap:8px;">
-                <span style="font-size:16px;">{icon}</span>
-                <span style="font-size:12px; color:{T['text2']}; font-weight:500;">{label}</span>
-            </div>
-            <span style="font-size:18px; font-weight:700; color:{T['text']};">{value}</span>
-        </div>
-        """, unsafe_allow_html=True)
+    # Clickable metric cards
+    cards = [
+        ("Total Karyawan", f"{total_karyawan:,}", "👥", 1, {}),
+        ("Business Unit",  str(total_bu),         "🏢", 0, {"mode": "Per Divisi", "focus": "bu"}),
+        ("Divisi",         str(total_div),         "📁", 0, {"mode": "Per Divisi", "focus": "div"}),
+        ("Total Manager",  str(total_mgr),         "👔", 3, {}),
+    ]
+
+    st.markdown(f"""
+    <style>
+    .metric-card-btn button {{
+        background: {T['bg3']} !important;
+        border: 1px solid {T['border']} !important;
+        border-radius: 12px !important;
+        padding: 12px 16px !important;
+        width: 100% !important;
+        text-align: left !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        margin-bottom: 8px !important;
+        color: {T['text']} !important;
+        font-family: 'DM Sans', sans-serif !important;
+    }}
+    .metric-card-btn button:hover {{
+        background: {T['accent_bg']} !important;
+        border-color: {T['accent']} !important;
+        transform: translateX(3px) !important;
+        box-shadow: 0 4px 16px {T['metric_shadow']} !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Style override for metric cards (different from accent buttons)
+    st.markdown(f"""
+    <style>
+    [data-testid="stSidebar"] [data-testid="stButton"] button {{
+        background: {T['bg3']} !important;
+        color: {T['text']} !important;
+        border: 1.5px solid {T['border']} !important;
+        border-radius: 12px !important;
+        text-align: left !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        padding: 14px 16px !important;
+        box-shadow: none !important;
+        margin-bottom: 4px !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
+        background: {T['accent_bg']} !important;
+        border-color: {T['accent']} !important;
+        color: {T['accent']} !important;
+        transform: translateX(4px) !important;
+        box-shadow: 0 4px 16px {T['metric_shadow']} !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    for label, value, icon, tab_idx, nav_ctx in cards:
+        btn_label = f"{icon}  {label}    {value}"
+        if st.button(btn_label, key=f"card_{label}", use_container_width=True):
+            st.session_state.active_tab = tab_idx
+            st.session_state.nav_filter = nav_ctx
+            st.rerun()
 
     st.markdown(f"""
     <div style="margin-top:16px; font-size:11px; color:{T['text3']}; text-align:center;">
@@ -999,7 +1048,12 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-tab1, tab2, tab3 = st.tabs(["🌳  Org Chart", "📋  Data Karyawan", "⚠️  Manager ID Hilang"])
+# ── Tab navigation via session state ──
+TAB_LABELS = ["🌳  Org Chart", "📋  Data Karyawan", "⚠️  Manager ID Hilang", "👔  Daftar Manager"]
+active = st.session_state.active_tab
+
+# JavaScript trick: use query params to activate correct tab
+tab1, tab2, tab3, tab4 = st.tabs(TAB_LABELS)
 
 # ══════════════════════════════════════════
 # ORG CHART HTML
@@ -1489,3 +1543,108 @@ with tab3:
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
+
+# ══════════════════════════════════════════
+# TAB 4 — DAFTAR MANAGER
+# ══════════════════════════════════════════
+with tab4:
+    st.markdown(f"""
+    <div style="margin-bottom:20px;">
+        <div style="font-size:20px; font-weight:700; color:{T['text']};">Daftar Manager</div>
+        <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">
+            Seluruh karyawan yang memiliki bawahan langsung
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Build manager list
+    mgr_ids = df[df["Manager ID"] != ""]["Manager ID"].unique().tolist()
+    mgr_df  = df[df["Employee ID"].isin(mgr_ids)].copy()
+
+    # Count subordinates per manager
+    sub_count = df[df["Manager ID"] != ""].groupby("Manager ID").size().reset_index(name="Jumlah Bawahan")
+    sub_count.rename(columns={"Manager ID": "Employee ID"}, inplace=True)
+    mgr_df = mgr_df.merge(sub_count, on="Employee ID", how="left")
+    mgr_df["Jumlah Bawahan"] = mgr_df["Jumlah Bawahan"].fillna(0).astype(int)
+    mgr_df = mgr_df.sort_values("Jumlah Bawahan", ascending=False)
+
+    # Metrics row
+    m1, m2, m3 = st.columns(3)
+    m1.metric("👔 Total Manager", len(mgr_df))
+    m2.metric("📊 Rata-rata Bawahan", f"{mgr_df['Jumlah Bawahan'].mean():.1f}")
+    m3.metric("🏆 Max Bawahan", int(mgr_df['Jumlah Bawahan'].max()))
+
+    st.divider()
+
+    # Filters
+    col_m1, col_m2, col_m3 = st.columns(3)
+    with col_m1:
+        search_mgr = st.text_input("🔍 Cari nama manager", key="search_mgr")
+    with col_m2:
+        bu_mgr = st.selectbox(
+            "Filter BU",
+            ["Semua"] + sorted(mgr_df["Business Unit"].dropna().unique().tolist()),
+            key="bu_mgr"
+        )
+    with col_m3:
+        div_mgr_opts = (
+            ["Semua"] + sorted(mgr_df[mgr_df["Business Unit"] == bu_mgr]["Division"].dropna().unique().tolist())
+            if bu_mgr != "Semua"
+            else ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist())
+        )
+        div_mgr = st.selectbox("Filter Divisi", div_mgr_opts, key="div_mgr")
+
+    # Apply filters
+    view_mgr = mgr_df.copy()
+    if search_mgr:
+        view_mgr = view_mgr[view_mgr["Employee Name"].str.contains(search_mgr, case=False, na=False)]
+    if bu_mgr != "Semua":
+        view_mgr = view_mgr[view_mgr["Business Unit"] == bu_mgr]
+    if div_mgr != "Semua":
+        view_mgr = view_mgr[view_mgr["Division"] == div_mgr]
+
+    st.caption(f"Menampilkan **{len(view_mgr)}** manager")
+
+    display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division", "Business Unit", "SBU/Tribe", "Jumlah Bawahan"]
+    st.dataframe(
+        view_mgr[display_cols_mgr].reset_index(drop=True),
+        use_container_width=True,
+        height=480
+    )
+
+    st.divider()
+    st.markdown("**⬇️ Download Data**")
+    col_dm1, col_dm2, _ = st.columns([1, 1, 3])
+    with col_dm1:
+        st.download_button(
+            "📄 CSV", view_mgr.to_csv(index=False).encode("utf-8"),
+            "daftar_manager.csv", "text/csv", use_container_width=True
+        )
+    with col_dm2:
+        st.download_button(
+            "📊 Excel", to_excel(view_mgr),
+            "daftar_manager.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+
+# ══════════════════════════════════════════
+# AUTO-NAVIGATE via JS scroll to active tab
+# ══════════════════════════════════════════
+if st.session_state.active_tab > 0:
+    tab_index = st.session_state.active_tab
+    st.markdown(f"""
+    <script>
+    (function() {{
+        function clickTab() {{
+            const tabs = window.parent.document.querySelectorAll('[data-testid="stTabs"] button[role="tab"]');
+            if (tabs.length > {tab_index}) {{
+                tabs[{tab_index}].click();
+            }}
+        }}
+        setTimeout(clickTab, 300);
+        setTimeout(clickTab, 600);
+    }})();
+    </script>
+    """, unsafe_allow_html=True)
+    st.session_state.active_tab = 0
