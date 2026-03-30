@@ -532,7 +532,7 @@ def generate_pdf_summary(tree_nodes, title_text):
 # ══════════════════════════════════════════
 # STREAMLIT UI
 # ══════════════════════════════════════════
-st.set_page_config(page_title="OrgChart HR", layout="wide", page_icon="🏢")
+st.set_page_config(page_title="OrgChart HR", layout="wide", page_icon="🏢", initial_sidebar_state="expanded")
 
 # ══════════════════════════════════════════
 # LOAD DATA — Google Sheets via Service Account, CSV fallback
@@ -597,41 +597,299 @@ if df is None:
     st.error("❌ Tidak ada data yang bisa dimuat. Pastikan credentials.json dan employee_data.csv tersedia.")
     st.stop()
 
+# ══════════════════════════════════════════
+# GLOBAL CSS — Light & Minimal
+# ══════════════════════════════════════════
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
-    .block-container { padding-top: 1.2rem; }
-    div[data-testid="stMetric"] {
-        background: #1e2433; border-radius: 12px;
-        padding: 14px 18px; border: 1px solid #2d3448;
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'DM Sans', sans-serif;
+        color: #1a1a2e;
     }
+
+    /* ── Background ── */
+    .stApp {
+        background-color: #f8f7ff;
+    }
+
+    /* ── Main container ── */
+    .block-container {
+        padding-top: 0 !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        max-width: 100% !important;
+    }
+
+    /* ── Sidebar ── */
+    [data-testid="stSidebar"] {
+        background: #ffffff;
+        border-right: 1px solid #ede9fe;
+        padding-top: 0;
+    }
+    [data-testid="stSidebar"] .block-container {
+        padding: 0 1rem 2rem 1rem !important;
+    }
+
+    /* ── Sidebar selectbox label ── */
+    [data-testid="stSidebar"] label {
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+        color: #7c6fcd !important;
+    }
+
+    /* ── Selectbox ── */
+    [data-testid="stSelectbox"] > div > div {
+        background: #f8f7ff;
+        border: 1.5px solid #ede9fe;
+        border-radius: 10px;
+        font-size: 14px;
+        color: #1a1a2e;
+        transition: border-color 0.2s;
+    }
+    [data-testid="stSelectbox"] > div > div:focus-within {
+        border-color: #7c6fcd;
+        box-shadow: 0 0 0 3px rgba(124,111,205,0.12);
+    }
+
+    /* ── Radio buttons ── */
+    [data-testid="stRadio"] label {
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        color: #4b4b6b !important;
+    }
+
+    /* ── Tabs ── */
+    [data-testid="stTabs"] button {
+        font-family: 'DM Sans', sans-serif;
+        font-weight: 600;
+        font-size: 14px;
+        color: #9e9ec0;
+        border-radius: 0;
+        padding: 10px 20px;
+        transition: color 0.2s;
+    }
+    [data-testid="stTabs"] button[aria-selected="true"] {
+        color: #5b4fcf;
+        border-bottom: 2px solid #5b4fcf;
+    }
+    [data-testid="stTabs"] button:hover {
+        color: #5b4fcf;
+    }
+
+    /* ── Metric cards ── */
+    div[data-testid="stMetric"] {
+        background: #ffffff;
+        border-radius: 16px;
+        padding: 20px 24px;
+        border: 1px solid #ede9fe;
+        box-shadow: 0 2px 12px rgba(91,79,207,0.06);
+        transition: box-shadow 0.2s, transform 0.2s;
+    }
+    div[data-testid="stMetric"]:hover {
+        box-shadow: 0 6px 24px rgba(91,79,207,0.12);
+        transform: translateY(-2px);
+    }
+    div[data-testid="stMetric"] label {
+        font-size: 12px !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+        color: #9e9ec0 !important;
+    }
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        font-size: 32px !important;
+        font-weight: 700 !important;
+        color: #1a1a2e !important;
+    }
+
+    /* ── Buttons ── */
+    [data-testid="stButton"] button {
+        background: #5b4fcf;
+        color: white;
+        border: none;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 13px;
+        padding: 8px 16px;
+        transition: all 0.2s;
+    }
+    [data-testid="stButton"] button:hover {
+        background: #4a3fb8;
+        box-shadow: 0 4px 16px rgba(91,79,207,0.3);
+        transform: translateY(-1px);
+    }
+
+    /* ── Download buttons ── */
+    [data-testid="stDownloadButton"] button {
+        background: #ffffff;
+        color: #5b4fcf;
+        border: 1.5px solid #ede9fe;
+        border-radius: 10px;
+        font-weight: 600;
+        font-size: 13px;
+        transition: all 0.2s;
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        background: #f0eeff;
+        border-color: #5b4fcf;
+    }
+
+    /* ── Dataframe ── */
+    [data-testid="stDataFrame"] {
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid #ede9fe;
+    }
+
+    /* ── Text input ── */
+    [data-testid="stTextInput"] input {
+        background: #f8f7ff;
+        border: 1.5px solid #ede9fe;
+        border-radius: 10px;
+        font-size: 14px;
+        color: #1a1a2e;
+    }
+    [data-testid="stTextInput"] input:focus {
+        border-color: #7c6fcd;
+        box-shadow: 0 0 0 3px rgba(124,111,205,0.12);
+    }
+
+    /* ── Divider ── */
+    hr { border-color: #ede9fe; }
+
+    /* ── Success/Warning/Error ── */
+    [data-testid="stAlert"] {
+        border-radius: 12px;
+        font-size: 13px;
+    }
+
+    /* ── Hide streamlit branding ── */
+    #MainMenu, footer { visibility: hidden; }
+    header { visibility: hidden; }
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🏢 OrgChart HR Dashboard")
+# ══════════════════════════════════════════
+# SIDEBAR — Filter Panel
+# ══════════════════════════════════════════
+with st.sidebar:
+    # Logo / Brand header
+    st.markdown("""
+    <div style="
+        padding: 28px 8px 20px 8px;
+        border-bottom: 1px solid #ede9fe;
+        margin-bottom: 20px;
+    ">
+        <div style="display:flex; align-items:center; gap:10px;">
+            <div style="
+                width:36px; height:36px; border-radius:10px;
+                background: linear-gradient(135deg, #5b4fcf, #9b8fef);
+                display:flex; align-items:center; justify-content:center;
+                font-size:18px; flex-shrink:0;
+            ">🏢</div>
+            <div>
+                <div style="font-size:15px; font-weight:700; color:#1a1a2e; line-height:1.2;">OrgChart HR</div>
+                <div style="font-size:11px; color:#9e9ec0; font-weight:500;">People Analytics</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ── Status sumber data ──
-col_status, col_refresh = st.columns([5, 1])
-with col_status:
+    # Data source status
     if data_source == "google_sheets":
-        st.success("🟢 Data terhubung ke Google Sheets — otomatis refresh setiap 5 menit")
+        st.markdown("""
+        <div style="
+            background:#f0fff4; border:1px solid #86efac;
+            border-radius:10px; padding:10px 14px;
+            display:flex; align-items:center; gap:8px;
+            margin-bottom:16px;
+        ">
+            <span style="font-size:10px;">🟢</span>
+            <span style="font-size:12px; color:#166534; font-weight:500;">Terhubung ke Google Sheets</span>
+        </div>
+        """, unsafe_allow_html=True)
     else:
-        st.warning("🟡 Menggunakan data lokal (CSV). Periksa koneksi internet atau akses Google Sheets.")
-with col_refresh:
-    if st.button("🔄 Refresh", use_container_width=True):
+        st.markdown("""
+        <div style="
+            background:#fffbeb; border:1px solid #fde68a;
+            border-radius:10px; padding:10px 14px;
+            display:flex; align-items:center; gap:8px;
+            margin-bottom:16px;
+        ">
+            <span style="font-size:10px;">🟡</span>
+            <span style="font-size:12px; color:#92400e; font-weight:500;">Menggunakan data lokal</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    if st.button("🔄 Refresh Data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("👥 Total Karyawan", len(df))
-col2.metric("🏢 Business Unit", df["Business Unit"].nunique())
-col3.metric("📁 Divisi", df["Division"].nunique())
-col4.metric("👔 Total Manager", df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique())
+    st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="font-size:10px; font-weight:700; text-transform:uppercase;
+        letter-spacing:0.08em; color:#c4b9f5; padding: 4px 0 10px 0;">
+        Informasi Data
+    </div>
+    """, unsafe_allow_html=True)
 
-st.divider()
+    total_karyawan = len(df)
+    total_bu = df["Business Unit"].nunique()
+    total_div = df["Division"].nunique()
+    total_mgr = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
 
-tab1, tab2, tab3 = st.tabs(["🌳 Org Chart", "📋 Data Karyawan", "⚠️ Tanpa Direct Report"])
+    for label, value, icon in [
+        ("Total Karyawan", f"{total_karyawan:,}", "👥"),
+        ("Business Unit", str(total_bu), "🏢"),
+        ("Divisi", str(total_div), "📁"),
+        ("Total Manager", str(total_mgr), "👔"),
+    ]:
+        st.markdown(f"""
+        <div style="
+            background:#f8f7ff; border-radius:12px; padding:12px 16px;
+            border:1px solid #ede9fe; margin-bottom:8px;
+            display:flex; align-items:center; justify-content:space-between;
+        ">
+            <div style="display:flex; align-items:center; gap:8px;">
+                <span style="font-size:16px;">{icon}</span>
+                <span style="font-size:12px; color:#6b6b8e; font-weight:500;">{label}</span>
+            </div>
+            <span style="font-size:18px; font-weight:700; color:#1a1a2e;">{value}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="
+        position:absolute; bottom:20px; left:16px; right:16px;
+        font-size:11px; color:#c4b9f5; text-align:center;
+    ">
+        Auto-refresh setiap 5 menit
+    </div>
+    """, unsafe_allow_html=True)
+
+# ══════════════════════════════════════════
+# MAIN — Header
+# ══════════════════════════════════════════
+st.markdown("""
+<div style="
+    padding: 32px 0 24px 0;
+    border-bottom: 1px solid #ede9fe;
+    margin-bottom: 28px;
+">
+    <div style="font-size:28px; font-weight:700; color:#1a1a2e; line-height:1.2;">
+        Org Chart Dashboard
+    </div>
+    <div style="font-size:14px; color:#9e9ec0; margin-top:6px; font-weight:400;">
+        Visualisasi & analitik struktur organisasi real-time
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+tab1, tab2, tab3 = st.tabs(["🌳  Org Chart", "📋  Data Karyawan", "⚠️  Manager ID Hilang"])
 
 # ══════════════════════════════════════════
 # ORG CHART HTML
@@ -643,33 +901,64 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all"):
     html_code = f"""
 <!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ background: #0f1117; font-family: 'Plus Jakarta Sans', sans-serif; overflow: hidden; width: 100%; height: {chart_height}px; }}
+  body {{ background: #f8f7ff; font-family: 'DM Sans', sans-serif; overflow: hidden; width: 100%; height: {chart_height}px; }}
   .toolbar {{ position: fixed; top: 12px; right: 16px; display: flex; flex-direction: column; gap: 6px; z-index: 100; }}
-  .tb-btn {{ width: 36px; height: 36px; background: #1e2433; border: 1px solid #3d4160; border-radius: 8px; color: #a0a8c0; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; user-select: none; }}
-  .tb-btn:hover {{ background: #2d3448; color: white; border-color: #4a90d9; }}
-  .zoom-label {{ background: #1e2433; border: 1px solid #3d4160; border-radius: 8px; color: #6b7280; font-size: 11px; font-weight: 600; text-align: center; padding: 4px 0; }}
+  .tb-btn {{ width: 34px; height: 34px; background: #ffffff; border: 1.5px solid #ede9fe; border-radius: 10px; color: #7c6fcd; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; user-select: none; box-shadow: 0 2px 8px rgba(91,79,207,0.08); }}
+  .tb-btn:hover {{ background: #f0eeff; color: #5b4fcf; border-color: #c4b5fd; box-shadow: 0 4px 16px rgba(91,79,207,0.16); transform: translateY(-1px); }}
+  .zoom-label {{ background: #fff; border: 1.5px solid #ede9fe; border-radius: 8px; color: #9e9ec0; font-size: 10px; font-weight: 700; text-align: center; padding: 4px 0; letter-spacing: 0.04em; }}
   #canvas {{ width: 100%; height: 100%; overflow: hidden; cursor: grab; position: relative; }}
   #canvas:active {{ cursor: grabbing; }}
   #tree-root {{ position: absolute; top: 40px; left: 50%; transform-origin: top center; display: flex; flex-direction: row; gap: 24px; align-items: flex-start; }}
   .node-wrapper {{ display: flex; flex-direction: column; align-items: center; }}
-  .node-box {{ padding: 10px 14px; border-radius: 10px; text-align: center; min-width: 155px; max-width: 200px; cursor: pointer; border: 2px solid transparent; transition: all 0.18s ease; position: relative; user-select: none; }}
-  .node-box:hover {{ transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.5); }}
-  .node-box.in-div {{ background: #CCCCFF; border-color: #9999ee; color: #1a1a2e; }}
-  .node-box.out-div {{ background: #2a2d3e; border-color: #3d4160; color: #a0a8c0; }}
-  .node-box.company-mode {{ background: linear-gradient(135deg, #1e3a5f, #2d6a9f); border-color: #4a90d9; color: white; }}
-  .badge {{ position: absolute; top: -8px; right: -8px; background: #f59e0b; color: #000; border-radius: 999px; font-size: 9px; font-weight: 700; padding: 2px 6px; min-width: 18px; }}
-  .node-name {{ font-weight: 700; font-size: 12px; line-height: 1.3; margin-bottom: 2px; }}
-  .node-pos {{ font-size: 10px; opacity: 0.85; line-height: 1.3; margin-bottom: 2px; }}
-  .node-div {{ font-size: 9px; opacity: 0.65; margin-bottom: 1px; }}
+  .node-box {{
+    padding: 12px 16px; border-radius: 14px; text-align: center;
+    min-width: 160px; max-width: 210px; cursor: pointer;
+    border: 1.5px solid transparent;
+    transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1);
+    position: relative; user-select: none;
+    box-shadow: 0 2px 12px rgba(91,79,207,0.08);
+  }}
+  .node-box:hover {{
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 12px 32px rgba(91,79,207,0.18);
+  }}
+  .node-box.in-div {{
+    background: linear-gradient(135deg, #ede9fe, #ddd6fe);
+    border-color: #c4b5fd;
+    color: #2e1a6e;
+  }}
+  .node-box.out-div {{
+    background: #ffffff;
+    border-color: #e5e7eb;
+    color: #4b5563;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }}
+  .node-box.company-mode {{
+    background: linear-gradient(135deg, #5b4fcf, #7c6fcd);
+    border-color: #4a3fb8;
+    color: white;
+    box-shadow: 0 4px 20px rgba(91,79,207,0.3);
+  }}
+  .badge {{
+    position: absolute; top: -8px; right: -8px;
+    background: #5b4fcf; color: white;
+    border-radius: 999px; font-size: 9px; font-weight: 700;
+    padding: 2px 7px; min-width: 20px;
+    border: 2px solid #f8f7ff;
+    box-shadow: 0 2px 8px rgba(91,79,207,0.3);
+  }}
+  .node-name {{ font-weight: 700; font-size: 12px; line-height: 1.3; margin-bottom: 3px; }}
+  .node-pos {{ font-size: 10px; opacity: 0.8; line-height: 1.3; margin-bottom: 3px; }}
+  .node-div {{ font-size: 9px; opacity: 0.6; margin-bottom: 1px; }}
   .node-sbu {{ font-size: 9px; opacity: 0.45; font-style: italic; }}
-  .connector-v {{ width: 2px; background: #3d4160; flex-shrink: 0; }}
+  .connector-v {{ width: 2px; background: #ddd6fe; flex-shrink: 0; }}
   .children-row {{ display: flex; flex-direction: row; align-items: flex-start; position: relative; }}
-  .children-row::before {{ content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 2px; background: #3d4160; width: calc(100% - 100px); pointer-events: none; }}
+  .children-row::before {{ content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 2px; background: #ddd6fe; width: calc(100% - 100px); pointer-events: none; }}
   .single-child::before {{ display: none !important; }}
   .child-col {{ display: flex; flex-direction: column; align-items: center; padding: 0 10px; }}
-  .collapsed-hint {{ font-size: 10px; color: #5a6080; margin-top: 4px; text-align: center; }}
+  .collapsed-hint {{ font-size: 10px; color: #c4b5fd; margin-top: 4px; text-align: center; font-weight: 500; }}
   .legend {{ position: fixed; bottom: 16px; left: 16px; display: flex; gap: 16px; font-size: 11px; color: #a0a8c0; background: rgba(15,17,23,0.9); padding: 8px 14px; border-radius: 10px; border: 1px solid #2d3448; }}
   .legend-item {{ display: flex; align-items: center; gap: 6px; }}
   .legend-dot {{ width: 12px; height: 12px; border-radius: 3px; }}
@@ -822,10 +1111,20 @@ setTimeout(fitView, 300);
 # ══════════════════════════════════════════
 with tab1:
 
-    view_mode = st.radio("📌 Mode Tampilan", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True)
+    st.markdown("""
+    <div style="margin-bottom:16px;">
+        <div style="font-size:13px; font-weight:600; color:#9e9ec0; text-transform:uppercase;
+            letter-spacing:0.06em; margin-bottom:10px;">Mode Tampilan</div>
+    </div>
+    """, unsafe_allow_html=True)
+    view_mode = st.radio("", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True, label_visibility="collapsed")
 
     if view_mode == "Per Divisi":
 
+        st.markdown("""
+        <div style="font-size:12px; font-weight:600; color:#9e9ec0; text-transform:uppercase;
+            letter-spacing:0.06em; margin: 16px 0 10px 0;">Filter</div>
+        """, unsafe_allow_html=True)
         col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
         with col_a:
             bu_list = sorted(df["Business Unit"].dropna().unique().tolist())
@@ -946,7 +1245,12 @@ with tab1:
 # TAB 2 — DATA KARYAWAN
 # ══════════════════════════════════════════
 with tab2:
-    st.subheader("📋 Data Karyawan")
+    st.markdown("""
+    <div style="margin-bottom:20px;">
+        <div style="font-size:20px; font-weight:700; color:#1a1a2e;">Data Karyawan</div>
+        <div style="font-size:13px; color:#9e9ec0; margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
+    </div>
+    """, unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         search = st.text_input("🔍 Cari nama karyawan")
@@ -995,8 +1299,14 @@ with tab2:
 # TAB 3 — KARYAWAN DENGAN MANAGER ID HILANG
 # ══════════════════════════════════════════
 with tab3:
-    st.subheader("⚠️ Karyawan dengan Manager ID Tidak Ditemukan")
-    st.caption("Daftar karyawan yang Manager ID-nya kosong atau tidak terdaftar di sistem. Data ini perlu diperbaiki di backend.")
+    st.markdown("""
+    <div style="margin-bottom:20px;">
+        <div style="font-size:20px; font-weight:700; color:#1a1a2e;">Manager ID Hilang</div>
+        <div style="font-size:13px; color:#9e9ec0; margin-top:4px;">
+            Karyawan yang Manager ID-nya kosong atau tidak terdaftar — perlu diperbaiki di backend
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     # Karyawan yang Manager ID-nya kosong / null
     missing_mgr_df = df[
@@ -1042,7 +1352,9 @@ with tab3:
 
     # Breakdown per divisi
     st.divider()
-    st.subheader("📊 Breakdown per Divisi")
+    st.markdown("""
+    <div style="font-size:15px; font-weight:700; color:#1a1a2e; margin-bottom:12px;">Breakdown per Divisi</div>
+    """, unsafe_allow_html=True)
     breakdown = (
         view_nr.groupby(["Business Unit", "Division"])
         .size()
