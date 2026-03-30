@@ -534,6 +534,10 @@ def generate_pdf_summary(tree_nodes, title_text):
 # ══════════════════════════════════════════
 st.set_page_config(page_title="OrgChart HR", layout="wide", page_icon="🏢", initial_sidebar_state="expanded")
 
+# ── Dark/Light mode state ──
+if "dark_mode" not in st.session_state:
+    st.session_state.dark_mode = False
+
 # ══════════════════════════════════════════
 # LOAD DATA — Google Sheets via Service Account, CSV fallback
 # ══════════════════════════════════════════
@@ -598,178 +602,274 @@ if df is None:
     st.stop()
 
 # ══════════════════════════════════════════
-# GLOBAL CSS — Light & Minimal
+# THEME — Dark / Light
 # ══════════════════════════════════════════
-st.markdown("""
+dm = st.session_state.dark_mode
+
+# Color tokens
+T = {
+    "bg":           "#0f1117" if dm else "#f8f7ff",
+    "bg2":          "#1a1d2e" if dm else "#ffffff",
+    "bg3":          "#252840" if dm else "#f0eeff",
+    "sidebar_bg":   "#13151f" if dm else "#ffffff",
+    "border":       "#2d3160" if dm else "#ede9fe",
+    "border2":      "#3d4180" if dm else "#c4b5fd",
+    "text":         "#e8e6ff" if dm else "#1a1a2e",
+    "text2":        "#9e9ec8" if dm else "#6b6b8e",
+    "text3":        "#6b6b9e" if dm else "#9e9ec0",
+    "accent":       "#7c6fcd" if dm else "#5b4fcf",
+    "accent2":      "#9b8fef" if dm else "#7c6fcd",
+    "accent_bg":    "#1e1a3a" if dm else "#ede9fe",
+    "node_in_bg":   "linear-gradient(135deg,#2a2060,#3d2f8a)" if dm else "linear-gradient(135deg,#ede9fe,#ddd6fe)",
+    "node_in_txt":  "#e0d8ff" if dm else "#2e1a6e",
+    "node_in_bdr":  "#5b4fcf" if dm else "#c4b5fd",
+    "node_out_bg":  "#1a1d2e" if dm else "#ffffff",
+    "node_out_txt": "#9e9ec8" if dm else "#4b5563",
+    "node_out_bdr": "#2d3160" if dm else "#e5e7eb",
+    "connector":    "#2d3160" if dm else "#ddd6fe",
+    "badge_bg":     "#7c6fcd" if dm else "#5b4fcf",
+    "chart_bg":     "#0f1117" if dm else "#f8f7ff",
+    "tb_bg":        "#1a1d2e" if dm else "#ffffff",
+    "tb_color":     "#9b8fef" if dm else "#7c6fcd",
+    "tb_border":    "#2d3160" if dm else "#ede9fe",
+    "metric_shadow":"rgba(124,111,205,0.15)" if dm else "rgba(91,79,207,0.06)",
+    "dl_btn_bg":    "#1a1d2e" if dm else "#ffffff",
+    "dl_btn_color": "#9b8fef" if dm else "#5b4fcf",
+    "input_bg":     "#1a1d2e" if dm else "#f8f7ff",
+    "success_bg":   "#0f2a1a" if dm else "#f0fff4",
+    "success_bdr":  "#166534" if dm else "#86efac",
+    "success_txt":  "#86efac" if dm else "#166534",
+    "warn_bg":      "#2a1f00" if dm else "#fffbeb",
+    "warn_bdr":     "#92400e" if dm else "#fde68a",
+    "warn_txt":     "#fde68a" if dm else "#92400e",
+    "tab_active":   "#9b8fef" if dm else "#5b4fcf",
+    "tab_inactive": "#4a4a7a" if dm else "#9e9ec0",
+    "divider":      "#2d3160" if dm else "#ede9fe",
+    "radio_txt":    "#c4b5fd" if dm else "#4b4b6b",
+    "label_txt":    "#6b6b9e" if dm else "#9e9ec0",
+}
+
+# ── Inject CSS ──
+st.markdown(f"""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
-    html, body, [class*="css"] {
-        font-family: 'DM Sans', sans-serif;
-        color: #1a1a2e;
-    }
+    html, body, [class*="css"] {{
+        font-family: 'DM Sans', sans-serif !important;
+        color: {T["text"]} !important;
+    }}
 
-    /* ── Background ── */
-    .stApp {
-        background-color: #f8f7ff;
-    }
+    .stApp {{
+        background-color: {T["bg"]} !important;
+        transition: background-color 0.3s ease, color 0.3s ease;
+    }}
 
-    /* ── Main container ── */
-    .block-container {
+    .block-container {{
         padding-top: 0 !important;
         padding-left: 2rem !important;
         padding-right: 2rem !important;
         max-width: 100% !important;
-    }
+        background-color: {T["bg"]} !important;
+    }}
 
     /* ── Sidebar ── */
-    [data-testid="stSidebar"] {
-        background: #ffffff;
-        border-right: 1px solid #ede9fe;
-        padding-top: 0;
-    }
-    [data-testid="stSidebar"] .block-container {
+    [data-testid="stSidebar"] {{
+        background: {T["sidebar_bg"]} !important;
+        border-right: 1px solid {T["border"]} !important;
+        transition: background 0.3s ease;
+    }}
+    [data-testid="stSidebar"] .block-container {{
         padding: 0 1rem 2rem 1rem !important;
-    }
-
-    /* ── Sidebar selectbox label ── */
-    [data-testid="stSidebar"] label {
+        background: {T["sidebar_bg"]} !important;
+    }}
+    [data-testid="stSidebar"] label {{
         font-size: 11px !important;
         font-weight: 600 !important;
         text-transform: uppercase !important;
         letter-spacing: 0.06em !important;
-        color: #7c6fcd !important;
-    }
+        color: {T["accent2"]} !important;
+    }}
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] div {{
+        color: {T["text"]} !important;
+    }}
 
     /* ── Selectbox ── */
-    [data-testid="stSelectbox"] > div > div {
-        background: #f8f7ff;
-        border: 1.5px solid #ede9fe;
-        border-radius: 10px;
-        font-size: 14px;
-        color: #1a1a2e;
-        transition: border-color 0.2s;
-    }
-    [data-testid="stSelectbox"] > div > div:focus-within {
-        border-color: #7c6fcd;
-        box-shadow: 0 0 0 3px rgba(124,111,205,0.12);
-    }
+    [data-testid="stSelectbox"] > div > div {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        font-size: 14px !important;
+        color: {T["text"]} !important;
+        transition: border-color 0.2s !important;
+    }}
+    [data-testid="stSelectbox"] > div > div:focus-within {{
+        border-color: {T["accent"]} !important;
+        box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
+    }}
+    [data-testid="stSelectbox"] svg {{
+        fill: {T["text2"]} !important;
+    }}
 
-    /* ── Radio buttons ── */
-    [data-testid="stRadio"] label {
+    /* ── Selectbox dropdown ── */
+    [data-testid="stSelectbox"] ul {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 10px !important;
+    }}
+    [data-testid="stSelectbox"] li {{
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stSelectbox"] li:hover {{
+        background: {T["accent_bg"]} !important;
+    }}
+
+    /* ── Radio ── */
+    [data-testid="stRadio"] label {{
         font-size: 13px !important;
         font-weight: 500 !important;
-        color: #4b4b6b !important;
-    }
+        color: {T["radio_txt"]} !important;
+    }}
+    [data-testid="stRadio"] > div {{
+        gap: 8px !important;
+    }}
 
     /* ── Tabs ── */
-    [data-testid="stTabs"] button {
-        font-family: 'DM Sans', sans-serif;
-        font-weight: 600;
-        font-size: 14px;
-        color: #9e9ec0;
-        border-radius: 0;
-        padding: 10px 20px;
-        transition: color 0.2s;
-    }
-    [data-testid="stTabs"] button[aria-selected="true"] {
-        color: #5b4fcf;
-        border-bottom: 2px solid #5b4fcf;
-    }
-    [data-testid="stTabs"] button:hover {
-        color: #5b4fcf;
-    }
+    [data-testid="stTabs"] {{
+        background: transparent !important;
+    }}
+    [data-testid="stTabs"] button {{
+        font-family: 'DM Sans', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        color: {T["tab_inactive"]} !important;
+        border-radius: 0 !important;
+        padding: 10px 20px !important;
+        background: transparent !important;
+        transition: color 0.2s !important;
+    }}
+    [data-testid="stTabs"] button[aria-selected="true"] {{
+        color: {T["tab_active"]} !important;
+        border-bottom: 2px solid {T["tab_active"]} !important;
+    }}
+    [data-testid="stTabs"] button:hover {{
+        color: {T["tab_active"]} !important;
+        background: {T["accent_bg"]} !important;
+    }}
 
     /* ── Metric cards ── */
-    div[data-testid="stMetric"] {
-        background: #ffffff;
-        border-radius: 16px;
-        padding: 20px 24px;
-        border: 1px solid #ede9fe;
-        box-shadow: 0 2px 12px rgba(91,79,207,0.06);
-        transition: box-shadow 0.2s, transform 0.2s;
-    }
-    div[data-testid="stMetric"]:hover {
-        box-shadow: 0 6px 24px rgba(91,79,207,0.12);
-        transform: translateY(-2px);
-    }
-    div[data-testid="stMetric"] label {
+    div[data-testid="stMetric"] {{
+        background: {T["bg2"]} !important;
+        border-radius: 16px !important;
+        padding: 20px 24px !important;
+        border: 1px solid {T["border"]} !important;
+        box-shadow: 0 2px 12px {T["metric_shadow"]} !important;
+        transition: all 0.25s ease !important;
+    }}
+    div[data-testid="stMetric"]:hover {{
+        box-shadow: 0 8px 28px {T["metric_shadow"]} !important;
+        transform: translateY(-2px) !important;
+    }}
+    div[data-testid="stMetric"] label {{
         font-size: 12px !important;
         font-weight: 600 !important;
         text-transform: uppercase !important;
         letter-spacing: 0.06em !important;
-        color: #9e9ec0 !important;
-    }
-    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: {T["text3"]} !important;
+    }}
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
         font-size: 32px !important;
         font-weight: 700 !important;
-        color: #1a1a2e !important;
-    }
+        color: {T["text"]} !important;
+    }}
 
-    /* ── Buttons ── */
-    [data-testid="stButton"] button {
-        background: #5b4fcf;
-        color: white;
-        border: none;
-        border-radius: 10px;
-        font-weight: 600;
-        font-size: 13px;
-        padding: 8px 16px;
-        transition: all 0.2s;
-    }
-    [data-testid="stButton"] button:hover {
-        background: #4a3fb8;
-        box-shadow: 0 4px 16px rgba(91,79,207,0.3);
-        transform: translateY(-1px);
-    }
+    /* ── Regular buttons ── */
+    [data-testid="stButton"] button {{
+        background: {T["accent"]} !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        transition: all 0.2s !important;
+    }}
+    [data-testid="stButton"] button:hover {{
+        background: {T["accent2"]} !important;
+        box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
+        transform: translateY(-1px) !important;
+    }}
 
     /* ── Download buttons ── */
-    [data-testid="stDownloadButton"] button {
-        background: #ffffff;
-        color: #5b4fcf;
-        border: 1.5px solid #ede9fe;
-        border-radius: 10px;
-        font-weight: 600;
-        font-size: 13px;
-        transition: all 0.2s;
-    }
-    [data-testid="stDownloadButton"] button:hover {
-        background: #f0eeff;
-        border-color: #5b4fcf;
-    }
+    [data-testid="stDownloadButton"] button {{
+        background: {T["dl_btn_bg"]} !important;
+        color: {T["dl_btn_color"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        transition: all 0.2s !important;
+    }}
+    [data-testid="stDownloadButton"] button:hover {{
+        background: {T["accent_bg"]} !important;
+        border-color: {T["accent"]} !important;
+    }}
 
     /* ── Dataframe ── */
-    [data-testid="stDataFrame"] {
-        border-radius: 12px;
-        overflow: hidden;
-        border: 1px solid #ede9fe;
-    }
+    [data-testid="stDataFrame"] {{
+        border-radius: 12px !important;
+        overflow: hidden !important;
+        border: 1px solid {T["border"]} !important;
+    }}
+    [data-testid="stDataFrame"] th {{
+        background: {T["bg3"]} !important;
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stDataFrame"] td {{
+        background: {T["bg2"]} !important;
+        color: {T["text"]} !important;
+    }}
 
     /* ── Text input ── */
-    [data-testid="stTextInput"] input {
-        background: #f8f7ff;
-        border: 1.5px solid #ede9fe;
-        border-radius: 10px;
-        font-size: 14px;
-        color: #1a1a2e;
-    }
-    [data-testid="stTextInput"] input:focus {
-        border-color: #7c6fcd;
-        box-shadow: 0 0 0 3px rgba(124,111,205,0.12);
-    }
+    [data-testid="stTextInput"] input {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        font-size: 14px !important;
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stTextInput"] input:focus {{
+        border-color: {T["accent"]} !important;
+        box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
+    }}
+    [data-testid="stTextInput"] input::placeholder {{
+        color: {T["text3"]} !important;
+    }}
 
     /* ── Divider ── */
-    hr { border-color: #ede9fe; }
+    hr {{ border-color: {T["divider"]} !important; }}
 
-    /* ── Success/Warning/Error ── */
-    [data-testid="stAlert"] {
-        border-radius: 12px;
-        font-size: 13px;
-    }
+    /* ── Alerts ── */
+    [data-testid="stAlert"] {{
+        border-radius: 12px !important;
+        font-size: 13px !important;
+        background: {T["bg2"]} !important;
+        color: {T["text"]} !important;
+    }}
 
-    /* ── Hide streamlit branding ── */
-    #MainMenu, footer { visibility: hidden; }
-    header { visibility: hidden; }
+    /* ── General text colors ── */
+    p, span, div, h1, h2, h3, h4 {{
+        color: {T["text"]};
+    }}
+
+    /* ── Caption ── */
+    [data-testid="stCaptionContainer"] p {{
+        color: {T["text3"]} !important;
+    }}
+
+    /* ── Hide branding ── */
+    #MainMenu, footer {{ visibility: hidden; }}
+    header {{ visibility: hidden; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -777,96 +877,106 @@ st.markdown("""
 # SIDEBAR — Filter Panel
 # ══════════════════════════════════════════
 with st.sidebar:
-    # Logo / Brand header
-    st.markdown("""
+
+    # ── Brand header ──
+    toggle_icon = "☀️" if dm else "🌙"
+    toggle_label = "Light Mode" if dm else "Dark Mode"
+    st.markdown(f"""
     <div style="
-        padding: 28px 8px 20px 8px;
-        border-bottom: 1px solid #ede9fe;
-        margin-bottom: 20px;
+        padding: 24px 8px 16px 8px;
+        border-bottom: 1px solid {T['border']};
+        margin-bottom: 16px;
     ">
-        <div style="display:flex; align-items:center; gap:10px;">
-            <div style="
-                width:36px; height:36px; border-radius:10px;
-                background: linear-gradient(135deg, #5b4fcf, #9b8fef);
-                display:flex; align-items:center; justify-content:center;
-                font-size:18px; flex-shrink:0;
-            ">🏢</div>
-            <div>
-                <div style="font-size:15px; font-weight:700; color:#1a1a2e; line-height:1.2;">OrgChart HR</div>
-                <div style="font-size:11px; color:#9e9ec0; font-weight:500;">People Analytics</div>
+        <div style="display:flex; align-items:center; gap:10px; justify-content:space-between;">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div style="
+                    width:36px; height:36px; border-radius:10px;
+                    background: linear-gradient(135deg, #5b4fcf, #9b8fef);
+                    display:flex; align-items:center; justify-content:center;
+                    font-size:18px; flex-shrink:0;
+                ">🏢</div>
+                <div>
+                    <div style="font-size:15px; font-weight:700; color:{T['text']}; line-height:1.2;">OrgChart HR</div>
+                    <div style="font-size:11px; color:{T['text3']}; font-weight:500;">People Analytics</div>
+                </div>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Data source status
+    # ── Dark/Light toggle ──
+    if st.button(f"{toggle_icon}  {toggle_label}", use_container_width=True):
+        st.session_state.dark_mode = not st.session_state.dark_mode
+        st.rerun()
+
+    st.markdown(f"<div style='margin:12px 0; height:1px; background:{T['border']};'></div>", unsafe_allow_html=True)
+
+    # ── Data source status ──
     if data_source == "google_sheets":
-        st.markdown("""
+        st.markdown(f"""
         <div style="
-            background:#f0fff4; border:1px solid #86efac;
+            background:{T['success_bg']}; border:1px solid {T['success_bdr']};
             border-radius:10px; padding:10px 14px;
-            display:flex; align-items:center; gap:8px;
-            margin-bottom:16px;
+            display:flex; align-items:center; gap:8px; margin-bottom:12px;
         ">
             <span style="font-size:10px;">🟢</span>
-            <span style="font-size:12px; color:#166534; font-weight:500;">Terhubung ke Google Sheets</span>
+            <span style="font-size:12px; color:{T['success_txt']}; font-weight:500;">Terhubung ke Google Sheets</span>
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.markdown("""
+        st.markdown(f"""
         <div style="
-            background:#fffbeb; border:1px solid #fde68a;
+            background:{T['warn_bg']}; border:1px solid {T['warn_bdr']};
             border-radius:10px; padding:10px 14px;
-            display:flex; align-items:center; gap:8px;
-            margin-bottom:16px;
+            display:flex; align-items:center; gap:8px; margin-bottom:12px;
         ">
             <span style="font-size:10px;">🟡</span>
-            <span style="font-size:12px; color:#92400e; font-weight:500;">Menggunakan data lokal</span>
+            <span style="font-size:12px; color:{T['warn_txt']}; font-weight:500;">Menggunakan data lokal</span>
         </div>
         """, unsafe_allow_html=True)
 
-    if st.button("🔄 Refresh Data", use_container_width=True):
+    if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_btn"):
         st.cache_data.clear()
         st.rerun()
 
-    st.markdown("<div style='margin-top:8px;'></div>", unsafe_allow_html=True)
-    st.markdown("""
+    st.markdown(f"<div style='margin:12px 0; height:1px; background:{T['border']};'></div>", unsafe_allow_html=True)
+
+    # ── Metrics ──
+    st.markdown(f"""
     <div style="font-size:10px; font-weight:700; text-transform:uppercase;
-        letter-spacing:0.08em; color:#c4b9f5; padding: 4px 0 10px 0;">
+        letter-spacing:0.08em; color:{T['text3']}; padding: 4px 0 10px 0;">
         Informasi Data
     </div>
     """, unsafe_allow_html=True)
 
     total_karyawan = len(df)
-    total_bu = df["Business Unit"].nunique()
-    total_div = df["Division"].nunique()
-    total_mgr = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
+    total_bu       = df["Business Unit"].nunique()
+    total_div      = df["Division"].nunique()
+    total_mgr      = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
 
     for label, value, icon in [
         ("Total Karyawan", f"{total_karyawan:,}", "👥"),
-        ("Business Unit", str(total_bu), "🏢"),
-        ("Divisi", str(total_div), "📁"),
-        ("Total Manager", str(total_mgr), "👔"),
+        ("Business Unit",  str(total_bu), "🏢"),
+        ("Divisi",         str(total_div), "📁"),
+        ("Total Manager",  str(total_mgr), "👔"),
     ]:
         st.markdown(f"""
         <div style="
-            background:#f8f7ff; border-radius:12px; padding:12px 16px;
-            border:1px solid #ede9fe; margin-bottom:8px;
+            background:{T['bg3']}; border-radius:12px; padding:12px 16px;
+            border:1px solid {T['border']}; margin-bottom:8px;
             display:flex; align-items:center; justify-content:space-between;
+            transition: background 0.3s;
         ">
             <div style="display:flex; align-items:center; gap:8px;">
                 <span style="font-size:16px;">{icon}</span>
-                <span style="font-size:12px; color:#6b6b8e; font-weight:500;">{label}</span>
+                <span style="font-size:12px; color:{T['text2']}; font-weight:500;">{label}</span>
             </div>
-            <span style="font-size:18px; font-weight:700; color:#1a1a2e;">{value}</span>
+            <span style="font-size:18px; font-weight:700; color:{T['text']};">{value}</span>
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown("""
-    <div style="
-        position:absolute; bottom:20px; left:16px; right:16px;
-        font-size:11px; color:#c4b9f5; text-align:center;
-    ">
+    st.markdown(f"""
+    <div style="margin-top:16px; font-size:11px; color:{T['text3']}; text-align:center;">
         Auto-refresh setiap 5 menit
     </div>
     """, unsafe_allow_html=True)
@@ -874,16 +984,16 @@ with st.sidebar:
 # ══════════════════════════════════════════
 # MAIN — Header
 # ══════════════════════════════════════════
-st.markdown("""
+st.markdown(f"""
 <div style="
     padding: 32px 0 24px 0;
-    border-bottom: 1px solid #ede9fe;
+    border-bottom: 1px solid {T['border']};
     margin-bottom: 28px;
 ">
-    <div style="font-size:28px; font-weight:700; color:#1a1a2e; line-height:1.2;">
+    <div style="font-size:28px; font-weight:700; color:{T['text']}; line-height:1.2;">
         Org Chart Dashboard
     </div>
-    <div style="font-size:14px; color:#9e9ec0; margin-top:6px; font-weight:400;">
+    <div style="font-size:14px; color:{T['text3']}; margin-top:6px; font-weight:400;">
         Visualisasi & analitik struktur organisasi real-time
     </div>
 </div>
@@ -905,9 +1015,9 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all"):
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{ background: #f8f7ff; font-family: 'DM Sans', sans-serif; overflow: hidden; width: 100%; height: {chart_height}px; }}
   .toolbar {{ position: fixed; top: 12px; right: 16px; display: flex; flex-direction: column; gap: 6px; z-index: 100; }}
-  .tb-btn {{ width: 34px; height: 34px; background: #ffffff; border: 1.5px solid #ede9fe; border-radius: 10px; color: #7c6fcd; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; user-select: none; box-shadow: 0 2px 8px rgba(91,79,207,0.08); }}
-  .tb-btn:hover {{ background: #f0eeff; color: #5b4fcf; border-color: #c4b5fd; box-shadow: 0 4px 16px rgba(91,79,207,0.16); transform: translateY(-1px); }}
-  .zoom-label {{ background: #fff; border: 1.5px solid #ede9fe; border-radius: 8px; color: #9e9ec0; font-size: 10px; font-weight: 700; text-align: center; padding: 4px 0; letter-spacing: 0.04em; }}
+  .tb-btn {{ width: 34px; height: 34px; background: {tb_bg}; border: 1.5px solid {tb_border}; border-radius: 10px; color: {tb_color}; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; user-select: none; box-shadow: 0 2px 8px rgba(91,79,207,0.08); }}
+  .tb-btn:hover {{ background: {node_in_bg}; color: {tb_color}; border-color: {node_in_bdr}; box-shadow: 0 4px 16px rgba(91,79,207,0.16); transform: translateY(-1px); }}
+  .zoom-label {{ background: {tb_bg}; border: 1.5px solid {tb_border}; border-radius: 8px; color: {hint_color}; font-size: 10px; font-weight: 700; text-align: center; padding: 4px 0; letter-spacing: 0.04em; }}
   #canvas {{ width: 100%; height: 100%; overflow: hidden; cursor: grab; position: relative; }}
   #canvas:active {{ cursor: grabbing; }}
   #tree-root {{ position: absolute; top: 40px; left: 50%; transform-origin: top center; display: flex; flex-direction: row; gap: 24px; align-items: flex-start; }}
@@ -925,14 +1035,14 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all"):
     box-shadow: 0 12px 32px rgba(91,79,207,0.18);
   }}
   .node-box.in-div {{
-    background: linear-gradient(135deg, #ede9fe, #ddd6fe);
-    border-color: #c4b5fd;
-    color: #2e1a6e;
+    background: {node_in_bg};
+    border-color: {node_in_bdr};
+    color: {node_in_txt};
   }}
   .node-box.out-div {{
-    background: #ffffff;
-    border-color: #e5e7eb;
-    color: #4b5563;
+    background: {node_out_bg};
+    border-color: {node_out_bdr};
+    color: {node_out_txt};
     box-shadow: 0 2px 8px rgba(0,0,0,0.06);
   }}
   .node-box.company-mode {{
@@ -943,7 +1053,7 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all"):
   }}
   .badge {{
     position: absolute; top: -8px; right: -8px;
-    background: #5b4fcf; color: white;
+    background: {badge_bg}; color: white;
     border-radius: 999px; font-size: 9px; font-weight: 700;
     padding: 2px 7px; min-width: 20px;
     border: 2px solid #f8f7ff;
@@ -953,12 +1063,12 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all"):
   .node-pos {{ font-size: 10px; opacity: 0.8; line-height: 1.3; margin-bottom: 3px; }}
   .node-div {{ font-size: 9px; opacity: 0.6; margin-bottom: 1px; }}
   .node-sbu {{ font-size: 9px; opacity: 0.45; font-style: italic; }}
-  .connector-v {{ width: 2px; background: #ddd6fe; flex-shrink: 0; }}
+  .connector-v {{ width: 2px; background: {connector}; flex-shrink: 0; }}
   .children-row {{ display: flex; flex-direction: row; align-items: flex-start; position: relative; }}
-  .children-row::before {{ content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 2px; background: #ddd6fe; width: calc(100% - 100px); pointer-events: none; }}
+  .children-row::before {{ content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 2px; background: {connector}; width: calc(100% - 100px); pointer-events: none; }}
   .single-child::before {{ display: none !important; }}
   .child-col {{ display: flex; flex-direction: column; align-items: center; padding: 0 10px; }}
-  .collapsed-hint {{ font-size: 10px; color: #c4b5fd; margin-top: 4px; text-align: center; font-weight: 500; }}
+  .collapsed-hint {{ font-size: 10px; color: {hint_color}; margin-top: 4px; text-align: center; font-weight: 500; }}
   .legend {{ position: fixed; bottom: 16px; left: 16px; display: flex; gap: 16px; font-size: 11px; color: #a0a8c0; background: rgba(15,17,23,0.9); padding: 8px 14px; border-radius: 10px; border: 1px solid #2d3448; }}
   .legend-item {{ display: flex; align-items: center; gap: 6px; }}
   .legend-dot {{ width: 12px; height: 12px; border-radius: 3px; }}
@@ -1111,9 +1221,9 @@ setTimeout(fitView, 300);
 # ══════════════════════════════════════════
 with tab1:
 
-    st.markdown("""
+    st.markdown(f"""
     <div style="margin-bottom:16px;">
-        <div style="font-size:13px; font-weight:600; color:#9e9ec0; text-transform:uppercase;
+        <div style="font-size:13px; font-weight:600; color:{T['text3']}; text-transform:uppercase;
             letter-spacing:0.06em; margin-bottom:10px;">Mode Tampilan</div>
     </div>
     """, unsafe_allow_html=True)
@@ -1121,8 +1231,8 @@ with tab1:
 
     if view_mode == "Per Divisi":
 
-        st.markdown("""
-        <div style="font-size:12px; font-weight:600; color:#9e9ec0; text-transform:uppercase;
+        st.markdown(f"""
+        <div style="font-size:12px; font-weight:600; color:{T['text3']}; text-transform:uppercase;
             letter-spacing:0.06em; margin: 16px 0 10px 0;">Filter</div>
         """, unsafe_allow_html=True)
         col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
@@ -1185,7 +1295,7 @@ with tab1:
         ]
 
         tree_data = build_tree_json(full_data, selected_div, root_ids, mode="division")
-        chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level)
+        chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T)
         st.components.v1.html(chart_html, height=680, scrolling=False)
 
         # ── Download buttons ──
@@ -1222,7 +1332,7 @@ with tab1:
 
         root_ids = df[(df["Manager ID"] == "") | (df["Manager ID"].isna())]["Employee ID"].tolist()
         tree_data2 = build_tree_json(df, "", root_ids, mode="company")
-        chart_html2 = render_org_chart(json.dumps(tree_data2), chart_height=750, initial_level=selected_level2)
+        chart_html2 = render_org_chart(json.dumps(tree_data2), chart_height=750, initial_level=selected_level2, theme=T)
         st.components.v1.html(chart_html2, height=750, scrolling=False)
 
         st.markdown("**⬇️ Download Data**")
@@ -1245,10 +1355,10 @@ with tab1:
 # TAB 2 — DATA KARYAWAN
 # ══════════════════════════════════════════
 with tab2:
-    st.markdown("""
+    st.markdown(f"""
     <div style="margin-bottom:20px;">
-        <div style="font-size:20px; font-weight:700; color:#1a1a2e;">Data Karyawan</div>
-        <div style="font-size:13px; color:#9e9ec0; margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
+        <div style="font-size:20px; font-weight:700; color:{T['text']};">Data Karyawan</div>
+        <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
     </div>
     """, unsafe_allow_html=True)
     c1, c2, c3, c4 = st.columns(4)
@@ -1299,10 +1409,10 @@ with tab2:
 # TAB 3 — KARYAWAN DENGAN MANAGER ID HILANG
 # ══════════════════════════════════════════
 with tab3:
-    st.markdown("""
+    st.markdown(f"""
     <div style="margin-bottom:20px;">
-        <div style="font-size:20px; font-weight:700; color:#1a1a2e;">Manager ID Hilang</div>
-        <div style="font-size:13px; color:#9e9ec0; margin-top:4px;">
+        <div style="font-size:20px; font-weight:700; color:{T['text']};">Manager ID Hilang</div>
+        <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">
             Karyawan yang Manager ID-nya kosong atau tidak terdaftar — perlu diperbaiki di backend
         </div>
     </div>
@@ -1352,8 +1462,8 @@ with tab3:
 
     # Breakdown per divisi
     st.divider()
-    st.markdown("""
-    <div style="font-size:15px; font-weight:700; color:#1a1a2e; margin-bottom:12px;">Breakdown per Divisi</div>
+    st.markdown(f"""
+    <div style="font-size:15px; font-weight:700; color:{T['text']}; margin-bottom:12px;">Breakdown per Divisi</div>
     """, unsafe_allow_html=True)
     breakdown = (
         view_nr.groupby(["Business Unit", "Division"])
