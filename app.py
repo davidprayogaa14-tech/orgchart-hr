@@ -724,17 +724,50 @@ st.markdown(f"""
         fill: {T["text2"]} !important;
     }}
 
-    /* ── Selectbox dropdown ── */
-    [data-testid="stSelectbox"] ul {{
+    /* ── Selectbox dropdown popup ── */
+    [data-testid="stSelectbox"] ul,
+    div[data-baseweb="popover"] ul,
+    div[data-baseweb="menu"] {{
         background: {T["bg2"]} !important;
         border: 1px solid {T["border"]} !important;
         border-radius: 10px !important;
     }}
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="menu"] li,
     [data-testid="stSelectbox"] li {{
         color: {T["text"]} !important;
+        background: {T["bg2"]} !important;
     }}
+    div[data-baseweb="popover"] li:hover,
+    div[data-baseweb="menu"] li:hover,
     [data-testid="stSelectbox"] li:hover {{
         background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
+    /* Override dark default dari Streamlit */
+    div[data-baseweb="popover"] {{
+        background: {T["bg2"]} !important;
+    }}
+    div[data-baseweb="select"] div,
+    div[data-baseweb="select"] span {{
+        color: {T["text"]} !important;
+        background: transparent !important;
+    }}
+    /* Dropdown container portal */
+    [data-testid="stSelectbox"] + div,
+    .stSelectbox [role="listbox"],
+    [role="listbox"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+    }}
+    [role="option"] {{
+        background: {T["bg2"]} !important;
+        color: {T["text"]} !important;
+    }}
+    [role="option"]:hover,
+    [role="option"][aria-selected="true"] {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
     }}
 
     /* ── Radio ── */
@@ -973,6 +1006,8 @@ with st.sidebar:
         ("Divisi",         str(total_div),         "📁", 0, {"mode": "Per Divisi", "focus": "div"}),
         ("Total Manager",  str(total_mgr),         "👔", 3, {}),
     ]
+    # active_tab index mapping:
+    # 0 = Org Chart, 1 = Data Karyawan, 2 = Manager ID Hilang, 3 = Daftar Manager
 
     st.markdown(f"""
     <style>
@@ -1024,7 +1059,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     for label, value, icon, tab_idx, nav_ctx in cards:
-        btn_label = f"{icon}  {label}    {value}"
+        btn_label = f"{icon}  {label} : {value}"
         if st.button(btn_label, key=f"card_{label}", use_container_width=True):
             st.session_state.active_tab = tab_idx
             st.session_state.nav_filter = nav_ctx
@@ -1663,21 +1698,35 @@ with tab4:
         )
 
 # ══════════════════════════════════════════
-# AUTO-NAVIGATE via JS scroll to active tab
+# AUTO-NAVIGATE via JS — click tab by index
 # ══════════════════════════════════════════
 if st.session_state.active_tab > 0:
     tab_index = st.session_state.active_tab
+    # JS robust: coba beberapa selector dan retry lebih lama
     st.markdown(f"""
     <script>
     (function() {{
         function clickTab() {{
-            const tabs = window.parent.document.querySelectorAll('[data-testid="stTabs"] button[role="tab"]');
-            if (tabs.length > {tab_index}) {{
-                tabs[{tab_index}].click();
+            // Coba selector di berbagai level parent
+            let found = false;
+            for (let win of [window, window.parent, window.top]) {{
+                try {{
+                    const tabs = win.document.querySelectorAll('[data-testid="stTabs"] button[role="tab"]');
+                    if (tabs.length > {tab_index}) {{
+                        tabs[{tab_index}].click();
+                        found = true;
+                        break;
+                    }}
+                }} catch(e) {{}}
             }}
+            return found;
         }}
-        setTimeout(clickTab, 300);
-        setTimeout(clickTab, 600);
+        // Retry beberapa kali sampai berhasil
+        let attempts = 0;
+        const interval = setInterval(function() {{
+            if (clickTab() || attempts > 15) clearInterval(interval);
+            attempts++;
+        }}, 150);
     }})();
     </script>
     """, unsafe_allow_html=True)
