@@ -11,10 +11,14 @@ try:
 except ImportError:
     pass
 
-from reportlab.lib.pagesizes import A3, landscape
-from reportlab.pdfgen import canvas as rl_canvas
-from reportlab.lib import colors
-from reportlab.lib.units import mm
+try:
+    from reportlab.lib.pagesizes import A3, landscape
+    from reportlab.pdfgen import canvas as rl_canvas
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    REPORTLAB_OK = True
+except Exception:
+    REPORTLAB_OK = False
 
 # ══════════════════════════════════════════
 # LOAD DATA — support upload file & fallback CSV
@@ -126,6 +130,8 @@ def to_excel(dataframe):
 # ══════════════════════════════════════════
 def generate_pdf(tree_nodes, title_text):
     """Buat PDF org chart menggunakan ReportLab dengan layout box hierarki."""
+    if not REPORTLAB_OK:
+        raise ImportError("ReportLab tidak tersedia")
 
     # Konstanta layout
     NODE_W = 150
@@ -1058,16 +1064,32 @@ tab1, tab2, tab3, tab4 = st.tabs(TAB_LABELS)
 # ══════════════════════════════════════════
 # ORG CHART HTML
 # ══════════════════════════════════════════
-def render_org_chart(tree_json_str, chart_height=700, initial_level="all"):
+def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme=None):
     level_map = {"all": "999", "top": "0", "level1": "1"}
     init_depth = level_map.get(initial_level, "999")
+
+    # ── Resolve theme tokens ──
+    th          = theme or {}
+    bg          = th.get("chart_bg",    "#f8f7ff")
+    node_in_bg  = th.get("node_in_bg",  "linear-gradient(135deg,#ede9fe,#ddd6fe)")
+    node_in_txt = th.get("node_in_txt", "#2e1a6e")
+    node_in_bdr = th.get("node_in_bdr", "#c4b5fd")
+    node_out_bg = th.get("node_out_bg", "#ffffff")
+    node_out_txt= th.get("node_out_txt","#4b5563")
+    node_out_bdr= th.get("node_out_bdr","#e5e7eb")
+    connector   = th.get("connector",   "#ddd6fe")
+    badge_bg    = th.get("badge_bg",    "#5b4fcf")
+    tb_bg       = th.get("tb_bg",       "#ffffff")
+    tb_color    = th.get("tb_color",    "#7c6fcd")
+    tb_border   = th.get("tb_border",   "#ede9fe")
+    hint_color  = th.get("text3",       "#9e9ec0")
 
     html_code = f"""
 <!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ background: #f8f7ff; font-family: 'DM Sans', sans-serif; overflow: hidden; width: 100%; height: {chart_height}px; }}
+  body {{ background: {bg}; font-family: 'DM Sans', sans-serif; overflow: hidden; width: 100%; height: {chart_height}px; }}
   .toolbar {{ position: fixed; top: 12px; right: 16px; display: flex; flex-direction: column; gap: 6px; z-index: 100; }}
   .tb-btn {{ width: 34px; height: 34px; background: {tb_bg}; border: 1.5px solid {tb_border}; border-radius: 10px; color: {tb_color}; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; user-select: none; box-shadow: 0 2px 8px rgba(91,79,207,0.08); }}
   .tb-btn:hover {{ background: {node_in_bg}; color: {tb_color}; border-color: {node_in_bdr}; box-shadow: 0 4px 16px rgba(91,79,207,0.16); transform: translateY(-1px); }}
@@ -1363,13 +1385,19 @@ with tab1:
             st.download_button("📊 Excel", excel_data, f"{selected_div}.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col_dl3:
-            pdf_title = f"Org Chart — {selected_div} ({selected_bu})"
-            pdf_data = generate_pdf(tree_data, pdf_title)
-            st.download_button("📑 PDF (Full)", pdf_data, f"{selected_div}_full.pdf", "application/pdf", use_container_width=True)
+            try:
+                pdf_title = f"Org Chart — {selected_div} ({selected_bu})"
+                pdf_data = generate_pdf(tree_data, pdf_title)
+                st.download_button("📑 PDF (Full)", pdf_data, f"{selected_div}_full.pdf", "application/pdf", use_container_width=True)
+            except Exception:
+                st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
         with col_dl4:
-            pdf_title_sum = f"Org Chart Summary — {selected_div} ({selected_bu})"
-            pdf_data_sum = generate_pdf_summary(tree_data, pdf_title_sum)
-            st.download_button("📑 PDF (Summary)", pdf_data_sum, f"{selected_div}_summary.pdf", "application/pdf", use_container_width=True)
+            try:
+                pdf_title_sum = f"Org Chart Summary — {selected_div} ({selected_bu})"
+                pdf_data_sum = generate_pdf_summary(tree_data, pdf_title_sum)
+                st.download_button("📑 PDF (Summary)", pdf_data_sum, f"{selected_div}_summary.pdf", "application/pdf", use_container_width=True)
+            except Exception:
+                st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
 
     else:
         # ── SELURUH PERUSAHAAN ──
@@ -1399,11 +1427,17 @@ with tab1:
             st.download_button("📊 Excel", excel2, "all_employees.xlsx",
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col_dl6:
-            pdf_data2 = generate_pdf(tree_data2, "Org Chart — Seluruh Perusahaan")
-            st.download_button("📑 PDF (Full)", pdf_data2, "orgchart_perusahaan_full.pdf", "application/pdf", use_container_width=True)
+            try:
+                pdf_data2 = generate_pdf(tree_data2, "Org Chart — Seluruh Perusahaan")
+                st.download_button("📑 PDF (Full)", pdf_data2, "orgchart_perusahaan_full.pdf", "application/pdf", use_container_width=True)
+            except Exception:
+                st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
         with col_dl7:
-            pdf_sum2 = generate_pdf_summary(tree_data2, "Org Chart Summary — Seluruh Perusahaan")
-            st.download_button("📑 PDF (Summary)", pdf_sum2, "orgchart_perusahaan_summary.pdf", "application/pdf", use_container_width=True)
+            try:
+                pdf_sum2 = generate_pdf_summary(tree_data2, "Org Chart Summary — Seluruh Perusahaan")
+                st.download_button("📑 PDF (Summary)", pdf_sum2, "orgchart_perusahaan_summary.pdf", "application/pdf", use_container_width=True)
+            except Exception:
+                st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
 
 # ══════════════════════════════════════════
 # TAB 2 — DATA KARYAWAN
