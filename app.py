@@ -560,8 +560,8 @@ import os
 SHEET_ID   = "1LaZpDfmFZJvIARf0RYoX-DtcbkjgOMlwT74nbamnvqM"
 CREDS_FILE = "credentials.json"
 SCOPES     = [
-    "https://www.googleapis.com/auth/spreadsheets.readonly",
-    "https://www.googleapis.com/auth/drive.readonly"
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
 ]
 
 def clean_df(df):
@@ -608,6 +608,92 @@ def load_data():
         return None, "error"
 
 df, data_source = load_data()
+
+# ══════════════════════════════════════════
+# GSPREAD CLIENT — untuk write ke Sheets
+# ══════════════════════════════════════════
+def get_gspread_client():
+    """Buat gspread client dengan credentials yang tersedia."""
+    try:
+        if "gcp_service_account" in st.secrets:
+            creds  = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=SCOPES)
+        elif os.path.exists(CREDS_FILE):
+            creds  = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
+        else:
+            return None
+        return gspread.authorize(creds)
+    except Exception:
+        return None
+
+def get_cr_sheet():
+    """Ambil worksheet change_requests dari Google Sheets."""
+    client = get_gspread_client()
+    if not client:
+        return None
+    try:
+        wb = client.open_by_key(SHEET_ID)
+        return wb.worksheet("change_requests")
+    except Exception:
+        return None
+
+def load_change_requests():
+    """Load semua change requests dari Google Sheets."""
+    ws = get_cr_sheet()
+    if not ws:
+        return pd.DataFrame()
+    try:
+        data = ws.get_all_records()
+        if not data:
+            return pd.DataFrame(columns=[
+                "request_id","submitted_date","requester_name","requester_email",
+                "change_type","employee_id","employee_name","data_lama","data_baru",
+                "alasan","status","reviewed_by","reviewed_date","catatan"
+            ])
+        return pd.DataFrame(data)
+    except Exception:
+        return pd.DataFrame()
+
+def save_change_request(row_data: dict):
+    """Tambah satu baris request baru ke sheet."""
+    ws = get_cr_sheet()
+    if not ws:
+        return False
+    try:
+        cols = ["request_id","submitted_date","requester_name","requester_email",
+                "change_type","employee_id","employee_name","data_lama","data_baru",
+                "alasan","status","reviewed_by","reviewed_date","catatan"]
+        row = [str(row_data.get(c, "")) for c in cols]
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        return True
+    except Exception as e:
+        st.error(f"Gagal menyimpan: {e}")
+        return False
+
+def update_cr_status(request_id: str, status: str, reviewed_by: str, catatan: str):
+    """Update status request di Google Sheets berdasarkan request_id."""
+    ws = get_cr_sheet()
+    if not ws:
+        return False
+    try:
+        cell = ws.find(request_id)
+        if not cell:
+            return False
+        row = cell.row
+        # Kolom: status=11, reviewed_by=12, reviewed_date=13, catatan=14
+        from datetime import datetime
+        ws.update_cell(row, 11, status)
+        ws.update_cell(row, 12, reviewed_by)
+        ws.update_cell(row, 13, datetime.now().strftime("%Y-%m-%d %H:%M"))
+        ws.update_cell(row, 14, catatan)
+        return True
+    except Exception as e:
+        st.error(f"Gagal update: {e}")
+        return False
+
+def generate_request_id():
+    """Generate ID unik untuk request baru."""
+    import time
+    return f"REQ-{int(time.time())}"
 
 if df is None:
     st.error("❌ Tidak ada data yang bisa dimuat. Pastikan credentials.json dan employee_data.csv tersedia.")
@@ -1090,11 +1176,11 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ── Tab navigation via session state ──
-TAB_LABELS = ["🌳  Org Chart", "📋  Data Karyawan", "⚠️  Manager ID Hilang", "👔  Daftar Manager"]
+TAB_LABELS = ["🌳  Org Chart", "📋  Data Karyawan", "⚠️  Manager ID Hilang", "👔  Daftar Manager", "📝  Change Request"]
 active = st.session_state.active_tab
 
 # JavaScript trick: use query params to activate correct tab
-tab1, tab2, tab3, tab4 = st.tabs(TAB_LABELS)
+tab1, tab2, tab3, tab4, tab5 = st.tabs(TAB_LABELS)
 
 # ══════════════════════════════════════════
 # ORG CHART HTML
@@ -1696,6 +1782,358 @@ with tab4:
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
+
+# ══════════════════════════════════════════
+# TAB 5 — CHANGE REQUEST
+# ══════════════════════════════════════════
+with tab5:
+    from datetime import datetime
+
+    st.markdown(f"""
+    <div style="margin-bottom:24px;">
+        <div style="font-size:20px; font-weight:700; color:{T['text']};">Structure Change Request</div>
+        <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">
+            Kelola permintaan perubahan struktur organisasi — Reporting Line & Divisi
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Sub-tabs ──
+    cr_tab1, cr_tab2, cr_tab3 = st.tabs(["➕  Buat Request", "📥  Inbox & Review", "📜  History"])
+
+    # ══════════════════════════════════
+    # SUB-TAB 1 — FORM INPUT
+    # ══════════════════════════════════
+    with cr_tab1:
+        st.markdown(f"""
+        <div style="font-size:15px; font-weight:600; color:{T['text']}; margin-bottom:16px;">
+            Form Permintaan Perubahan Struktur
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.form("cr_form", clear_on_submit=True):
+            # Informasi Requester
+            st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Informasi Requester</div>", unsafe_allow_html=True)
+            col_r1, col_r2 = st.columns(2)
+            with col_r1:
+                req_name  = st.text_input("Nama Requester *", placeholder="Nama lengkap pengirim request")
+            with col_r2:
+                req_email = st.text_input("Email Requester *", placeholder="email@mekari.com")
+
+            st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+
+            # Jenis Perubahan
+            st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Detail Perubahan</div>", unsafe_allow_html=True)
+            change_type = st.selectbox("Jenis Perubahan *", ["Reporting Line", "Nama Divisi"])
+
+            st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+
+            # Data Karyawan
+            st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Data Karyawan yang Berubah</div>", unsafe_allow_html=True)
+
+            # Multi-row support
+            st.caption("Anda bisa menambahkan hingga 10 karyawan dalam satu request")
+            num_rows = st.number_input("Jumlah karyawan dalam request ini", min_value=1, max_value=10, value=1, step=1)
+
+            rows_data = []
+            for i in range(int(num_rows)):
+                st.markdown(f"<div style='font-size:12px; font-weight:600; color:{T['accent']}; margin: 12px 0 6px 0;'>Karyawan {i+1}</div>", unsafe_allow_html=True)
+                c1, c2, c3, c4 = st.columns([1.5, 2, 2.5, 2.5])
+                with c1:
+                    emp_id = st.text_input("Employee ID", key=f"eid_{i}", placeholder="EMP001")
+                with c2:
+                    # Auto-fill nama dari Employee ID
+                    emp_match = df[df["Employee ID"] == emp_id]["Employee Name"].values
+                    emp_name_default = emp_match[0] if len(emp_match) > 0 else ""
+                    emp_name = st.text_input("Nama Karyawan", key=f"ename_{i}",
+                                             value=emp_name_default, placeholder="Nama lengkap")
+                with c3:
+                    if change_type == "Reporting Line":
+                        old_val = st.text_input("Previous Manager", key=f"old_{i}", placeholder="Nama manager lama")
+                    else:
+                        old_val = st.text_input("Nama Divisi Lama", key=f"old_{i}", placeholder="Divisi saat ini")
+                with c4:
+                    if change_type == "Reporting Line":
+                        new_val = st.text_input("New Manager", key=f"new_{i}", placeholder="Nama manager baru")
+                    else:
+                        new_val = st.text_input("Nama Divisi Baru", key=f"new_{i}", placeholder="Divisi tujuan")
+                rows_data.append((emp_id, emp_name, old_val, new_val))
+
+            st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+            alasan = st.text_area("Alasan / Keterangan *", placeholder="Jelaskan alasan perubahan struktur ini...", height=100)
+
+            eff_date = st.date_input("Effective Date", value=datetime.today())
+
+            submitted = st.form_submit_button("📨  Kirim Request", use_container_width=True)
+
+        if submitted:
+            # Validasi
+            errors = []
+            if not req_name.strip():
+                errors.append("Nama Requester harus diisi")
+            if not req_email.strip() or "@" not in req_email:
+                errors.append("Email Requester tidak valid")
+            if not alasan.strip():
+                errors.append("Alasan perubahan harus diisi")
+            valid_rows = [(eid, en, ov, nv) for eid, en, ov, nv in rows_data if eid.strip() or en.strip()]
+            if not valid_rows:
+                errors.append("Minimal satu baris data karyawan harus diisi")
+
+            if errors:
+                for e in errors:
+                    st.error(f"❌ {e}")
+            else:
+                # AI Validation — cek Employee ID di data
+                warnings = []
+                for emp_id, emp_name, old_val, new_val in valid_rows:
+                    if emp_id.strip() and emp_id not in df["Employee ID"].values:
+                        warnings.append(f"⚠️ Employee ID **{emp_id}** tidak ditemukan di data. Pastikan ID sudah benar.")
+                    if change_type == "Reporting Line" and new_val.strip():
+                        mgr_match = df[df["Employee Name"].str.lower() == new_val.strip().lower()]
+                        if len(mgr_match) == 0:
+                            warnings.append(f"⚠️ Manager baru **{new_val}** tidak ditemukan di data. Pastikan nama sudah benar.")
+
+                for w in warnings:
+                    st.warning(w)
+
+                # Simpan ke Sheets
+                success_count = 0
+                for emp_id, emp_name, old_val, new_val in valid_rows:
+                    req_id = generate_request_id()
+                    row = {
+                        "request_id":      req_id,
+                        "submitted_date":  datetime.now().strftime("%Y-%m-%d %H:%M"),
+                        "requester_name":  req_name.strip(),
+                        "requester_email": req_email.strip(),
+                        "change_type":     change_type,
+                        "employee_id":     emp_id.strip(),
+                        "employee_name":   emp_name.strip(),
+                        "data_lama":       old_val.strip(),
+                        "data_baru":       new_val.strip(),
+                        "alasan":          f"{alasan.strip()} | Effective: {eff_date}",
+                        "status":          "Pending",
+                        "reviewed_by":     "",
+                        "reviewed_date":   "",
+                        "catatan":         "",
+                    }
+                    if save_change_request(row):
+                        success_count += 1
+
+                if success_count > 0:
+                    st.success(f"✅ **{success_count} request** berhasil dikirim! Tim OD akan segera mereview.")
+                    st.balloons()
+
+    # ══════════════════════════════════
+    # SUB-TAB 2 — INBOX & REVIEW
+    # ══════════════════════════════════
+    with cr_tab2:
+        col_reload, _ = st.columns([1, 5])
+        with col_reload:
+            if st.button("🔄 Refresh", key="refresh_cr"):
+                st.rerun()
+
+        cr_df = load_change_requests()
+
+        if cr_df.empty:
+            st.info("📭 Belum ada request yang masuk.")
+        else:
+            # Ensure status column exists
+            if "status" not in cr_df.columns:
+                cr_df["status"] = "Pending"
+
+            pending_df  = cr_df[cr_df["status"] == "Pending"].copy()
+            inreview_df = cr_df[cr_df["status"] == "In Review"].copy()
+
+            # Metrics
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("📥 Total Masuk",   len(cr_df))
+            m2.metric("🟡 Pending",       len(pending_df))
+            m3.metric("✅ Approved",      len(cr_df[cr_df["status"] == "Approved"]))
+            m4.metric("❌ Rejected",      len(cr_df[cr_df["status"] == "Rejected"]))
+
+            st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+
+            # Pending requests
+            if len(pending_df) == 0:
+                st.success("✅ Semua request sudah diproses!")
+            else:
+                st.markdown(f"""
+                <div style="font-size:14px; font-weight:700; color:{T['text']}; margin-bottom:12px;">
+                    🟡 Pending — Perlu Direview ({len(pending_df)} request)
+                </div>
+                """, unsafe_allow_html=True)
+
+                for _, row in pending_df.iterrows():
+                    # Hitung usia request
+                    try:
+                        submitted = datetime.strptime(str(row.get("submitted_date",""))[:16], "%Y-%m-%d %H:%M")
+                        age_days  = (datetime.now() - submitted).days
+                        age_label = f"{age_days} hari yang lalu" if age_days > 0 else "Hari ini"
+                        age_color = "#ef4444" if age_days >= 3 else "#f59e0b" if age_days >= 1 else "#22c55e"
+                    except Exception:
+                        age_label = "-"
+                        age_color = T["text3"]
+
+                    with st.expander(
+                        f"📋 {row.get('request_id','-')}  ·  {row.get('change_type','-')}  ·  "
+                        f"{row.get('employee_name','-')}  ·  dari {row.get('requester_name','-')}",
+                        expanded=False
+                    ):
+                        # Detail card
+                        col_info, col_action = st.columns([3, 2])
+                        with col_info:
+                            st.markdown(f"""
+                            <div style="background:{T['bg3']}; border-radius:12px; padding:16px;
+                                border:1px solid {T['border']};">
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                                    <div>
+                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Request ID</div>
+                                        <div style="font-size:13px; font-weight:600; color:{T['text']};">{row.get('request_id','-')}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Masuk</div>
+                                        <div style="font-size:13px; color:{age_color}; font-weight:600;">{age_label}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Karyawan</div>
+                                        <div style="font-size:13px; font-weight:600; color:{T['text']};">{row.get('employee_name','-')} ({row.get('employee_id','-')})</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Jenis</div>
+                                        <div style="font-size:13px; font-weight:600; color:{T['accent']};">{row.get('change_type','-')}</div>
+                                    </div>
+                                </div>
+                                <div style="margin-top:12px; padding-top:12px; border-top:1px solid {T['border']};">
+                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                                        <div>
+                                            <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Sebelum</div>
+                                            <div style="font-size:13px; color:#ef4444; font-weight:500;">❌ {row.get('data_lama','-')}</div>
+                                        </div>
+                                        <div>
+                                            <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Sesudah</div>
+                                            <div style="font-size:13px; color:#22c55e; font-weight:500;">✅ {row.get('data_baru','-')}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style="margin-top:12px; padding-top:12px; border-top:1px solid {T['border']};">
+                                    <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Alasan</div>
+                                    <div style="font-size:13px; color:{T['text2']};">{row.get('alasan','-')}</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                        with col_action:
+                            st.markdown(f"""
+                            <div style="font-size:12px; font-weight:700; color:{T['text3']};
+                                text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;">
+                                Tindakan
+                            </div>
+                            """, unsafe_allow_html=True)
+
+                            reviewer = st.text_input("Nama Reviewer *",
+                                key=f"reviewer_{row.get('request_id','')}",
+                                placeholder="Nama Anda")
+                            catatan_review = st.text_area("Catatan (opsional)",
+                                key=f"catatan_{row.get('request_id','')}",
+                                height=80, placeholder="Catatan untuk requester...")
+
+                            col_a, col_r = st.columns(2)
+                            with col_a:
+                                if st.button("✅ Approve",
+                                    key=f"approve_{row.get('request_id','')}",
+                                    use_container_width=True):
+                                    if not reviewer.strip():
+                                        st.error("Nama reviewer harus diisi")
+                                    else:
+                                        if update_cr_status(
+                                            row.get("request_id",""), "Approved",
+                                            reviewer.strip(), catatan_review.strip()
+                                        ):
+                                            st.success("✅ Approved!")
+                                            st.rerun()
+                            with col_r:
+                                if st.button("❌ Reject",
+                                    key=f"reject_{row.get('request_id','')}",
+                                    use_container_width=True):
+                                    if not reviewer.strip():
+                                        st.error("Nama reviewer harus diisi")
+                                    else:
+                                        if update_cr_status(
+                                            row.get("request_id",""), "Rejected",
+                                            reviewer.strip(), catatan_review.strip()
+                                        ):
+                                            st.warning("❌ Rejected")
+                                            st.rerun()
+
+    # ══════════════════════════════════
+    # SUB-TAB 3 — HISTORY
+    # ══════════════════════════════════
+    with cr_tab3:
+        col_rl, _ = st.columns([1, 5])
+        with col_rl:
+            if st.button("🔄 Refresh", key="refresh_hist"):
+                st.rerun()
+
+        cr_hist = load_change_requests()
+
+        if cr_hist.empty:
+            st.info("📭 Belum ada history request.")
+        else:
+            processed = cr_hist[cr_hist["status"].isin(["Approved","Rejected"])].copy()
+
+            if processed.empty:
+                st.info("Belum ada request yang telah diproses.")
+            else:
+                # Metrics
+                h1m, h2m, h3m = st.columns(3)
+                h1m.metric("📊 Total Diproses", len(processed))
+                h2m.metric("✅ Approved",  len(processed[processed["status"]=="Approved"]))
+                h3m.metric("❌ Rejected",  len(processed[processed["status"]=="Rejected"]))
+
+                st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+
+                # Filter
+                col_hf1, col_hf2, col_hf3 = st.columns(3)
+                with col_hf1:
+                    hist_type = st.selectbox("Filter Jenis", ["Semua"] + sorted(processed["change_type"].unique().tolist()), key="hf_type")
+                with col_hf2:
+                    hist_status = st.selectbox("Filter Status", ["Semua", "Approved", "Rejected"], key="hf_status")
+                with col_hf3:
+                    hist_search = st.text_input("Cari nama karyawan", key="hf_search")
+
+                view_hist = processed.copy()
+                if hist_type   != "Semua": view_hist = view_hist[view_hist["change_type"] == hist_type]
+                if hist_status != "Semua": view_hist = view_hist[view_hist["status"] == hist_status]
+                if hist_search: view_hist = view_hist[view_hist["employee_name"].str.contains(hist_search, case=False, na=False)]
+
+                # Style status
+                def style_status(val):
+                    if val == "Approved": return "background-color:#d1fae5; color:#065f46; font-weight:600;"
+                    if val == "Rejected": return "background-color:#fee2e2; color:#991b1b; font-weight:600;"
+                    return ""
+
+                display_cols = ["request_id","submitted_date","requester_name","change_type",
+                                "employee_name","employee_id","data_lama","data_baru",
+                                "status","reviewed_by","reviewed_date","catatan"]
+                available_cols = [c for c in display_cols if c in view_hist.columns]
+
+                st.caption(f"Menampilkan **{len(view_hist)}** request")
+                st.dataframe(
+                    view_hist[available_cols].reset_index(drop=True),
+                    use_container_width=True, height=480
+                )
+
+                st.divider()
+                st.markdown("**⬇️ Download History**")
+                col_hd1, col_hd2, _ = st.columns([1,1,3])
+                with col_hd1:
+                    st.download_button("📄 CSV", view_hist.to_csv(index=False).encode("utf-8"),
+                        "cr_history.csv", "text/csv", use_container_width=True)
+                with col_hd2:
+                    st.download_button("📊 Excel", to_excel(view_hist),
+                        "cr_history.xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True)
 
 # ══════════════════════════════════════════
 # AUTO-NAVIGATE via JS — click tab by index
