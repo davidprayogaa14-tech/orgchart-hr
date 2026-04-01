@@ -1002,6 +1002,69 @@ st.markdown(f"""
     #MainMenu, footer {{ visibility: hidden; }}
     header {{ visibility: hidden; }}
 
+    /* ── Calendar / Date picker popup ── */
+    div[data-baseweb="calendar"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 14px !important;
+    }}
+    div[data-baseweb="calendar"] * {{
+        color: {T["text"]} !important;
+        font-family: 'DM Sans', sans-serif !important;
+    }}
+    div[data-baseweb="calendar"] button {{
+        background: transparent !important;
+        color: {T["text"]} !important;
+        border-radius: 8px !important;
+        border: none !important;
+    }}
+    div[data-baseweb="calendar"] button:hover {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
+    /* Selected date */
+    div[data-baseweb="calendar"] [aria-selected="true"] button,
+    div[data-baseweb="calendar"] [aria-selected="true"] {{
+        background: {T["accent"]} !important;
+        color: white !important;
+        border-radius: 50% !important;
+    }}
+    /* Today highlight */
+    div[data-baseweb="calendar"] [data-today="true"] button {{
+        border: 2px solid {T["accent"]} !important;
+        color: {T["accent"]} !important;
+    }}
+    /* Month/year navigation */
+    div[data-baseweb="calendar"] [data-baseweb="select"] {{
+        background: {T["bg3"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 8px !important;
+    }}
+    div[data-baseweb="calendar"] [data-baseweb="select"] * {{
+        color: {T["text"]} !important;
+        background: transparent !important;
+    }}
+    /* Header row (Su Mo Tu etc) */
+    div[data-baseweb="calendar"] [data-testid="CalendarHeader"] * {{
+        color: {T["text3"]} !important;
+        font-weight: 600 !important;
+    }}
+    /* Disabled dates */
+    div[data-baseweb="calendar"] [aria-disabled="true"] button {{
+        color: {T["text3"]} !important;
+        opacity: 0.4 !important;
+    }}
+    /* Arrow navigation buttons */
+    div[data-baseweb="calendar"] [data-baseweb="button"] {{
+        background: {T["bg3"]} !important;
+        color: {T["text"]} !important;
+        border-radius: 8px !important;
+    }}
+    div[data-baseweb="calendar"] [data-baseweb="button"]:hover {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
+
     /* ── Number input ── */
     [data-testid="stNumberInput"] input {{
         background: {T["input_bg"]} !important;
