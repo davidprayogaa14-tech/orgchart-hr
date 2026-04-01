@@ -1001,6 +1001,101 @@ st.markdown(f"""
     /* ── Hide branding ── */
     #MainMenu, footer {{ visibility: hidden; }}
     header {{ visibility: hidden; }}
+
+    /* ── Number input ── */
+    [data-testid="stNumberInput"] input {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        color: {T["text"]} !important;
+        font-size: 14px !important;
+    }}
+    [data-testid="stNumberInput"] button {{
+        background: {T["bg3"]} !important;
+        border: 1px solid {T["border"]} !important;
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stNumberInput"] button:hover {{
+        background: {T["accent_bg"]} !important;
+    }}
+
+    /* ── Date input ── */
+    [data-testid="stDateInput"] input {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        color: {T["text"]} !important;
+        font-size: 14px !important;
+    }}
+
+    /* ── Textarea ── */
+    [data-testid="stTextArea"] textarea {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        color: {T["text"]} !important;
+        font-size: 14px !important;
+    }}
+    [data-testid="stTextArea"] textarea:focus {{
+        border-color: {T["accent"]} !important;
+        box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
+    }}
+    [data-testid="stTextArea"] textarea::placeholder {{
+        color: {T["text3"]} !important;
+    }}
+
+    /* ── Form container ── */
+    [data-testid="stForm"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 16px !important;
+        padding: 24px !important;
+    }}
+
+    /* ── Form submit button ── */
+    [data-testid="stFormSubmitButton"] button {{
+        background: {T["accent"]} !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        width: 100% !important;
+        transition: all 0.2s !important;
+    }}
+    [data-testid="stFormSubmitButton"] button:hover {{
+        background: {T["accent2"]} !important;
+        box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
+        transform: translateY(-1px) !important;
+    }}
+
+    /* ── Expander ── */
+    [data-testid="stExpander"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 12px !important;
+        margin-bottom: 8px !important;
+    }}
+    [data-testid="stExpander"] summary {{
+        color: {T["text"]} !important;
+        font-weight: 500 !important;
+        background: {T["bg2"]} !important;
+    }}
+    [data-testid="stExpander"] > div {{
+        background: {T["bg2"]} !important;
+    }}
+
+    /* ── Nested sub-tabs ── */
+    [data-testid="stTabs"] [data-testid="stTabs"] button {{
+        font-size: 13px !important;
+        padding: 8px 16px !important;
+        color: {T["tab_inactive"]} !important;
+        background: transparent !important;
+    }}
+    [data-testid="stTabs"] [data-testid="stTabs"] button[aria-selected="true"] {{
+        color: {T["tab_active"]} !important;
+        border-bottom: 2px solid {T["tab_active"]} !important;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1864,6 +1959,26 @@ with tab5:
 
             eff_date = st.date_input("Effective Date", value=datetime.today())
 
+            st.markdown(f"""
+            <style>
+            [data-testid="stFormSubmitButton"] button {{
+                background: {T['accent']} !important;
+                color: white !important;
+                border: none !important;
+                border-radius: 10px !important;
+                font-weight: 600 !important;
+                font-size: 14px !important;
+                padding: 12px !important;
+                transition: all 0.2s !important;
+                width: 100% !important;
+            }}
+            [data-testid="stFormSubmitButton"] button:hover {{
+                background: {T['accent2']} !important;
+                box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
+                transform: translateY(-1px) !important;
+            }}
+            </style>
+            """, unsafe_allow_html=True)
             submitted = st.form_submit_button("📨  Kirim Request", use_container_width=True)
 
         if submitted:
@@ -2037,6 +2152,21 @@ with tab5:
                                 key=f"catatan_{row.get('request_id','')}",
                                 height=80, placeholder="Catatan untuk requester...")
 
+                            req_id_key = row.get('request_id','').replace('-','_')
+                            st.markdown(f"""
+                            <style>
+                            [data-testid="stButton"][key="approve_{req_id_key}"] button {{
+                                background: #059669 !important; color: white !important;
+                                border: none !important; border-radius: 10px !important;
+                                font-weight: 600 !important;
+                            }}
+                            [data-testid="stButton"][key="reject_{req_id_key}"] button {{
+                                background: #dc2626 !important; color: white !important;
+                                border: none !important; border-radius: 10px !important;
+                                font-weight: 600 !important;
+                            }}
+                            </style>
+                            """, unsafe_allow_html=True)
                             col_a, col_r = st.columns(2)
                             with col_a:
                                 if st.button("✅ Approve",
