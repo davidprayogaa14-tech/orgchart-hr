@@ -1870,18 +1870,66 @@ with tab4:
     </div>
     """, unsafe_allow_html=True)
 
-    # Build manager list
+    # ── Bangun level hierarki dari SLKR001 (Suwandi) ──
+    CHIEF_ROOT = "SLKR001"
+
+    def get_level_from_root(root_id, all_df, max_depth=2):
+        """
+        Kembalikan dict {employee_id: level} di mana:
+        level 0 = Chief (bawahan langsung root)
+        level 1 = C-1 (bawahan Chief)
+        level 2 = C-2 (bawahan C-1)
+        """
+        levels = {}
+        current_level_ids = [root_id]
+        for depth in range(max_depth + 1):
+            next_level_ids = []
+            for mgr_id in current_level_ids:
+                children = all_df[all_df["Manager ID"] == mgr_id]["Employee ID"].tolist()
+                for child in children:
+                    if child not in levels:
+                        levels[child] = depth  # depth 0 = Chief, 1 = C-1, 2 = C-2
+                        next_level_ids.append(child)
+            current_level_ids = next_level_ids
+            if not current_level_ids:
+                break
+        return levels
+
+    hierarchy_levels = get_level_from_root(CHIEF_ROOT, df, max_depth=2)
+
+    # ── Karyawan dengan Career Stage Level 0 ──
+    level0_ids = set(
+        df[df["Career Stage"].astype(str).str.strip().str.lower() == "level 0"]["Employee ID"].tolist()
+    )
+
+    # ── Build manager list ──
     mgr_ids = df[df["Manager ID"] != ""]["Manager ID"].unique().tolist()
     mgr_df  = df[df["Employee ID"].isin(mgr_ids)].copy()
 
-    # Count subordinates per manager
+    # Tambah kolom Jumlah Bawahan
     sub_count = df[df["Manager ID"] != ""].groupby("Manager ID").size().reset_index(name="Jumlah Bawahan")
     sub_count.rename(columns={"Manager ID": "Employee ID"}, inplace=True)
     mgr_df = mgr_df.merge(sub_count, on="Employee ID", how="left")
     mgr_df["Jumlah Bawahan"] = mgr_df["Jumlah Bawahan"].fillna(0).astype(int)
+
+    # Tambah kolom Level Hierarki
+    mgr_df["Level Hierarki"] = mgr_df["Employee ID"].apply(
+        lambda eid: {0: "Chief", 1: "C-1", 2: "C-2"}.get(hierarchy_levels.get(eid), "-")
+    )
+
+    # Tambah kolom: apakah punya bawahan Level 0
+    def has_level0_subordinate(mgr_id, all_df, level0_set):
+        """Cek apakah manager ini punya bawahan langsung dengan Career Stage Level 0."""
+        direct_subs = all_df[all_df["Manager ID"] == mgr_id]["Employee ID"].tolist()
+        return any(sid in level0_set for sid in direct_subs)
+
+    mgr_df["Ada Bawahan Level 0"] = mgr_df["Employee ID"].apply(
+        lambda eid: has_level0_subordinate(eid, df, level0_ids)
+    )
+
     mgr_df = mgr_df.sort_values("Jumlah Bawahan", ascending=False)
 
-    # Metrics row
+    # ── Metrics ──
     m1, m2, m3 = st.columns(3)
     m1.metric("👔 Total Manager", len(mgr_df))
     m2.metric("📊 Rata-rata Bawahan", f"{mgr_df['Jumlah Bawahan'].mean():.1f}")
@@ -1889,8 +1937,8 @@ with tab4:
 
     st.divider()
 
-    # Filters
-    col_m1, col_m2, col_m3 = st.columns(3)
+    # ── Filters ──
+    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
     with col_m1:
         search_mgr = st.text_input("🔍 Cari nama manager", key="search_mgr")
     with col_m2:
@@ -1906,8 +1954,22 @@ with tab4:
             else ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist())
         )
         div_mgr = st.selectbox("Filter Divisi", div_mgr_opts, key="div_mgr")
+    with col_m4:
+        level_filter = st.selectbox(
+            "🎯 Filter Level Hierarki",
+            ["Semua", "Chief", "C-1", "C-2"],
+            key="level_mgr",
+            help="Chief = bawahan langsung Suwandi (SLKR001) | C-1 = 1 tingkat di bawah Chief | C-2 = 2 tingkat di bawah Chief"
+        )
 
-    # Apply filters
+    # ── Toggle: sembunyikan manager yang punya bawahan Level 0 ──
+    hide_level0 = st.checkbox(
+        "🚫 Sembunyikan manager yang memiliki bawahan Career Stage Level 0",
+        value=True,
+        help="Aktif = hanya tampilkan leader tanpa bawahan Level 0"
+    )
+
+    # ── Apply filters ──
     view_mgr = mgr_df.copy()
     if search_mgr:
         view_mgr = view_mgr[view_mgr["Employee Name"].str.contains(search_mgr, case=False, na=False)]
@@ -1915,15 +1977,43 @@ with tab4:
         view_mgr = view_mgr[view_mgr["Business Unit"] == bu_mgr]
     if div_mgr != "Semua":
         view_mgr = view_mgr[view_mgr["Division"] == div_mgr]
+    if level_filter != "Semua":
+        view_mgr = view_mgr[view_mgr["Level Hierarki"] == level_filter]
+    if hide_level0:
+        view_mgr = view_mgr[~view_mgr["Ada Bawahan Level 0"]]
+
+    # ── Info badge filter aktif ──
+    active_filters = []
+    if level_filter != "Semua":
+        active_filters.append(f"Level: **{level_filter}**")
+    if hide_level0:
+        active_filters.append("Tanpa bawahan Level 0")
+
+    if active_filters:
+        st.markdown(f"""
+        <div style="background:{T['accent_bg']}; border:1px solid {T['border2']};
+            border-radius:8px; padding:8px 14px; margin-bottom:12px;
+            font-size:12px; color:{T['accent']};">
+            🔎 Filter aktif: {' · '.join(active_filters)}
+        </div>
+        """, unsafe_allow_html=True)
 
     st.caption(f"Menampilkan **{len(view_mgr)}** manager")
 
-    display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division", "Business Unit", "SBU/Tribe", "Jumlah Bawahan"]
-    st.dataframe(
-        view_mgr[display_cols_mgr].reset_index(drop=True),
-        use_container_width=True,
-        height=480
-    )
+    # ── Tampilkan kolom Level Hierarki dengan warna ──
+    display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division",
+                        "Business Unit", "SBU/Tribe", "Level Hierarki", "Jumlah Bawahan"]
+    available_display = [c for c in display_cols_mgr if c in view_mgr.columns]
+
+    # Style Level Hierarki
+    def style_level(val):
+        if val == "Chief":  return "background-color:#ddd6fe; color:#4c1d95; font-weight:700;"
+        if val == "C-1":    return "background-color:#ede9fe; color:#5b4fcf; font-weight:600;"
+        if val == "C-2":    return "background-color:#f3f0ff; color:#7c6fcd; font-weight:500;"
+        return ""
+
+    styled_view = view_mgr[available_display].reset_index(drop=True)
+    st.dataframe(styled_view, use_container_width=True, height=480)
 
     st.divider()
     st.markdown("**⬇️ Download Data**")
