@@ -1969,137 +1969,270 @@ with tab5:
         </div>
         """, unsafe_allow_html=True)
 
-        with st.form("cr_form", clear_on_submit=True):
-            # Informasi Requester
-            st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Informasi Requester</div>", unsafe_allow_html=True)
-            col_r1, col_r2 = st.columns(2)
-            with col_r1:
-                req_name  = st.text_input("Nama Requester *", placeholder="Nama lengkap pengirim request")
-            with col_r2:
-                req_email = st.text_input("Email Requester *", placeholder="email@mekari.com")
+        # ── Helper: generate template download ──
+        def make_template(change_type_tmpl):
+            if change_type_tmpl == "Reporting Line":
+                cols = ["Employee ID", "Employee Name", "Previous Manager", "New Manager"]
+            else:
+                cols = ["Employee ID", "Employee Name", "Nama Divisi Lama", "Nama Divisi Baru"]
+            return pd.DataFrame(columns=cols)
 
-            st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+        # ── Helper: validate & save rows ──
+        def process_and_save(rows_data, req_name, req_email, change_type, alasan, eff_date):
+            valid_rows = [(str(eid).strip(), str(en).strip(), str(ov).strip(), str(nv).strip())
+                          for eid, en, ov, nv in rows_data
+                          if str(eid).strip() or str(en).strip()]
+            if not valid_rows:
+                return [], [], 0
 
-            # Jenis Perubahan
-            st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Detail Perubahan</div>", unsafe_allow_html=True)
-            change_type = st.selectbox("Jenis Perubahan *", ["Reporting Line", "Nama Divisi"])
+            warnings = []
+            for emp_id, emp_name, old_val, new_val in valid_rows:
+                if emp_id and emp_id not in df["Employee ID"].values:
+                    warnings.append(f"Employee ID **{emp_id}** tidak ditemukan di data.")
+                if change_type == "Reporting Line" and new_val:
+                    if len(df[df["Employee Name"].str.lower() == new_val.lower()]) == 0:
+                        warnings.append(f"Manager baru **{new_val}** tidak ditemukan di data.")
 
-            st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+            success_count = 0
+            for emp_id, emp_name, old_val, new_val in valid_rows:
+                req_id = generate_request_id()
+                row = {
+                    "request_id":      req_id,
+                    "submitted_date":  datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    "requester_name":  req_name.strip(),
+                    "requester_email": req_email.strip(),
+                    "change_type":     change_type,
+                    "employee_id":     emp_id,
+                    "employee_name":   emp_name,
+                    "data_lama":       old_val,
+                    "data_baru":       new_val,
+                    "alasan":          f"{alasan.strip()} | Effective: {eff_date}",
+                    "status":          "Pending",
+                    "reviewed_by":     "",
+                    "reviewed_date":   "",
+                    "catatan":         "",
+                }
+                if save_change_request(row):
+                    success_count += 1
+            return valid_rows, warnings, success_count
 
-            # Data Karyawan
-            st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Data Karyawan yang Berubah</div>", unsafe_allow_html=True)
+        # ── CSS form buttons ──
+        st.markdown(f"""
+        <style>
+        [data-testid="stFormSubmitButton"] button {{
+            background: {T['accent']} !important;
+            color: white !important; border: none !important;
+            border-radius: 10px !important; font-weight: 600 !important;
+            font-size: 14px !important; padding: 12px !important;
+            transition: all 0.2s !important; width: 100% !important;
+        }}
+        [data-testid="stFormSubmitButton"] button:hover {{
+            background: {T['accent2']} !important;
+            box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
+            transform: translateY(-1px) !important;
+        }}
+        </style>
+        """, unsafe_allow_html=True)
 
-            # Multi-row support
-            st.caption("Anda bisa menambahkan hingga 10 karyawan dalam satu request")
-            num_rows = st.number_input("Jumlah karyawan dalam request ini", min_value=1, max_value=10, value=1, step=1)
+        # ── Informasi Requester & Jenis Perubahan (di luar form, shared) ──
+        st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Informasi Requester</div>", unsafe_allow_html=True)
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            req_name_shared  = st.text_input("Nama Requester *", placeholder="Nama lengkap pengirim request", key="req_name_shared")
+        with col_r2:
+            req_email_shared = st.text_input("Email Requester *", placeholder="email@mekari.com", key="req_email_shared")
 
-            rows_data = []
-            for i in range(int(num_rows)):
-                st.markdown(f"<div style='font-size:12px; font-weight:600; color:{T['accent']}; margin: 12px 0 6px 0;'>Karyawan {i+1}</div>", unsafe_allow_html=True)
-                c1, c2, c3, c4 = st.columns([1.5, 2, 2.5, 2.5])
-                with c1:
-                    emp_id = st.text_input("Employee ID", key=f"eid_{i}", placeholder="EMP001")
-                with c2:
-                    # Auto-fill nama dari Employee ID
-                    emp_match = df[df["Employee ID"] == emp_id]["Employee Name"].values
-                    emp_name_default = emp_match[0] if len(emp_match) > 0 else ""
-                    emp_name = st.text_input("Nama Karyawan", key=f"ename_{i}",
-                                             value=emp_name_default, placeholder="Nama lengkap")
-                with c3:
-                    if change_type == "Reporting Line":
-                        old_val = st.text_input("Previous Manager", key=f"old_{i}", placeholder="Nama manager lama")
-                    else:
-                        old_val = st.text_input("Nama Divisi Lama", key=f"old_{i}", placeholder="Divisi saat ini")
-                with c4:
-                    if change_type == "Reporting Line":
-                        new_val = st.text_input("New Manager", key=f"new_{i}", placeholder="Nama manager baru")
-                    else:
-                        new_val = st.text_input("Nama Divisi Baru", key=f"new_{i}", placeholder="Divisi tujuan")
-                rows_data.append((emp_id, emp_name, old_val, new_val))
+        st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Detail Perubahan</div>", unsafe_allow_html=True)
+        col_ct, col_ed = st.columns(2)
+        with col_ct:
+            change_type_shared = st.selectbox("Jenis Perubahan *", ["Reporting Line", "Nama Divisi"], key="ct_shared")
+        with col_ed:
+            eff_date_shared = st.date_input("Effective Date", value=datetime.today(), key="ed_shared")
 
-            st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
-            alasan = st.text_area("Alasan / Keterangan *", placeholder="Jelaskan alasan perubahan struktur ini...", height=100)
+        st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+        alasan_shared = st.text_area("Alasan / Keterangan *", placeholder="Jelaskan alasan perubahan struktur ini...", height=90, key="alasan_shared")
 
-            eff_date = st.date_input("Effective Date", value=datetime.today())
+        st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+
+        # ── Mode Input: Manual atau Upload ──
+        st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:12px;'>Metode Input Data Karyawan</div>", unsafe_allow_html=True)
+
+        input_mode = st.radio(
+            "",
+            ["✏️  Input Manual (1–5 karyawan)", "📤  Upload Spreadsheet (>5 karyawan)"],
+            horizontal=True,
+            label_visibility="collapsed",
+            key="input_mode"
+        )
+
+        # ════════════════════════════════
+        # MODE 1 — INPUT MANUAL
+        # ════════════════════════════════
+        if input_mode == "✏️  Input Manual (1–5 karyawan)":
+            with st.form("cr_form_manual", clear_on_submit=True):
+                st.markdown(f"<div style='font-size:12px; color:{T['text3']}; margin-bottom:12px;'>Isi data karyawan yang akan diubah. Maksimal 5 karyawan per request.</div>", unsafe_allow_html=True)
+
+                num_rows = st.number_input("Jumlah karyawan", min_value=1, max_value=5, value=1, step=1, key="num_rows_manual")
+
+                # Header kolom
+                h1c, h2c, h3c, h4c = st.columns([1.5, 2, 2.5, 2.5])
+                h1c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Employee ID</div>", unsafe_allow_html=True)
+                h2c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Nama Karyawan</div>", unsafe_allow_html=True)
+                if change_type_shared == "Reporting Line":
+                    h3c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Previous Manager</div>", unsafe_allow_html=True)
+                    h4c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>New Manager</div>", unsafe_allow_html=True)
+                else:
+                    h3c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Divisi Lama</div>", unsafe_allow_html=True)
+                    h4c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Divisi Baru</div>", unsafe_allow_html=True)
+
+                rows_data_manual = []
+                for i in range(int(num_rows)):
+                    c1, c2, c3, c4 = st.columns([1.5, 2, 2.5, 2.5])
+                    with c1:
+                        emp_id = st.text_input("", key=f"eid_{i}", placeholder="EMP001", label_visibility="collapsed")
+                    with c2:
+                        emp_match = df[df["Employee ID"] == emp_id]["Employee Name"].values
+                        emp_name_default = emp_match[0] if len(emp_match) > 0 else ""
+                        emp_name = st.text_input("", key=f"ename_{i}", value=emp_name_default,
+                                                  placeholder="Nama lengkap", label_visibility="collapsed")
+                    with c3:
+                        old_val = st.text_input("", key=f"old_{i}",
+                                                 placeholder="Manager lama" if change_type_shared=="Reporting Line" else "Divisi saat ini",
+                                                 label_visibility="collapsed")
+                    with c4:
+                        new_val = st.text_input("", key=f"new_{i}",
+                                                 placeholder="Manager baru" if change_type_shared=="Reporting Line" else "Divisi tujuan",
+                                                 label_visibility="collapsed")
+                    rows_data_manual.append((emp_id, emp_name, old_val, new_val))
+
+                submitted_manual = st.form_submit_button("📨  Kirim Request", use_container_width=True)
+
+            if submitted_manual:
+                errors = []
+                if not req_name_shared.strip():   errors.append("Nama Requester harus diisi")
+                if not req_email_shared.strip() or "@" not in req_email_shared: errors.append("Email Requester tidak valid")
+                if not alasan_shared.strip():     errors.append("Alasan perubahan harus diisi")
+                if errors:
+                    for e in errors: st.error(f"❌ {e}")
+                else:
+                    valid_rows, warnings, success_count = process_and_save(
+                        rows_data_manual, req_name_shared, req_email_shared,
+                        change_type_shared, alasan_shared, eff_date_shared
+                    )
+                    for w in warnings: st.warning(f"⚠️ {w}")
+                    if success_count > 0:
+                        st.success(f"✅ **{success_count} request** berhasil dikirim! Tim OD akan segera mereview.")
+                        st.balloons()
+                    elif not errors:
+                        st.error("❌ Tidak ada data yang valid untuk dikirim.")
+
+        # ════════════════════════════════
+        # MODE 2 — UPLOAD SPREADSHEET
+        # ════════════════════════════════
+        else:
+            # Download template
+            template_df = make_template(change_type_shared)
+            col_tmpl, _ = st.columns([2, 4])
+            with col_tmpl:
+                st.download_button(
+                    "⬇️  Download Template",
+                    data=to_excel(template_df),
+                    file_name=f"template_cr_{change_type_shared.lower().replace(' ','_')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
 
             st.markdown(f"""
-            <style>
-            [data-testid="stFormSubmitButton"] button {{
-                background: {T['accent']} !important;
-                color: white !important;
-                border: none !important;
-                border-radius: 10px !important;
-                font-weight: 600 !important;
-                font-size: 14px !important;
-                padding: 12px !important;
-                transition: all 0.2s !important;
-                width: 100% !important;
-            }}
-            [data-testid="stFormSubmitButton"] button:hover {{
-                background: {T['accent2']} !important;
-                box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
-                transform: translateY(-1px) !important;
-            }}
-            </style>
+            <div style="background:{T['bg3']}; border:1px solid {T['border']}; border-radius:12px;
+                padding:14px 18px; margin:12px 0; font-size:13px; color:{T['text2']};">
+                <b style="color:{T['text']};">📋 Petunjuk Upload:</b><br>
+                1. Download template di atas sesuai jenis perubahan<br>
+                2. Isi data karyawan di template (jangan ubah nama kolom)<br>
+                3. Upload file yang sudah diisi di bawah ini<br>
+                4. Sistem akan memvalidasi data sebelum dikirim
+            </div>
             """, unsafe_allow_html=True)
-            submitted = st.form_submit_button("📨  Kirim Request", use_container_width=True)
 
-        if submitted:
-            # Validasi
-            errors = []
-            if not req_name.strip():
-                errors.append("Nama Requester harus diisi")
-            if not req_email.strip() or "@" not in req_email:
-                errors.append("Email Requester tidak valid")
-            if not alasan.strip():
-                errors.append("Alasan perubahan harus diisi")
-            valid_rows = [(eid, en, ov, nv) for eid, en, ov, nv in rows_data if eid.strip() or en.strip()]
-            if not valid_rows:
-                errors.append("Minimal satu baris data karyawan harus diisi")
+            uploaded_file = st.file_uploader(
+                "Upload file Excel (.xlsx) atau CSV (.csv)",
+                type=["xlsx", "csv"],
+                key="cr_upload"
+            )
 
-            if errors:
-                for e in errors:
-                    st.error(f"❌ {e}")
-            else:
-                # AI Validation — cek Employee ID di data
-                warnings = []
-                for emp_id, emp_name, old_val, new_val in valid_rows:
-                    if emp_id.strip() and emp_id not in df["Employee ID"].values:
-                        warnings.append(f"⚠️ Employee ID **{emp_id}** tidak ditemukan di data. Pastikan ID sudah benar.")
-                    if change_type == "Reporting Line" and new_val.strip():
-                        mgr_match = df[df["Employee Name"].str.lower() == new_val.strip().lower()]
-                        if len(mgr_match) == 0:
-                            warnings.append(f"⚠️ Manager baru **{new_val}** tidak ditemukan di data. Pastikan nama sudah benar.")
+            if uploaded_file:
+                try:
+                    if uploaded_file.name.endswith(".csv"):
+                        upload_df = pd.read_csv(uploaded_file)
+                    else:
+                        upload_df = pd.read_excel(uploaded_file)
 
-                for w in warnings:
-                    st.warning(w)
+                    upload_df.columns = upload_df.columns.str.strip()
+                    upload_df = upload_df.dropna(how="all")
 
-                # Simpan ke Sheets
-                success_count = 0
-                for emp_id, emp_name, old_val, new_val in valid_rows:
-                    req_id = generate_request_id()
-                    row = {
-                        "request_id":      req_id,
-                        "submitted_date":  datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "requester_name":  req_name.strip(),
-                        "requester_email": req_email.strip(),
-                        "change_type":     change_type,
-                        "employee_id":     emp_id.strip(),
-                        "employee_name":   emp_name.strip(),
-                        "data_lama":       old_val.strip(),
-                        "data_baru":       new_val.strip(),
-                        "alasan":          f"{alasan.strip()} | Effective: {eff_date}",
-                        "status":          "Pending",
-                        "reviewed_by":     "",
-                        "reviewed_date":   "",
-                        "catatan":         "",
-                    }
-                    if save_change_request(row):
-                        success_count += 1
+                    # Validasi kolom
+                    if change_type_shared == "Reporting Line":
+                        required_cols = ["Employee ID", "Employee Name", "Previous Manager", "New Manager"]
+                        old_col, new_col = "Previous Manager", "New Manager"
+                    else:
+                        required_cols = ["Employee ID", "Employee Name", "Nama Divisi Lama", "Nama Divisi Baru"]
+                        old_col, new_col = "Nama Divisi Lama", "Nama Divisi Baru"
 
-                if success_count > 0:
-                    st.success(f"✅ **{success_count} request** berhasil dikirim! Tim OD akan segera mereview.")
-                    st.balloons()
+                    missing_cols = [c for c in required_cols if c not in upload_df.columns]
+                    if missing_cols:
+                        st.error(f"❌ Kolom tidak sesuai template. Kolom yang kurang: {', '.join(missing_cols)}")
+                    else:
+                        # Preview data
+                        st.markdown(f"<div style='font-size:13px; font-weight:600; color:{T['text']}; margin:12px 0 8px 0;'>Preview Data ({len(upload_df)} karyawan)</div>", unsafe_allow_html=True)
+                        st.dataframe(upload_df[required_cols], use_container_width=True, height=200)
+
+                        # Validasi per baris
+                        upload_warnings = []
+                        for _, urow in upload_df.iterrows():
+                            eid = str(urow.get("Employee ID","")).strip()
+                            nv  = str(urow.get(new_col,"")).strip()
+                            if eid and eid not in df["Employee ID"].values:
+                                upload_warnings.append(f"Employee ID **{eid}** tidak ditemukan di data")
+                            if change_type_shared == "Reporting Line" and nv:
+                                if len(df[df["Employee Name"].str.lower() == nv.lower()]) == 0:
+                                    upload_warnings.append(f"Manager baru **{nv}** tidak ditemukan di data")
+
+                        if upload_warnings:
+                            with st.expander(f"⚠️ {len(upload_warnings)} peringatan validasi — klik untuk lihat detail"):
+                                for w in upload_warnings:
+                                    st.warning(w)
+
+                        # Tombol submit upload
+                        errors_upload = []
+                        if not req_name_shared.strip():   errors_upload.append("Nama Requester harus diisi")
+                        if not req_email_shared.strip() or "@" not in req_email_shared: errors_upload.append("Email Requester tidak valid")
+                        if not alasan_shared.strip():     errors_upload.append("Alasan perubahan harus diisi")
+
+                        if errors_upload:
+                            for e in errors_upload: st.error(f"❌ {e}")
+                        else:
+                            if st.button("📨  Kirim Semua Request dari File", use_container_width=True, key="submit_upload"):
+                                rows_from_file = [
+                                    (
+                                        str(r.get("Employee ID","")).strip(),
+                                        str(r.get("Employee Name","")).strip(),
+                                        str(r.get(old_col,"")).strip(),
+                                        str(r.get(new_col,"")).strip(),
+                                    )
+                                    for _, r in upload_df.iterrows()
+                                ]
+                                _, _, success_count = process_and_save(
+                                    rows_from_file, req_name_shared, req_email_shared,
+                                    change_type_shared, alasan_shared, eff_date_shared
+                                )
+                                if success_count > 0:
+                                    st.success(f"✅ **{success_count} request** dari file berhasil dikirim!")
+                                    st.balloons()
+                                else:
+                                    st.error("❌ Tidak ada data yang berhasil disimpan. Periksa koneksi Google Sheets.")
+
+                except Exception as e:
+                    st.error(f"❌ Gagal membaca file: {str(e)}")
 
     # ══════════════════════════════════
     # SUB-TAB 2 — INBOX & REVIEW
