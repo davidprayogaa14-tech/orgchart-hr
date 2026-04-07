@@ -1,3 +1,5 @@
+kode: 7 April 2026, 8.30 AM
+
 import streamlit as st
 import pandas as pd
 import json
@@ -704,23 +706,19 @@ if df is None:
 # ══════════════════════════════════════════
 dm = st.session_state.dark_mode
 
+# Color tokens
 T = {
-    "bg":           "#0f1117" if dm else "#f5f5f7",
+    "bg":           "#0f1117" if dm else "#f8f7ff",
     "bg2":          "#1a1d2e" if dm else "#ffffff",
     "bg3":          "#252840" if dm else "#f0eeff",
-    "sidebar_bg":   "#1a1040" if dm else "#CCCCFF",
-    "sidebar_text": "#e8e6ff" if dm else "#1a1040",
-    "sidebar_text2":"#a89eef" if dm else "#4a3fa0",
-    "sidebar_active":"#ffffff" if dm else "#ffffff",
-    "sidebar_active_bg": "#3d2fa0" if dm else "#5b4fcf",
-    "sidebar_hover": "#2d2060" if dm else "#b8b0ff",
-    "border":       "#2d3160" if dm else "#e2e0f5",
+    "sidebar_bg":   "#13151f" if dm else "#ffffff",
+    "border":       "#2d3160" if dm else "#ede9fe",
     "border2":      "#3d4180" if dm else "#c4b5fd",
-    "text":         "#e8e6ff" if dm else "#1a1040",
-    "text2":        "#9e9ec8" if dm else "#4a4a7a",
-    "text3":        "#6b6b9e" if dm else "#7a7aaa",
-    "accent":       "#9b8fef" if dm else "#5b4fcf",
-    "accent2":      "#b8b0ff" if dm else "#7c6fcd",
+    "text":         "#e8e6ff" if dm else "#1a1a2e",
+    "text2":        "#9e9ec8" if dm else "#6b6b8e",
+    "text3":        "#6b6b9e" if dm else "#9e9ec0",
+    "accent":       "#7c6fcd" if dm else "#5b4fcf",
+    "accent2":      "#9b8fef" if dm else "#7c6fcd",
     "accent_bg":    "#1e1a3a" if dm else "#ede9fe",
     "node_in_bg":   "linear-gradient(135deg,#2a2060,#3d2f8a)" if dm else "linear-gradient(135deg,#ede9fe,#ddd6fe)",
     "node_in_txt":  "#e0d8ff" if dm else "#2e1a6e",
@@ -730,14 +728,14 @@ T = {
     "node_out_bdr": "#2d3160" if dm else "#e5e7eb",
     "connector":    "#2d3160" if dm else "#ddd6fe",
     "badge_bg":     "#7c6fcd" if dm else "#5b4fcf",
-    "chart_bg":     "#0f1117" if dm else "#f5f5f7",
+    "chart_bg":     "#0f1117" if dm else "#f8f7ff",
     "tb_bg":        "#1a1d2e" if dm else "#ffffff",
     "tb_color":     "#9b8fef" if dm else "#7c6fcd",
     "tb_border":    "#2d3160" if dm else "#ede9fe",
-    "metric_shadow":"rgba(124,111,205,0.18)" if dm else "rgba(91,79,207,0.08)",
+    "metric_shadow":"rgba(124,111,205,0.15)" if dm else "rgba(91,79,207,0.06)",
     "dl_btn_bg":    "#1a1d2e" if dm else "#ffffff",
     "dl_btn_color": "#9b8fef" if dm else "#5b4fcf",
-    "input_bg":     "#1a1d2e" if dm else "#ffffff",
+    "input_bg":     "#1a1d2e" if dm else "#f8f7ff",
     "success_bg":   "#0f2a1a" if dm else "#f0fff4",
     "success_bdr":  "#166534" if dm else "#86efac",
     "success_txt":  "#86efac" if dm else "#166534",
@@ -746,535 +744,602 @@ T = {
     "warn_txt":     "#fde68a" if dm else "#92400e",
     "tab_active":   "#9b8fef" if dm else "#5b4fcf",
     "tab_inactive": "#4a4a7a" if dm else "#9e9ec0",
-    "divider":      "#2d3160" if dm else "#e2e0f5",
+    "divider":      "#2d3160" if dm else "#ede9fe",
     "radio_txt":    "#c4b5fd" if dm else "#4b4b6b",
     "label_txt":    "#6b6b9e" if dm else "#9e9ec0",
-    "section_bg":   "#13152a" if dm else "#ffffff",
-    "section_bdr":  "#2d3160" if dm else "#e2e0f5",
 }
 
-# ══════════════════════════════════════════
-# GLOBAL CSS — Split Layout
-# ══════════════════════════════════════════
+# ── Inject CSS ──
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
-/* ── Reset & Base ── */
-*, *::before, *::after {{ box-sizing: border-box; }}
-html, body, [class*="css"] {{
-    font-family: 'DM Sans', sans-serif !important;
-    color: {T["text"]} !important;
-}}
+    html, body, [class*="css"] {{
+        font-family: 'DM Sans', sans-serif !important;
+        color: {T["text"]} !important;
+    }}
 
-/* ── Full app background ── */
-.stApp {{
-    background: {T["bg"]} !important;
-}}
+    .stApp {{
+        background-color: {T["bg"]} !important;
+        transition: background-color 0.3s ease, color 0.3s ease;
+    }}
 
-/* ── Hide Streamlit chrome ── */
-#MainMenu, footer, header {{ visibility: hidden !important; }}
-[data-testid="stToolbar"] {{ display: none !important; }}
+    .block-container {{
+        padding-top: 0 !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        max-width: 100% !important;
+        background-color: {T["bg"]} !important;
+    }}
 
-/* ── Force full viewport ── */
-.stApp > div:first-child {{
-    min-height: 100vh;
-}}
+    /* ── Sidebar ── */
+    [data-testid="stSidebar"] {{
+        background: {T["sidebar_bg"]} !important;
+        border-right: 1px solid {T["border"]} !important;
+        transition: background 0.3s ease;
+    }}
+    [data-testid="stSidebar"] .block-container {{
+        padding: 0 1rem 2rem 1rem !important;
+        background: {T["sidebar_bg"]} !important;
+    }}
+    [data-testid="stSidebar"] label {{
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+        color: {T["accent2"]} !important;
+    }}
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] div {{
+        color: {T["text"]} !important;
+    }}
 
-/* ── Main block container — right panel ── */
-.block-container {{
-    padding: 0 !important;
-    max-width: 100% !important;
-    background: {T["bg"]} !important;
-}}
+    /* ── Selectbox ── */
+    [data-testid="stSelectbox"] > div > div {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        font-size: 14px !important;
+        color: {T["text"]} !important;
+        transition: border-color 0.2s !important;
+    }}
+    [data-testid="stSelectbox"] > div > div:focus-within {{
+        border-color: {T["accent"]} !important;
+        box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
+    }}
+    [data-testid="stSelectbox"] svg {{
+        fill: {T["text2"]} !important;
+    }}
 
-/* ── SIDEBAR — Fixed left panel ── */
-[data-testid="stSidebar"] {{
-    background: {T["sidebar_bg"]} !important;
-    min-width: 260px !important;
-    max-width: 260px !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    height: 100vh !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    border-right: none !important;
-    box-shadow: 4px 0 24px rgba(0,0,0,0.12) !important;
-    z-index: 999 !important;
-    transition: background 0.3s ease !important;
-}}
-[data-testid="stSidebar"] > div {{
-    padding: 0 !important;
-    height: 100% !important;
-}}
-[data-testid="stSidebar"] .block-container {{
-    padding: 0 !important;
-    background: transparent !important;
-}}
-[data-testid="stSidebar"] * {{
-    color: {T["sidebar_text"]} !important;
-}}
+    /* ── Selectbox dropdown popup ── */
+    [data-testid="stSelectbox"] ul,
+    div[data-baseweb="popover"] ul,
+    div[data-baseweb="menu"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 10px !important;
+    }}
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="menu"] li,
+    [data-testid="stSelectbox"] li {{
+        color: {T["text"]} !important;
+        background: {T["bg2"]} !important;
+    }}
+    div[data-baseweb="popover"] li:hover,
+    div[data-baseweb="menu"] li:hover,
+    [data-testid="stSelectbox"] li:hover {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
+    /* Override dark default dari Streamlit */
+    div[data-baseweb="popover"] {{
+        background: {T["bg2"]} !important;
+    }}
+    div[data-baseweb="select"] div,
+    div[data-baseweb="select"] span {{
+        color: {T["text"]} !important;
+        background: transparent !important;
+    }}
+    /* Dropdown container portal */
+    [data-testid="stSelectbox"] + div,
+    .stSelectbox [role="listbox"],
+    [role="listbox"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+    }}
+    [role="option"] {{
+        background: {T["bg2"]} !important;
+        color: {T["text"]} !important;
+    }}
+    [role="option"]:hover,
+    [role="option"][aria-selected="true"] {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
 
-/* Sidebar scrollbar */
-[data-testid="stSidebar"]::-webkit-scrollbar {{ width: 4px; }}
-[data-testid="stSidebar"]::-webkit-scrollbar-track {{ background: transparent; }}
-[data-testid="stSidebar"]::-webkit-scrollbar-thumb {{ background: {T["sidebar_hover"]}; border-radius: 2px; }}
+    /* ── Radio ── */
+    [data-testid="stRadio"] label {{
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        color: {T["radio_txt"]} !important;
+    }}
+    [data-testid="stRadio"] > div {{
+        gap: 8px !important;
+    }}
 
-/* ── MAIN CONTENT — offset for sidebar ── */
-section.main > div {{
-    margin-left: 260px !important;
-    padding: 0 !important;
-    min-height: 100vh !important;
-}}
+    /* ── Tabs ── */
+    [data-testid="stTabs"] {{
+        background: transparent !important;
+    }}
+    [data-testid="stTabs"] button {{
+        font-family: 'DM Sans', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        color: {T["tab_inactive"]} !important;
+        border-radius: 0 !important;
+        padding: 10px 20px !important;
+        background: transparent !important;
+        transition: color 0.2s !important;
+    }}
+    [data-testid="stTabs"] button[aria-selected="true"] {{
+        color: {T["tab_active"]} !important;
+        border-bottom: 2px solid {T["tab_active"]} !important;
+    }}
+    [data-testid="stTabs"] button:hover {{
+        color: {T["tab_active"]} !important;
+        background: {T["accent_bg"]} !important;
+    }}
 
-/* ── Tabs — hide native Streamlit tabs ── */
-[data-testid="stTabs"] [data-baseweb="tab-list"] {{
-    display: none !important;
-}}
-[data-testid="stTabs"] [data-baseweb="tab-panel"] {{
-    padding: 0 !important;
-}}
+    /* ── Metric cards ── */
+    div[data-testid="stMetric"] {{
+        background: {T["bg2"]} !important;
+        border-radius: 16px !important;
+        padding: 20px 24px !important;
+        border: 1px solid {T["border"]} !important;
+        box-shadow: 0 2px 12px {T["metric_shadow"]} !important;
+        transition: all 0.25s ease !important;
+    }}
+    div[data-testid="stMetric"]:hover {{
+        box-shadow: 0 8px 28px {T["metric_shadow"]} !important;
+        transform: translateY(-2px) !important;
+    }}
+    div[data-testid="stMetric"] label {{
+        font-size: 12px !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+        color: {T["text3"]} !important;
+    }}
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
+        font-size: 32px !important;
+        font-weight: 700 !important;
+        color: {T["text"]} !important;
+    }}
 
-/* ── Selectbox ── */
-[data-testid="stSelectbox"] > div > div {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    font-size: 14px !important;
-    color: {T["text"]} !important;
-}}
-[data-testid="stSelectbox"] > div > div:focus-within {{
-    border-color: {T["accent"]} !important;
-    box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
-}}
-[data-testid="stSelectbox"] svg {{ fill: {T["text2"]} !important; }}
-div[data-baseweb="popover"] ul,
-div[data-baseweb="menu"] {{
-    background: {T["bg2"]} !important;
-    border: 1px solid {T["border"]} !important;
-    border-radius: 10px !important;
-}}
-div[data-baseweb="popover"] li,
-[role="option"] {{
-    background: {T["bg2"]} !important;
-    color: {T["text"]} !important;
-}}
-div[data-baseweb="popover"] li:hover,
-[role="option"]:hover {{
-    background: {T["accent_bg"]} !important;
-    color: {T["accent"]} !important;
-}}
+    /* ── Regular buttons ── */
+    [data-testid="stButton"] button {{
+        background: {T["accent"]} !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        transition: all 0.2s !important;
+    }}
+    [data-testid="stButton"] button:hover {{
+        background: {T["accent2"]} !important;
+        box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
+        transform: translateY(-1px) !important;
+    }}
 
-/* ── Radio ── */
-[data-testid="stRadio"] label {{
-    font-size: 13px !important;
-    font-weight: 500 !important;
-    color: {T["radio_txt"]} !important;
-}}
+    /* ── Download buttons ── */
+    [data-testid="stDownloadButton"] button {{
+        background: {T["dl_btn_bg"]} !important;
+        color: {T["dl_btn_color"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        transition: all 0.2s !important;
+    }}
+    [data-testid="stDownloadButton"] button:hover {{
+        background: {T["accent_bg"]} !important;
+        border-color: {T["accent"]} !important;
+    }}
 
-/* ── Metric cards ── */
-div[data-testid="stMetric"] {{
-    background: {T["bg2"]} !important;
-    border-radius: 16px !important;
-    padding: 20px 24px !important;
-    border: 1px solid {T["border"]} !important;
-    box-shadow: 0 2px 16px {T["metric_shadow"]} !important;
-    transition: all 0.25s ease !important;
-}}
-div[data-testid="stMetric"]:hover {{
-    box-shadow: 0 8px 32px {T["metric_shadow"]} !important;
-    transform: translateY(-2px) !important;
-}}
-div[data-testid="stMetric"] label {{
-    font-size: 11px !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.07em !important;
-    color: {T["text3"]} !important;
-}}
-div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
-    font-size: 30px !important;
-    font-weight: 700 !important;
-    color: {T["text"]} !important;
-    font-family: 'Sora', sans-serif !important;
-}}
+    /* ── Dataframe ── */
+    [data-testid="stDataFrame"] {{
+        border-radius: 12px !important;
+        overflow: hidden !important;
+        border: 1px solid {T["border"]} !important;
+    }}
+    [data-testid="stDataFrame"] th {{
+        background: {T["bg3"]} !important;
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stDataFrame"] td {{
+        background: {T["bg2"]} !important;
+        color: {T["text"]} !important;
+    }}
 
-/* ── Buttons ── */
-[data-testid="stButton"] button {{
-    background: {T["accent"]} !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 10px !important;
-    font-weight: 600 !important;
-    font-size: 13px !important;
-    transition: all 0.2s !important;
-}}
-[data-testid="stButton"] button:hover {{
-    background: {T["accent2"]} !important;
-    box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
-    transform: translateY(-1px) !important;
-}}
+    /* ── Text input ── */
+    [data-testid="stTextInput"] input {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        font-size: 14px !important;
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stTextInput"] input:focus {{
+        border-color: {T["accent"]} !important;
+        box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
+    }}
+    [data-testid="stTextInput"] input::placeholder {{
+        color: {T["text3"]} !important;
+    }}
 
-/* ── Download buttons ── */
-[data-testid="stDownloadButton"] button {{
-    background: {T["dl_btn_bg"]} !important;
-    color: {T["dl_btn_color"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    font-weight: 600 !important;
-    font-size: 13px !important;
-    transition: all 0.2s !important;
-}}
-[data-testid="stDownloadButton"] button:hover {{
-    background: {T["accent_bg"]} !important;
-    border-color: {T["accent"]} !important;
-}}
+    /* ── Divider ── */
+    hr {{ border-color: {T["divider"]} !important; }}
 
-/* ── Dataframe ── */
-[data-testid="stDataFrame"] {{
-    border-radius: 12px !important;
-    overflow: hidden !important;
-    border: 1px solid {T["border"]} !important;
-}}
+    /* ── Alerts ── */
+    [data-testid="stAlert"] {{
+        border-radius: 12px !important;
+        font-size: 13px !important;
+        background: {T["bg2"]} !important;
+        color: {T["text"]} !important;
+    }}
 
-/* ── Text input ── */
-[data-testid="stTextInput"] input {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    font-size: 14px !important;
-    color: {T["text"]} !important;
-}}
-[data-testid="stTextInput"] input:focus {{
-    border-color: {T["accent"]} !important;
-    box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
-}}
-[data-testid="stTextInput"] input::placeholder {{ color: {T["text3"]} !important; }}
+    /* ── General text colors ── */
+    p, span, div, h1, h2, h3, h4 {{
+        color: {T["text"]};
+    }}
 
-/* ── Textarea ── */
-[data-testid="stTextArea"] textarea {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    color: {T["text"]} !important;
-    font-size: 14px !important;
-    font-family: 'DM Sans', sans-serif !important;
-}}
-[data-testid="stTextArea"] textarea:focus {{
-    border-color: {T["accent"]} !important;
-    box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
-}}
-[data-testid="stTextArea"] textarea::placeholder {{ color: {T["text3"]} !important; }}
+    /* ── Caption ── */
+    [data-testid="stCaptionContainer"] p {{
+        color: {T["text3"]} !important;
+    }}
 
-/* ── Number input ── */
-[data-testid="stNumberInput"] input {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    color: {T["text"]} !important;
-    font-size: 14px !important;
-}}
-[data-testid="stNumberInput"] button {{
-    background: {T["bg3"]} !important;
-    border: 1px solid {T["border"]} !important;
-    color: {T["text"]} !important;
-}}
+    /* ── Hide branding ── */
+    #MainMenu, footer {{ visibility: hidden; }}
+    header {{ visibility: hidden; }}
 
-/* ── Date input ── */
-[data-testid="stDateInput"] > div > div {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-}}
-[data-testid="stDateInput"] input {{
-    color: {T["text"]} !important;
-    background: transparent !important;
-}}
+    /* ── Calendar / Date picker popup ── */
+    div[data-baseweb="calendar"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 14px !important;
+    }}
+    div[data-baseweb="calendar"] * {{
+        color: {T["text"]} !important;
+        font-family: 'DM Sans', sans-serif !important;
+    }}
+    div[data-baseweb="calendar"] button {{
+        background: transparent !important;
+        color: {T["text"]} !important;
+        border-radius: 8px !important;
+        border: none !important;
+    }}
+    div[data-baseweb="calendar"] button:hover {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
+    /* Selected date */
+    div[data-baseweb="calendar"] [aria-selected="true"] button,
+    div[data-baseweb="calendar"] [aria-selected="true"] {{
+        background: {T["accent"]} !important;
+        color: white !important;
+        border-radius: 50% !important;
+    }}
+    /* Today highlight */
+    div[data-baseweb="calendar"] [data-today="true"] button {{
+        border: 2px solid {T["accent"]} !important;
+        color: {T["accent"]} !important;
+    }}
+    /* Month/year navigation */
+    div[data-baseweb="calendar"] [data-baseweb="select"] {{
+        background: {T["bg3"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 8px !important;
+    }}
+    div[data-baseweb="calendar"] [data-baseweb="select"] * {{
+        color: {T["text"]} !important;
+        background: transparent !important;
+    }}
+    /* Header row (Su Mo Tu etc) */
+    div[data-baseweb="calendar"] [data-testid="CalendarHeader"] * {{
+        color: {T["text3"]} !important;
+        font-weight: 600 !important;
+    }}
+    /* Disabled dates */
+    div[data-baseweb="calendar"] [aria-disabled="true"] button {{
+        color: {T["text3"]} !important;
+        opacity: 0.4 !important;
+    }}
+    /* Arrow navigation buttons */
+    div[data-baseweb="calendar"] [data-baseweb="button"] {{
+        background: {T["bg3"]} !important;
+        color: {T["text"]} !important;
+        border-radius: 8px !important;
+    }}
+    div[data-baseweb="calendar"] [data-baseweb="button"]:hover {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
 
-/* ── Calendar popup ── */
-div[data-baseweb="calendar"] {{
-    background: {T["bg2"]} !important;
-    border: 1px solid {T["border"]} !important;
-    border-radius: 14px !important;
-}}
-div[data-baseweb="calendar"] * {{ color: {T["text"]} !important; font-family: 'DM Sans', sans-serif !important; }}
-div[data-baseweb="calendar"] button {{ background: transparent !important; border-radius: 8px !important; border: none !important; }}
-div[data-baseweb="calendar"] button:hover {{ background: {T["accent_bg"]} !important; color: {T["accent"]} !important; }}
-div[data-baseweb="calendar"] [aria-selected="true"] button {{ background: {T["accent"]} !important; color: white !important; border-radius: 50% !important; }}
-div[data-baseweb="calendar"] [data-baseweb="button"] {{ background: {T["bg3"]} !important; }}
-div[data-baseweb="calendar"] [data-baseweb="button"]:hover {{ background: {T["accent_bg"]} !important; }}
+    /* ── Number input ── */
+    [data-testid="stNumberInput"] input {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        color: {T["text"]} !important;
+        font-size: 14px !important;
+    }}
+    [data-testid="stNumberInput"] button {{
+        background: {T["bg3"]} !important;
+        border: 1px solid {T["border"]} !important;
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stNumberInput"] button:hover {{
+        background: {T["accent_bg"]} !important;
+    }}
 
-/* ── Form container ── */
-[data-testid="stForm"] {{
-    background: {T["bg2"]} !important;
-    border: 1px solid {T["border"]} !important;
-    border-radius: 16px !important;
-    padding: 24px !important;
-}}
+    /* ── Date input ── */
+    [data-testid="stDateInput"] input {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        color: {T["text"]} !important;
+        font-size: 14px !important;
+    }}
 
-/* ── Expander ── */
-[data-testid="stExpander"] {{
-    background: {T["bg2"]} !important;
-    border: 1px solid {T["border"]} !important;
-    border-radius: 12px !important;
-    margin-bottom: 8px !important;
-}}
-[data-testid="stExpander"] summary {{
-    color: {T["text"]} !important;
-    font-weight: 500 !important;
-}}
+    /* ── Textarea ── */
+    [data-testid="stTextArea"] textarea {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        color: {T["text"]} !important;
+        font-size: 14px !important;
+    }}
+    [data-testid="stTextArea"] textarea:focus {{
+        border-color: {T["accent"]} !important;
+        box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
+    }}
+    [data-testid="stTextArea"] textarea::placeholder {{
+        color: {T["text3"]} !important;
+    }}
 
-/* ── Alerts ── */
-[data-testid="stAlert"] {{
-    border-radius: 12px !important;
-    font-size: 13px !important;
-    background: {T["bg2"]} !important;
-    color: {T["text"]} !important;
-}}
+    /* ── Form container ── */
+    [data-testid="stForm"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 16px !important;
+        padding: 24px !important;
+    }}
 
-/* ── Caption ── */
-[data-testid="stCaptionContainer"] p {{ color: {T["text3"]} !important; }}
-small {{ color: {T["text3"]} !important; }}
+    /* ── Form submit button ── */
+    [data-testid="stFormSubmitButton"] button {{
+        background: {T["accent"]} !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        width: 100% !important;
+        transition: all 0.2s !important;
+    }}
+    [data-testid="stFormSubmitButton"] button:hover {{
+        background: {T["accent2"]} !important;
+        box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
+        transform: translateY(-1px) !important;
+    }}
 
-/* ── Divider ── */
-hr {{ border-color: {T["divider"]} !important; }}
+    /* ── Expander ── */
+    [data-testid="stExpander"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 12px !important;
+        margin-bottom: 8px !important;
+    }}
+    [data-testid="stExpander"] summary {{
+        color: {T["text"]} !important;
+        font-weight: 500 !important;
+        background: {T["bg2"]} !important;
+    }}
+    [data-testid="stExpander"] > div {{
+        background: {T["bg2"]} !important;
+    }}
 
-/* ── Form submit button ── */
-[data-testid="stFormSubmitButton"] button {{
-    background: {T["accent"]} !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 10px !important;
-    font-weight: 600 !important;
-    font-size: 14px !important;
-    padding: 12px !important;
-    transition: all 0.2s !important;
-    width: 100% !important;
-}}
-[data-testid="stFormSubmitButton"] button:hover {{
-    background: {T["accent2"]} !important;
-    box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
-    transform: translateY(-1px) !important;
-}}
-
-/* ── Nested tabs (sub-tabs) ── */
-[data-testid="stTabs"] [data-testid="stTabs"] [data-baseweb="tab-list"] {{
-    display: flex !important;
-    border-bottom: 1px solid {T["border"]} !important;
-    background: transparent !important;
-    padding: 0 !important;
-    margin-bottom: 16px !important;
-}}
-[data-testid="stTabs"] [data-testid="stTabs"] button {{
-    font-family: 'DM Sans', sans-serif !important;
-    font-weight: 600 !important;
-    font-size: 13px !important;
-    color: {T["tab_inactive"]} !important;
-    padding: 8px 16px !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-}}
-[data-testid="stTabs"] [data-testid="stTabs"] button[aria-selected="true"] {{
-    color: {T["tab_active"]} !important;
-    border-bottom: 2px solid {T["tab_active"]} !important;
-}}
+    /* ── Nested sub-tabs ── */
+    [data-testid="stTabs"] [data-testid="stTabs"] button {{
+        font-size: 13px !important;
+        padding: 8px 16px !important;
+        color: {T["tab_inactive"]} !important;
+        background: transparent !important;
+    }}
+    [data-testid="stTabs"] [data-testid="stTabs"] button[aria-selected="true"] {{
+        color: {T["tab_active"]} !important;
+        border-bottom: 2px solid {T["tab_active"]} !important;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════
-# SIDEBAR — New Fixed Navigation
+# SIDEBAR — Filter Panel
 # ══════════════════════════════════════════
 with st.sidebar:
+
+    # ── Brand header ──
+    toggle_icon = "☀️" if dm else "🌙"
+    toggle_label = "Light Mode" if dm else "Dark Mode"
+    st.markdown(f"""
+    <div style="
+        padding: 24px 8px 16px 8px;
+        border-bottom: 1px solid {T['border']};
+        margin-bottom: 16px;
+    ">
+        <div style="display:flex; align-items:center; gap:10px; justify-content:space-between;">
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div style="
+                    width:36px; height:36px; border-radius:10px;
+                    background: linear-gradient(135deg, #5b4fcf, #9b8fef);
+                    display:flex; align-items:center; justify-content:center;
+                    font-size:18px; flex-shrink:0;
+                ">🏢</div>
+                <div>
+                    <div style="font-size:15px; font-weight:700; color:{T['text']}; line-height:1.2;">OrgChart HR</div>
+                    <div style="font-size:11px; color:{T['text3']}; font-weight:500;">People Analytics</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Dark/Light toggle ──
+    if st.button(f"{toggle_icon}  {toggle_label}", use_container_width=True):
+        st.session_state.dark_mode = not st.session_state.dark_mode
+        st.rerun()
+
+    st.markdown(f"<div style='margin:12px 0; height:1px; background:{T['border']};'></div>", unsafe_allow_html=True)
+
+    # ── Data source status ──
+    if data_source == "google_sheets":
+        st.markdown(f"""
+        <div style="
+            background:{T['success_bg']}; border:1px solid {T['success_bdr']};
+            border-radius:10px; padding:10px 14px;
+            display:flex; align-items:center; gap:8px; margin-bottom:12px;
+        ">
+            <span style="font-size:10px;">🟢</span>
+            <span style="font-size:12px; color:{T['success_txt']}; font-weight:500;">Terhubung ke Google Sheets</span>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div style="
+            background:{T['warn_bg']}; border:1px solid {T['warn_bdr']};
+            border-radius:10px; padding:10px 14px;
+            display:flex; align-items:center; gap:8px; margin-bottom:12px;
+        ">
+            <span style="font-size:10px;">🟡</span>
+            <span style="font-size:12px; color:{T['warn_txt']}; font-weight:500;">Menggunakan data lokal</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    if st.button("🔄 Refresh Data", use_container_width=True, key="refresh_btn"):
+        st.cache_data.clear()
+        st.rerun()
+
+    st.markdown(f"<div style='margin:12px 0; height:1px; background:{T['border']};'></div>", unsafe_allow_html=True)
+
+    # ── Metrics ──
+    st.markdown(f"""
+    <div style="font-size:10px; font-weight:700; text-transform:uppercase;
+        letter-spacing:0.08em; color:{T['text3']}; padding: 4px 0 10px 0;">
+        Informasi Data
+    </div>
+    """, unsafe_allow_html=True)
+
     total_karyawan = len(df)
     total_bu       = df["Business Unit"].nunique()
     total_div      = df["Division"].nunique()
     total_mgr      = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
-    toggle_icon    = "☀️" if dm else "🌙"
-    toggle_label   = "Light Mode" if dm else "Dark Mode"
-    status_dot     = "🟢" if data_source == "google_sheets" else "🟡"
-    status_txt     = "Live · Google Sheets" if data_source == "google_sheets" else "Lokal · CSV"
+
+    # Clickable metric cards
+    cards = [
+        ("Total Karyawan", f"{total_karyawan:,}", "👥", 1, {}),
+        ("Business Unit",  str(total_bu),         "🏢", 0, {"mode": "Per Divisi", "focus": "bu"}),
+        ("Divisi",         str(total_div),         "📁", 0, {"mode": "Per Divisi", "focus": "div"}),
+        ("Total Manager",  str(total_mgr),         "👔", 3, {}),
+    ]
+    # active_tab index mapping:
+    # 0 = Org Chart, 1 = Data Karyawan, 2 = Manager ID Hilang, 3 = Daftar Manager
 
     st.markdown(f"""
     <style>
-    /* ── Override all sidebar buttons to nav style ── */
-    [data-testid="stSidebar"] [data-testid="stButton"] button {{
-        background: transparent !important;
-        color: {T['sidebar_text']} !important;
-        border: none !important;
+    .metric-card-btn button {{
+        background: {T['bg3']} !important;
+        border: 1px solid {T['border']} !important;
         border-radius: 12px !important;
-        text-align: left !important;
-        font-size: 13.5px !important;
-        font-weight: 500 !important;
-        padding: 11px 16px !important;
-        box-shadow: none !important;
-        margin-bottom: 2px !important;
+        padding: 12px 16px !important;
         width: 100% !important;
-        transition: all 0.18s ease !important;
+        text-align: left !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        margin-bottom: 8px !important;
+        color: {T['text']} !important;
         font-family: 'DM Sans', sans-serif !important;
     }}
-    [data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
-        background: {T['sidebar_hover']} !important;
-        color: {T['sidebar_active']} !important;
-        transform: translateX(4px) !important;
+    .metric-card-btn button:hover {{
+        background: {T['accent_bg']} !important;
+        border-color: {T['accent']} !important;
+        transform: translateX(3px) !important;
+        box-shadow: 0 4px 16px {T['metric_shadow']} !important;
     }}
     </style>
-
-    <!-- Brand -->
-    <div style="padding: 28px 20px 20px 20px; border-bottom: 1px solid rgba(255,255,255,0.15);">
-        <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px;">
-            <div style="
-                width:42px; height:42px; border-radius:12px;
-                background: rgba(255,255,255,0.2);
-                display:flex; align-items:center; justify-content:center;
-                font-size:22px; flex-shrink:0; backdrop-filter: blur(10px);
-            ">🏢</div>
-            <div>
-                <div style="font-size:16px; font-weight:700; color:{T['sidebar_active']}; line-height:1.2; font-family:'Sora',sans-serif;">Mekari</div>
-                <div style="font-size:11px; color:{T['sidebar_text2']}; font-weight:500;">Organizational Chart Dashboard</div>
-            </div>
-        </div>
-        <!-- Data status -->
-        <div style="
-            background: rgba(255,255,255,0.12); border-radius:8px;
-            padding: 7px 12px; display:flex; align-items:center; gap:7px;
-        ">
-            <span style="font-size:9px;">{status_dot}</span>
-            <span style="font-size:11px; color:{T['sidebar_text2']}; font-weight:500;">{status_txt}</span>
-        </div>
-    </div>
-
-    <!-- Stats strip -->
-    <div style="padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.1);">
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-            <div style="background:rgba(255,255,255,0.1); border-radius:10px; padding:10px 12px; text-align:center;">
-                <div style="font-size:18px; font-weight:700; color:{T['sidebar_active']}; font-family:'Sora',sans-serif;">{total_karyawan:,}</div>
-                <div style="font-size:10px; color:{T['sidebar_text2']}; font-weight:500; margin-top:2px;">Karyawan</div>
-            </div>
-            <div style="background:rgba(255,255,255,0.1); border-radius:10px; padding:10px 12px; text-align:center;">
-                <div style="font-size:18px; font-weight:700; color:{T['sidebar_active']}; font-family:'Sora',sans-serif;">{total_mgr}</div>
-                <div style="font-size:10px; color:{T['sidebar_text2']}; font-weight:500; margin-top:2px;">Manager</div>
-            </div>
-            <div style="background:rgba(255,255,255,0.1); border-radius:10px; padding:10px 12px; text-align:center;">
-                <div style="font-size:18px; font-weight:700; color:{T['sidebar_active']}; font-family:'Sora',sans-serif;">{total_bu}</div>
-                <div style="font-size:10px; color:{T['sidebar_text2']}; font-weight:500; margin-top:2px;">Business Unit</div>
-            </div>
-            <div style="background:rgba(255,255,255,0.1); border-radius:10px; padding:10px 12px; text-align:center;">
-                <div style="font-size:18px; font-weight:700; color:{T['sidebar_active']}; font-family:'Sora',sans-serif;">{total_div}</div>
-                <div style="font-size:10px; color:{T['sidebar_text2']}; font-weight:500; margin-top:2px;">Divisi</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Nav menu label -->
-    <div style="padding: 16px 20px 8px 20px;">
-        <div style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em; color:{T['sidebar_text2']};">Menu</div>
-    </div>
     """, unsafe_allow_html=True)
 
-    # ── Nav menu buttons ──
-    nav_items = [
-        ("📊", "Data Summary",       "sec-summary"),
-        ("🌳", "Org Chart",          "sec-orgchart"),
-        ("👥", "Data Karyawan",      "sec-karyawan"),
-        ("⚠️", "Manager ID Hilang",  "sec-managerid"),
-        ("👔", "Daftar Manager",     "sec-manager"),
-        ("📝", "Change Request",     "sec-changereq"),
-    ]
-    for icon_nav, label_nav, sec_id in nav_items:
-        if st.button(f"{icon_nav}  {label_nav}", key=f"nav_{sec_id}", use_container_width=True):
-            st.session_state[f"scroll_to"] = sec_id
+    # Style override for metric cards (different from accent buttons)
+    st.markdown(f"""
+    <style>
+    [data-testid="stSidebar"] [data-testid="stButton"] button {{
+        background: {T['bg3']} !important;
+        color: {T['text']} !important;
+        border: 1.5px solid {T['border']} !important;
+        border-radius: 12px !important;
+        text-align: left !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        padding: 14px 16px !important;
+        box-shadow: none !important;
+        margin-bottom: 4px !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
+        background: {T['accent_bg']} !important;
+        border-color: {T['accent']} !important;
+        color: {T['accent']} !important;
+        transform: translateX(4px) !important;
+        box-shadow: 0 4px 16px {T['metric_shadow']} !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    for label, value, icon, tab_idx, nav_ctx in cards:
+        btn_label = f"{icon}  {label} : {value}"
+        if st.button(btn_label, key=f"card_{label}", use_container_width=True):
+            st.session_state.active_tab = tab_idx
+            st.session_state.nav_filter = nav_ctx
             st.rerun()
 
     st.markdown(f"""
-    <div style="padding: 0 20px; margin-top: 4px;">
-        <div style="height:1px; background:rgba(255,255,255,0.12); margin:12px 0;"></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── Refresh & Toggle ──
-    col_sb1, col_sb2 = st.columns(2)
-    with col_sb1:
-        if st.button("🔄 Refresh", use_container_width=True, key="refresh_btn"):
-            st.cache_data.clear()
-            st.rerun()
-    with col_sb2:
-        if st.button(f"{toggle_icon} Mode", use_container_width=True, key="toggle_btn"):
-            st.session_state.dark_mode = not st.session_state.dark_mode
-            st.rerun()
-
-    st.markdown(f"""
-    <div style="padding: 16px 20px; position:absolute; bottom:0; left:0; right:0;">
-        <div style="font-size:10px; color:{T['sidebar_text2']}; text-align:center;">
-            Auto-refresh setiap 5 menit
-        </div>
+    <div style="margin-top:16px; font-size:11px; color:{T['text3']}; text-align:center;">
+        Auto-refresh setiap 5 menit
     </div>
     """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════
-# MAIN CONTENT — Scrollable Sections
+# MAIN — Header
 # ══════════════════════════════════════════
-
-# JS scroll-to-section handler
-scroll_target = st.session_state.get("scroll_to", "")
-if scroll_target:
-    st.markdown(f"""
-    <script>
-    (function() {{
-        function scrollToSection() {{
-            const el = document.getElementById("{scroll_target}");
-            if (el) {{
-                el.scrollIntoView({{ behavior: "smooth", block: "start" }});
-                return true;
-            }}
-            return false;
-        }}
-        let attempts = 0;
-        const iv = setInterval(function() {{
-            if (scrollToSection() || attempts > 20) clearInterval(iv);
-            attempts++;
-        }}, 100);
-    }})();
-    </script>
-    """, unsafe_allow_html=True)
-    st.session_state["scroll_to"] = ""
-
-# Section wrapper helper
-def section_header(sec_id, icon, title, subtitle=""):
-    return f"""
-    <div id="{sec_id}" style="
-        padding: 32px 40px 0 40px;
-        scroll-margin-top: 20px;
-    ">
-        <div style="display:flex; align-items:center; gap:14px; margin-bottom:6px;">
-            <div style="
-                width:44px; height:44px; border-radius:12px;
-                background: linear-gradient(135deg, #5b4fcf, #9b8fef);
-                display:flex; align-items:center; justify-content:center;
-                font-size:20px; flex-shrink:0;
-                box-shadow: 0 4px 16px rgba(91,79,207,0.3);
-            ">{icon}</div>
-            <div>
-                <div style="font-size:22px; font-weight:700; color:{T['text']}; font-family:'Sora',sans-serif; line-height:1.2;">{title}</div>
-                {"" if not subtitle else f'<div style="font-size:13px; color:{T["text3"]}; margin-top:3px;">{subtitle}</div>'}
-            </div>
-        </div>
-        <div style="height:1px; background:{T['border']}; margin: 16px 0 24px 0;"></div>
+st.markdown(f"""
+<div style="
+    padding: 32px 0 24px 0;
+    border-bottom: 1px solid {T['border']};
+    margin-bottom: 28px;
+">
+    <div style="font-size:28px; font-weight:700; color:{T['text']}; line-height:1.2;">
+        Org Chart Dashboard
     </div>
-    """
+    <div style="font-size:14px; color:{T['text3']}; margin-top:6px; font-weight:400;">
+        Visualisasi & analitik struktur organisasi real-time
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-def section_body_start():
-    return f'<div style="padding: 0 40px 40px 40px;">'
-
-def section_body_end():
-    return '</div>'
-
-def section_divider():
-    return f'<div style="height:8px; background:{T["bg"]}; margin:0;"></div>'
-
-# Keep tabs for content organization (hidden via CSS)
+# ── Tab navigation via session state ──
 TAB_LABELS = ["🌳  Org Chart", "📋  Data Karyawan", "⚠️  Manager ID Hilang", "👔  Daftar Manager", "📝  Change Request"]
 active = st.session_state.active_tab
+
+# JavaScript trick: use query params to activate correct tab
 tab1, tab2, tab3, tab4, tab5 = st.tabs(TAB_LABELS)
 
 # ══════════════════════════════════════════
@@ -1511,45 +1576,6 @@ setTimeout(fitView, 300);
 # ══════════════════════════════════════════
 # TAB 1 — ORG CHART
 # ══════════════════════════════════════════
-# ══════════════════════════════════════════
-# SECTION 0 — DATA SUMMARY
-# ══════════════════════════════════════════
-st.markdown(section_header("sec-summary", "📊", "Data Summary", "Ringkasan kondisi organisasi saat ini"), unsafe_allow_html=True)
-st.markdown(section_body_start(), unsafe_allow_html=True)
-
-_summary_missing = len(df[(df["Manager ID"] == "") | (df["Manager ID"].isna()) | (df["Manager ID"] == "nan")])
-_summary_mgr_ids = df[df["Manager ID"] != ""]["Manager ID"].unique()
-_summary_total_mgr = len(df[df["Employee ID"].isin(_summary_mgr_ids)])
-_summary_level0 = len(df[df["Career Stage"].astype(str).str.strip().str.lower() == "level 0"])
-
-_s1, _s2, _s3, _s4, _s5 = st.columns(5)
-_s1.metric("👥 Total Karyawan",   f"{len(df):,}")
-_s2.metric("🏢 Business Unit",    df["Business Unit"].nunique())
-_s3.metric("📁 Divisi",           df["Division"].nunique())
-_s4.metric("👔 Total Manager",    _summary_total_mgr)
-_s5.metric("⚠️ Manager ID Hilang", _summary_missing)
-
-st.markdown("<div style='margin-top:20px;'></div>", unsafe_allow_html=True)
-
-_col_dist1, _col_dist2 = st.columns(2)
-with _col_dist1:
-    _bu_count = df.groupby("Business Unit").size().reset_index(name="Jumlah").sort_values("Jumlah", ascending=False)
-    st.markdown(f"<div style='font-size:13px; font-weight:700; color:{T["text"]}; margin-bottom:10px;'>Distribusi per Business Unit</div>", unsafe_allow_html=True)
-    st.dataframe(_bu_count, use_container_width=True, height=240, hide_index=True)
-with _col_dist2:
-    _cs_count = df[df["Career Stage"].astype(str).str.strip() != ""].groupby("Career Stage").size().reset_index(name="Jumlah").sort_values("Jumlah", ascending=False)
-    st.markdown(f"<div style='font-size:13px; font-weight:700; color:{T["text"]}; margin-bottom:10px;'>Distribusi Career Stage</div>", unsafe_allow_html=True)
-    st.dataframe(_cs_count, use_container_width=True, height=240, hide_index=True)
-
-st.markdown(section_body_end(), unsafe_allow_html=True)
-st.markdown(f'<div style="height:4px; background:linear-gradient(90deg,{T["accent"]},transparent); margin:0 40px;"></div>', unsafe_allow_html=True)
-
-# ══════════════════════════════════════════
-# SECTION 1 — ORG CHART
-# ══════════════════════════════════════════
-st.markdown(section_header("sec-orgchart", "🌳", "Org Chart", "Visualisasi hierarki struktur organisasi real-time"), unsafe_allow_html=True)
-st.markdown(section_body_start(), unsafe_allow_html=True)
-
 with tab1:
 
     st.markdown(f"""
@@ -1697,15 +1723,6 @@ with tab1:
 # ══════════════════════════════════════════
 # TAB 2 — DATA KARYAWAN
 # ══════════════════════════════════════════
-st.markdown(section_body_end(), unsafe_allow_html=True)
-st.markdown(f'<div style="height:4px; background:linear-gradient(90deg,{T["accent"]},transparent); margin:0 40px;"></div>', unsafe_allow_html=True)
-
-# ══════════════════════════════════════════
-# SECTION 2 — DATA KARYAWAN
-# ══════════════════════════════════════════
-st.markdown(section_header("sec-karyawan", "👥", "Data Karyawan", "Seluruh data karyawan dengan filter dan pencarian"), unsafe_allow_html=True)
-st.markdown(section_body_start(), unsafe_allow_html=True)
-
 with tab2:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
@@ -1760,15 +1777,6 @@ with tab2:
 # ══════════════════════════════════════════
 # TAB 3 — KARYAWAN DENGAN MANAGER ID HILANG
 # ══════════════════════════════════════════
-st.markdown(section_body_end(), unsafe_allow_html=True)
-st.markdown(f'<div style="height:4px; background:linear-gradient(90deg,{T["accent"]},transparent); margin:0 40px;"></div>', unsafe_allow_html=True)
-
-# ══════════════════════════════════════════
-# SECTION 3 — MANAGER ID HILANG
-# ══════════════════════════════════════════
-st.markdown(section_header("sec-managerid", "⚠️", "Manager ID Hilang", "Karyawan dengan Manager ID kosong — perlu diperbaiki di backend"), unsafe_allow_html=True)
-st.markdown(section_body_start(), unsafe_allow_html=True)
-
 with tab3:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
@@ -1852,15 +1860,6 @@ with tab3:
         )
 
 # ══════════════════════════════════════════
-st.markdown(section_body_end(), unsafe_allow_html=True)
-st.markdown(f'<div style="height:4px; background:linear-gradient(90deg,{T["accent"]},transparent); margin:0 40px;"></div>', unsafe_allow_html=True)
-
-# ══════════════════════════════════════════
-# SECTION 4 — DAFTAR MANAGER
-# ══════════════════════════════════════════
-st.markdown(section_header("sec-manager", "👔", "Daftar Manager", "Seluruh karyawan yang memiliki bawahan langsung"), unsafe_allow_html=True)
-st.markdown(section_body_start(), unsafe_allow_html=True)
-
 # TAB 4 — DAFTAR MANAGER
 # ══════════════════════════════════════════
 with tab4:
@@ -2035,15 +2034,6 @@ with tab4:
         )
 
 # ══════════════════════════════════════════
-st.markdown(section_body_end(), unsafe_allow_html=True)
-st.markdown(f'<div style="height:4px; background:linear-gradient(90deg,{T["accent"]},transparent); margin:0 40px;"></div>', unsafe_allow_html=True)
-
-# ══════════════════════════════════════════
-# SECTION 5 — CHANGE REQUEST
-# ══════════════════════════════════════════
-st.markdown(section_header("sec-changereq", "📝", "Change Request", "Kelola permintaan perubahan struktur organisasi"), unsafe_allow_html=True)
-st.markdown(section_body_start(), unsafe_allow_html=True)
-
 # TAB 5 — CHANGE REQUEST
 # ══════════════════════════════════════════
 with tab5:
@@ -2562,8 +2552,6 @@ with tab5:
                         "cr_history.xlsx",
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True)
-
-st.markdown(section_body_end(), unsafe_allow_html=True)
 
 # ══════════════════════════════════════════
 # AUTO-NAVIGATE via JS — click tab by index
