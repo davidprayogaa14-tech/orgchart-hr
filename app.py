@@ -1,5 +1,3 @@
-kode: 7 April 2026, 8.30 AM
-
 import streamlit as st
 import pandas as pd
 import json
