@@ -783,9 +783,15 @@ html, body, [class*="css"] {{
 
 /* ── Main block container — right panel ── */
 .block-container {{
-    padding: 0 !important;
+    padding: 0 0 60px 0 !important;
     max-width: 100% !important;
     background: {T["bg"]} !important;
+}}
+
+/* ── Ensure content doesn't go under sidebar ── */
+section.main {{
+    margin-left: 0 !important;
+    padding-left: 0 !important;
 }}
 
 /* ── SIDEBAR — Fixed left panel ── */
@@ -828,12 +834,9 @@ section.main > div {{
     min-height: 100vh !important;
 }}
 
-/* ── Tabs — hide native Streamlit tabs ── */
-[data-testid="stTabs"] [data-baseweb="tab-list"] {{
+/* ── Tabs — hidden completely (content rendered as sections) ── */
+[data-testid="stTabs"] {{
     display: none !important;
-}}
-[data-testid="stTabs"] [data-baseweb="tab-panel"] {{
-    padding: 0 !important;
 }}
 
 /* ── Selectbox ── */
@@ -1272,10 +1275,7 @@ def section_body_end():
 def section_divider():
     return f'<div style="height:8px; background:{T["bg"]}; margin:0;"></div>'
 
-# Keep tabs for content organization (hidden via CSS)
-TAB_LABELS = ["🌳  Org Chart", "📋  Data Karyawan", "⚠️  Manager ID Hilang", "👔  Daftar Manager", "📝  Change Request"]
-active = st.session_state.active_tab
-tab1, tab2, tab3, tab4, tab5 = st.tabs(TAB_LABELS)
+# Tabs removed — content rendered directly as scrollable sections
 
 # ══════════════════════════════════════════
 # ORG CHART HTML
@@ -1550,149 +1550,148 @@ st.markdown(f'<div style="height:4px; background:linear-gradient(90deg,{T["accen
 st.markdown(section_header("sec-orgchart", "🌳", "Org Chart", "Visualisasi hierarki struktur organisasi real-time"), unsafe_allow_html=True)
 st.markdown(section_body_start(), unsafe_allow_html=True)
 
-with tab1:
+
+st.markdown(f"""
+<div style="margin-bottom:16px;">
+    <div style="font-size:13px; font-weight:600; color:{T['text3']}; text-transform:uppercase;
+        letter-spacing:0.06em; margin-bottom:10px;">Mode Tampilan</div>
+</div>
+""", unsafe_allow_html=True)
+view_mode = st.radio("", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True, label_visibility="collapsed")
+
+if view_mode == "Per Divisi":
 
     st.markdown(f"""
-    <div style="margin-bottom:16px;">
-        <div style="font-size:13px; font-weight:600; color:{T['text3']}; text-transform:uppercase;
-            letter-spacing:0.06em; margin-bottom:10px;">Mode Tampilan</div>
-    </div>
+    <div style="font-size:12px; font-weight:600; color:{T['text3']}; text-transform:uppercase;
+        letter-spacing:0.06em; margin: 16px 0 10px 0;">Filter</div>
     """, unsafe_allow_html=True)
-    view_mode = st.radio("", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True, label_visibility="collapsed")
+    col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
+    with col_a:
+        bu_list = sorted(df["Business Unit"].dropna().unique().tolist())
+        selected_bu = st.selectbox("🏢 Business Unit", bu_list, key="sel_bu")
+    with col_b:
+        div_list = sorted(df[df["Business Unit"] == selected_bu]["Division"].dropna().unique().tolist())
+        selected_div = st.selectbox("📁 Divisi", div_list, key="sel_div")
+    with col_c:
+        sbu_opts_raw = df[
+            (df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)
+        ]["SBU/Tribe"].dropna().unique().tolist()
+        sbu_opts_raw = [s for s in sbu_opts_raw if s.strip() != ""]
+        sbu_opts = ["Semua SBU"] + sorted(sbu_opts_raw)
+        selected_sbu = st.selectbox("🏷️ SBU/Tribe", sbu_opts, key="sel_sbu")
 
-    if view_mode == "Per Divisi":
+    filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
+    if selected_sbu != "Semua SBU":
+        filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
 
-        st.markdown(f"""
-        <div style="font-size:12px; font-weight:600; color:{T['text3']}; text-transform:uppercase;
-            letter-spacing:0.06em; margin: 16px 0 10px 0;">Filter</div>
-        """, unsafe_allow_html=True)
-        col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
-        with col_a:
-            bu_list = sorted(df["Business Unit"].dropna().unique().tolist())
-            selected_bu = st.selectbox("🏢 Business Unit", bu_list, key="sel_bu")
-        with col_b:
-            div_list = sorted(df[df["Business Unit"] == selected_bu]["Division"].dropna().unique().tolist())
-            selected_div = st.selectbox("📁 Divisi", div_list, key="sel_div")
-        with col_c:
-            sbu_opts_raw = df[
-                (df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)
-            ]["SBU/Tribe"].dropna().unique().tolist()
-            sbu_opts_raw = [s for s in sbu_opts_raw if s.strip() != ""]
-            sbu_opts = ["Semua SBU"] + sorted(sbu_opts_raw)
-            selected_sbu = st.selectbox("🏷️ SBU/Tribe", sbu_opts, key="sel_sbu")
+    all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
 
-        filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
-        if selected_sbu != "Semua SBU":
-            filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
+    with col_d:
+        leader_opts = ["Semua (divisi penuh)"] + sorted(all_leaders)
+        selected_leader = st.selectbox("👤 Filter by Leader", leader_opts, key="sel_leader")
 
-        all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
+    if selected_leader != "Semua (divisi penuh)":
+        leader_id = filtered[filtered["Employee Name"] == selected_leader]["Employee ID"].values
+        if len(leader_id) > 0:
+            leader_id = leader_id[0]
+            sub_ids = set()
+            to_visit = [leader_id]
+            while to_visit:
+                curr = to_visit.pop()
+                sub_ids.add(curr)
+                to_visit.extend(df[df["Manager ID"] == curr]["Employee ID"].tolist())
+            filtered = df[df["Employee ID"].isin(sub_ids)].copy()
 
-        with col_d:
-            leader_opts = ["Semua (divisi penuh)"] + sorted(all_leaders)
-            selected_leader = st.selectbox("👤 Filter by Leader", leader_opts, key="sel_leader")
+    # ── Level filter ──
+    col_lv, col_info = st.columns([2, 4])
+    with col_lv:
+        level_opt = st.selectbox(
+            "📶 Expand Level",
+            ["All Level", "Top Level", "Level 1"],
+            help="Atur berapa level yang ditampilkan secara default"
+        )
+    with col_info:
+        st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan di divisi ini")
 
-        if selected_leader != "Semua (divisi penuh)":
-            leader_id = filtered[filtered["Employee Name"] == selected_leader]["Employee ID"].values
-            if len(leader_id) > 0:
-                leader_id = leader_id[0]
-                sub_ids = set()
-                to_visit = [leader_id]
-                while to_visit:
-                    curr = to_visit.pop()
-                    sub_ids.add(curr)
-                    to_visit.extend(df[df["Manager ID"] == curr]["Employee ID"].tolist())
-                filtered = df[df["Employee ID"].isin(sub_ids)].copy()
+    level_map = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}
+    selected_level = level_map[level_opt]
 
-        # ── Level filter ──
-        col_lv, col_info = st.columns([2, 4])
-        with col_lv:
-            level_opt = st.selectbox(
-                "📶 Expand Level",
-                ["All Level", "Top Level", "Level 1"],
-                help="Atur berapa level yang ditampilkan secara default"
-            )
-        with col_info:
-            st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan di divisi ini")
+    all_ids_needed = get_all_managers(filtered["Employee ID"].tolist(), df)
+    full_data = df[df["Employee ID"].isin(all_ids_needed)].copy()
+    all_ids_set = set(full_data["Employee ID"].tolist())
+    root_ids = [
+        str(row["Employee ID"]) for _, row in full_data.iterrows()
+        if str(row["Manager ID"]) not in all_ids_set or str(row["Manager ID"]) in {"", "nan"}
+    ]
 
-        level_map = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}
-        selected_level = level_map[level_opt]
+    tree_data = build_tree_json(full_data, selected_div, root_ids, mode="division")
+    chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T)
+    st.components.v1.html(chart_html, height=680, scrolling=False)
 
-        all_ids_needed = get_all_managers(filtered["Employee ID"].tolist(), df)
-        full_data = df[df["Employee ID"].isin(all_ids_needed)].copy()
-        all_ids_set = set(full_data["Employee ID"].tolist())
-        root_ids = [
-            str(row["Employee ID"]) for _, row in full_data.iterrows()
-            if str(row["Manager ID"]) not in all_ids_set or str(row["Manager ID"]) in {"", "nan"}
-        ]
+    # ── Download buttons ──
+    st.markdown("**⬇️ Download Data**")
+    col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1, 1, 1, 1])
+    with col_dl1:
+        csv = filtered.to_csv(index=False).encode("utf-8")
+        st.download_button("📄 CSV", csv, f"{selected_div}.csv", "text/csv", use_container_width=True)
+    with col_dl2:
+        excel_data = to_excel(filtered)
+        st.download_button("📊 Excel", excel_data, f"{selected_div}.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    with col_dl3:
+        try:
+            pdf_title = f"Org Chart — {selected_div} ({selected_bu})"
+            pdf_data = generate_pdf(tree_data, pdf_title)
+            st.download_button("📑 PDF (Full)", pdf_data, f"{selected_div}_full.pdf", "application/pdf", use_container_width=True)
+        except Exception:
+            st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
+    with col_dl4:
+        try:
+            pdf_title_sum = f"Org Chart Summary — {selected_div} ({selected_bu})"
+            pdf_data_sum = generate_pdf_summary(tree_data, pdf_title_sum)
+            st.download_button("📑 PDF (Summary)", pdf_data_sum, f"{selected_div}_summary.pdf", "application/pdf", use_container_width=True)
+        except Exception:
+            st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
 
-        tree_data = build_tree_json(full_data, selected_div, root_ids, mode="division")
-        chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T)
-        st.components.v1.html(chart_html, height=680, scrolling=False)
+else:
+    # ── SELURUH PERUSAHAAN ──
+    st.info("⚠️ Mode seluruh perusahaan menampilkan semua karyawan. Gunakan zoom out dan collapse untuk navigasi.")
 
-        # ── Download buttons ──
-        st.markdown("**⬇️ Download Data**")
-        col_dl1, col_dl2, col_dl3, col_dl4 = st.columns([1, 1, 1, 1])
-        with col_dl1:
-            csv = filtered.to_csv(index=False).encode("utf-8")
-            st.download_button("📄 CSV", csv, f"{selected_div}.csv", "text/csv", use_container_width=True)
-        with col_dl2:
-            excel_data = to_excel(filtered)
-            st.download_button("📊 Excel", excel_data, f"{selected_div}.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-        with col_dl3:
-            try:
-                pdf_title = f"Org Chart — {selected_div} ({selected_bu})"
-                pdf_data = generate_pdf(tree_data, pdf_title)
-                st.download_button("📑 PDF (Full)", pdf_data, f"{selected_div}_full.pdf", "application/pdf", use_container_width=True)
-            except Exception:
-                st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
-        with col_dl4:
-            try:
-                pdf_title_sum = f"Org Chart Summary — {selected_div} ({selected_bu})"
-                pdf_data_sum = generate_pdf_summary(tree_data, pdf_title_sum)
-                st.download_button("📑 PDF (Summary)", pdf_data_sum, f"{selected_div}_summary.pdf", "application/pdf", use_container_width=True)
-            except Exception:
-                st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
+    col_lv2, col_inf2 = st.columns([2, 4])
+    with col_lv2:
+        level_opt2 = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"], key="lv2")
+    with col_inf2:
+        st.caption(f"📊 Menampilkan **{len(df)}** karyawan")
 
-    else:
-        # ── SELURUH PERUSAHAAN ──
-        st.info("⚠️ Mode seluruh perusahaan menampilkan semua karyawan. Gunakan zoom out dan collapse untuk navigasi.")
+    level_map2 = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}
+    selected_level2 = level_map2[level_opt2]
 
-        col_lv2, col_inf2 = st.columns([2, 4])
-        with col_lv2:
-            level_opt2 = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"], key="lv2")
-        with col_inf2:
-            st.caption(f"📊 Menampilkan **{len(df)}** karyawan")
+    root_ids = df[(df["Manager ID"] == "") | (df["Manager ID"].isna())]["Employee ID"].tolist()
+    tree_data2 = build_tree_json(df, "", root_ids, mode="company")
+    chart_html2 = render_org_chart(json.dumps(tree_data2), chart_height=750, initial_level=selected_level2, theme=T)
+    st.components.v1.html(chart_html2, height=750, scrolling=False)
 
-        level_map2 = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}
-        selected_level2 = level_map2[level_opt2]
-
-        root_ids = df[(df["Manager ID"] == "") | (df["Manager ID"].isna())]["Employee ID"].tolist()
-        tree_data2 = build_tree_json(df, "", root_ids, mode="company")
-        chart_html2 = render_org_chart(json.dumps(tree_data2), chart_height=750, initial_level=selected_level2, theme=T)
-        st.components.v1.html(chart_html2, height=750, scrolling=False)
-
-        st.markdown("**⬇️ Download Data**")
-        col_dl4, col_dl5, col_dl6, col_dl7 = st.columns([1, 1, 1, 1])
-        with col_dl4:
-            csv2 = df.to_csv(index=False).encode("utf-8")
-            st.download_button("📄 CSV", csv2, "all_employees.csv", "text/csv", use_container_width=True)
-        with col_dl5:
-            excel2 = to_excel(df)
-            st.download_button("📊 Excel", excel2, "all_employees.xlsx",
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-        with col_dl6:
-            try:
-                pdf_data2 = generate_pdf(tree_data2, "Org Chart — Seluruh Perusahaan")
-                st.download_button("📑 PDF (Full)", pdf_data2, "orgchart_perusahaan_full.pdf", "application/pdf", use_container_width=True)
-            except Exception:
-                st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
-        with col_dl7:
-            try:
-                pdf_sum2 = generate_pdf_summary(tree_data2, "Org Chart Summary — Seluruh Perusahaan")
-                st.download_button("📑 PDF (Summary)", pdf_sum2, "orgchart_perusahaan_summary.pdf", "application/pdf", use_container_width=True)
-            except Exception:
-                st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
+    st.markdown("**⬇️ Download Data**")
+    col_dl4, col_dl5, col_dl6, col_dl7 = st.columns([1, 1, 1, 1])
+    with col_dl4:
+        csv2 = df.to_csv(index=False).encode("utf-8")
+        st.download_button("📄 CSV", csv2, "all_employees.csv", "text/csv", use_container_width=True)
+    with col_dl5:
+        excel2 = to_excel(df)
+        st.download_button("📊 Excel", excel2, "all_employees.xlsx",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+    with col_dl6:
+        try:
+            pdf_data2 = generate_pdf(tree_data2, "Org Chart — Seluruh Perusahaan")
+            st.download_button("📑 PDF (Full)", pdf_data2, "orgchart_perusahaan_full.pdf", "application/pdf", use_container_width=True)
+        except Exception:
+            st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
+    with col_dl7:
+        try:
+            pdf_sum2 = generate_pdf_summary(tree_data2, "Org Chart Summary — Seluruh Perusahaan")
+            st.download_button("📑 PDF (Summary)", pdf_sum2, "orgchart_perusahaan_summary.pdf", "application/pdf", use_container_width=True)
+        except Exception:
+            st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
 
 # ══════════════════════════════════════════
 # TAB 2 — DATA KARYAWAN
@@ -1706,56 +1705,55 @@ st.markdown(f'<div style="height:4px; background:linear-gradient(90deg,{T["accen
 st.markdown(section_header("sec-karyawan", "👥", "Data Karyawan", "Seluruh data karyawan dengan filter dan pencarian"), unsafe_allow_html=True)
 st.markdown(section_body_start(), unsafe_allow_html=True)
 
-with tab2:
-    st.markdown(f"""
-    <div style="margin-bottom:20px;">
-        <div style="font-size:20px; font-weight:700; color:{T['text']};">Data Karyawan</div>
-        <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
-    </div>
-    """, unsafe_allow_html=True)
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        search = st.text_input("🔍 Cari nama karyawan")
-    with c2:
-        bu_f = st.selectbox("Filter BU", ["Semua"] + sorted(df["Business Unit"].unique().tolist()), key="t2bu")
-    with c3:
-        div_opts = ["Semua"] + sorted(
-            df[df["Business Unit"] == bu_f]["Division"].unique().tolist() if bu_f != "Semua"
-            else df["Division"].unique().tolist()
-        )
-        div_f = st.selectbox("Filter Divisi", div_opts, key="t2div")
-    with c4:
-        sbu_source = df.copy()
-        if bu_f != "Semua":
-            sbu_source = sbu_source[sbu_source["Business Unit"] == bu_f]
-        if div_f != "Semua":
-            sbu_source = sbu_source[sbu_source["Division"] == div_f]
-        sbu_opts_t2 = ["Semua"] + sorted([
-            s for s in sbu_source["SBU/Tribe"].dropna().unique().tolist()
-            if s.strip() != ""
-        ])
-        sbu_f = st.selectbox("Filter SBU/Tribe", sbu_opts_t2, key="t2sbu")
-
-    data_view = df.copy()
-    if search:
-        data_view = data_view[data_view["Employee Name"].str.contains(search, case=False, na=False)]
+st.markdown(f"""
+<div style="margin-bottom:20px;">
+    <div style="font-size:20px; font-weight:700; color:{T['text']};">Data Karyawan</div>
+    <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
+</div>
+""", unsafe_allow_html=True)
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    search = st.text_input("🔍 Cari nama karyawan")
+with c2:
+    bu_f = st.selectbox("Filter BU", ["Semua"] + sorted(df["Business Unit"].unique().tolist()), key="t2bu")
+with c3:
+    div_opts = ["Semua"] + sorted(
+        df[df["Business Unit"] == bu_f]["Division"].unique().tolist() if bu_f != "Semua"
+        else df["Division"].unique().tolist()
+    )
+    div_f = st.selectbox("Filter Divisi", div_opts, key="t2div")
+with c4:
+    sbu_source = df.copy()
     if bu_f != "Semua":
-        data_view = data_view[data_view["Business Unit"] == bu_f]
+        sbu_source = sbu_source[sbu_source["Business Unit"] == bu_f]
     if div_f != "Semua":
-        data_view = data_view[data_view["Division"] == div_f]
-    if sbu_f != "Semua":
-        data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
+        sbu_source = sbu_source[sbu_source["Division"] == div_f]
+    sbu_opts_t2 = ["Semua"] + sorted([
+        s for s in sbu_source["SBU/Tribe"].dropna().unique().tolist()
+        if s.strip() != ""
+    ])
+    sbu_f = st.selectbox("Filter SBU/Tribe", sbu_opts_t2, key="t2sbu")
 
-    st.caption(f"Menampilkan **{len(data_view)}** karyawan")
-    st.dataframe(data_view, use_container_width=True, height=480)
+data_view = df.copy()
+if search:
+    data_view = data_view[data_view["Employee Name"].str.contains(search, case=False, na=False)]
+if bu_f != "Semua":
+    data_view = data_view[data_view["Business Unit"] == bu_f]
+if div_f != "Semua":
+    data_view = data_view[data_view["Division"] == div_f]
+if sbu_f != "Semua":
+    data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
 
-    col_dl7, col_dl8, _ = st.columns([1, 1, 3])
-    with col_dl7:
-        st.download_button("📄 CSV", data_view.to_csv(index=False).encode("utf-8"),
-            "filtered.csv", "text/csv", use_container_width=True)
-    with col_dl8:
-        st.download_button("📊 Excel", to_excel(data_view), "filtered.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+st.caption(f"Menampilkan **{len(data_view)}** karyawan")
+st.dataframe(data_view, use_container_width=True, height=480)
+
+col_dl7, col_dl8, _ = st.columns([1, 1, 3])
+with col_dl7:
+    st.download_button("📄 CSV", data_view.to_csv(index=False).encode("utf-8"),
+        "filtered.csv", "text/csv", use_container_width=True)
+with col_dl8:
+    st.download_button("📊 Excel", to_excel(data_view), "filtered.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
 # ══════════════════════════════════════════
 # TAB 3 — KARYAWAN DENGAN MANAGER ID HILANG
@@ -1769,87 +1767,86 @@ st.markdown(f'<div style="height:4px; background:linear-gradient(90deg,{T["accen
 st.markdown(section_header("sec-managerid", "⚠️", "Manager ID Hilang", "Karyawan dengan Manager ID kosong — perlu diperbaiki di backend"), unsafe_allow_html=True)
 st.markdown(section_body_start(), unsafe_allow_html=True)
 
-with tab3:
-    st.markdown(f"""
-    <div style="margin-bottom:20px;">
-        <div style="font-size:20px; font-weight:700; color:{T['text']};">Manager ID Hilang</div>
-        <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">
-            Karyawan yang Manager ID-nya kosong atau tidak terdaftar — perlu diperbaiki di backend
-        </div>
+st.markdown(f"""
+<div style="margin-bottom:20px;">
+    <div style="font-size:20px; font-weight:700; color:{T['text']};">Manager ID Hilang</div>
+    <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">
+        Karyawan yang Manager ID-nya kosong atau tidak terdaftar — perlu diperbaiki di backend
     </div>
-    """, unsafe_allow_html=True)
+</div>
+""", unsafe_allow_html=True)
 
-    # Karyawan yang Manager ID-nya kosong / null
-    missing_mgr_df = df[
-        (df["Manager ID"] == "") | (df["Manager ID"].isna()) | (df["Manager ID"] == "nan")
-    ].copy()
+# Karyawan yang Manager ID-nya kosong / null
+missing_mgr_df = df[
+    (df["Manager ID"] == "") | (df["Manager ID"].isna()) | (df["Manager ID"] == "nan")
+].copy()
 
-    # Metrik
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("⚠️ Total Data Bermasalah", len(missing_mgr_df))
-    m2.metric("🏢 Tersebar di BU", missing_mgr_df["Business Unit"].nunique())
-    m3.metric("📁 Tersebar di Divisi", missing_mgr_df["Division"].nunique())
-    m4.metric("📊 % dari Total", f"{len(missing_mgr_df)/len(df)*100:.1f}%")
+# Metrik
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("⚠️ Total Data Bermasalah", len(missing_mgr_df))
+m2.metric("🏢 Tersebar di BU", missing_mgr_df["Business Unit"].nunique())
+m3.metric("📁 Tersebar di Divisi", missing_mgr_df["Division"].nunique())
+m4.metric("📊 % dari Total", f"{len(missing_mgr_df)/len(df)*100:.1f}%")
 
-    st.divider()
+st.divider()
 
-    # Filter
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        bu_nr = st.selectbox(
-            "Filter Business Unit",
-            ["Semua"] + sorted(missing_mgr_df["Business Unit"].dropna().unique().tolist()),
-            key="bu_nr"
-        )
-    with col_f2:
-        div_opts_nr = (
-            sorted(missing_mgr_df[missing_mgr_df["Business Unit"] == bu_nr]["Division"].dropna().unique().tolist())
-            if bu_nr != "Semua"
-            else sorted(missing_mgr_df["Division"].dropna().unique().tolist())
-        )
-        div_nr = st.selectbox("Filter Divisi", ["Semua"] + div_opts_nr, key="div_nr")
-
-    view_nr = missing_mgr_df.copy()
-    if bu_nr != "Semua":
-        view_nr = view_nr[view_nr["Business Unit"] == bu_nr]
-    if div_nr != "Semua":
-        view_nr = view_nr[view_nr["Division"] == div_nr]
-
-    st.caption(f"Menampilkan **{len(view_nr)}** karyawan dengan Manager ID kosong")
-
-    # Kolom yang ditampilkan
-    display_cols = ["Employee ID", "Employee Name", "Job Position", "Division", "Business Unit", "SBU/Tribe", "Manager ID"]
-    st.dataframe(view_nr[display_cols], use_container_width=True, height=450)
-
-    # Breakdown per divisi
-    st.divider()
-    st.markdown(f"""
-    <div style="font-size:15px; font-weight:700; color:{T['text']}; margin-bottom:12px;">Breakdown per Divisi</div>
-    """, unsafe_allow_html=True)
-    breakdown = (
-        view_nr.groupby(["Business Unit", "Division"])
-        .size()
-        .reset_index(name="Jumlah")
-        .sort_values("Jumlah", ascending=False)
+# Filter
+col_f1, col_f2 = st.columns(2)
+with col_f1:
+    bu_nr = st.selectbox(
+        "Filter Business Unit",
+        ["Semua"] + sorted(missing_mgr_df["Business Unit"].dropna().unique().tolist()),
+        key="bu_nr"
     )
-    st.dataframe(breakdown, use_container_width=True, height=250)
+with col_f2:
+    div_opts_nr = (
+        sorted(missing_mgr_df[missing_mgr_df["Business Unit"] == bu_nr]["Division"].dropna().unique().tolist())
+        if bu_nr != "Semua"
+        else sorted(missing_mgr_df["Division"].dropna().unique().tolist())
+    )
+    div_nr = st.selectbox("Filter Divisi", ["Semua"] + div_opts_nr, key="div_nr")
 
-    # Download
-    st.divider()
-    st.markdown("**⬇️ Download Data**")
-    col_d1, col_d2, _ = st.columns([1, 1, 3])
-    with col_d1:
-        st.download_button(
-            "📄 CSV", view_nr.to_csv(index=False).encode("utf-8"),
-            "missing_manager_id.csv", "text/csv", use_container_width=True
-        )
-    with col_d2:
-        st.download_button(
-            "📊 Excel", to_excel(view_nr),
-            "missing_manager_id.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
+view_nr = missing_mgr_df.copy()
+if bu_nr != "Semua":
+    view_nr = view_nr[view_nr["Business Unit"] == bu_nr]
+if div_nr != "Semua":
+    view_nr = view_nr[view_nr["Division"] == div_nr]
+
+st.caption(f"Menampilkan **{len(view_nr)}** karyawan dengan Manager ID kosong")
+
+# Kolom yang ditampilkan
+display_cols = ["Employee ID", "Employee Name", "Job Position", "Division", "Business Unit", "SBU/Tribe", "Manager ID"]
+st.dataframe(view_nr[display_cols], use_container_width=True, height=450)
+
+# Breakdown per divisi
+st.divider()
+st.markdown(f"""
+<div style="font-size:15px; font-weight:700; color:{T['text']}; margin-bottom:12px;">Breakdown per Divisi</div>
+""", unsafe_allow_html=True)
+breakdown = (
+    view_nr.groupby(["Business Unit", "Division"])
+    .size()
+    .reset_index(name="Jumlah")
+    .sort_values("Jumlah", ascending=False)
+)
+st.dataframe(breakdown, use_container_width=True, height=250)
+
+# Download
+st.divider()
+st.markdown("**⬇️ Download Data**")
+col_d1, col_d2, _ = st.columns([1, 1, 3])
+with col_d1:
+    st.download_button(
+        "📄 CSV", view_nr.to_csv(index=False).encode("utf-8"),
+        "missing_manager_id.csv", "text/csv", use_container_width=True
+    )
+with col_d2:
+    st.download_button(
+        "📊 Excel", to_excel(view_nr),
+        "missing_manager_id.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
+    )
 
 # ══════════════════════════════════════════
 st.markdown(section_body_end(), unsafe_allow_html=True)
@@ -1863,176 +1860,175 @@ st.markdown(section_body_start(), unsafe_allow_html=True)
 
 # TAB 4 — DAFTAR MANAGER
 # ══════════════════════════════════════════
-with tab4:
+st.markdown(f"""
+<div style="margin-bottom:20px;">
+    <div style="font-size:20px; font-weight:700; color:{T['text']};">Daftar Manager</div>
+    <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">
+        Seluruh karyawan yang memiliki bawahan langsung
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Bangun level hierarki dari SLKR001 (Suwandi) ──
+CHIEF_ROOT = "SLKR001"
+
+def get_level_from_root(root_id, all_df, max_depth=2):
+    """
+    Kembalikan dict {employee_id: level} di mana:
+    level 0 = Chief (bawahan langsung root)
+    level 1 = C-1 (bawahan Chief)
+    level 2 = C-2 (bawahan C-1)
+    """
+    levels = {}
+    current_level_ids = [root_id]
+    for depth in range(max_depth + 1):
+        next_level_ids = []
+        for mgr_id in current_level_ids:
+            children = all_df[all_df["Manager ID"] == mgr_id]["Employee ID"].tolist()
+            for child in children:
+                if child not in levels:
+                    levels[child] = depth  # depth 0 = Chief, 1 = C-1, 2 = C-2
+                    next_level_ids.append(child)
+        current_level_ids = next_level_ids
+        if not current_level_ids:
+            break
+    return levels
+
+hierarchy_levels = get_level_from_root(CHIEF_ROOT, df, max_depth=2)
+
+# ── Karyawan dengan Career Stage Level 0 ──
+level0_ids = set(
+    df[df["Career Stage"].astype(str).str.strip().str.lower() == "level 0"]["Employee ID"].tolist()
+)
+
+# ── Build manager list ──
+mgr_ids = df[df["Manager ID"] != ""]["Manager ID"].unique().tolist()
+mgr_df  = df[df["Employee ID"].isin(mgr_ids)].copy()
+
+# Tambah kolom Jumlah Bawahan
+sub_count = df[df["Manager ID"] != ""].groupby("Manager ID").size().reset_index(name="Jumlah Bawahan")
+sub_count.rename(columns={"Manager ID": "Employee ID"}, inplace=True)
+mgr_df = mgr_df.merge(sub_count, on="Employee ID", how="left")
+mgr_df["Jumlah Bawahan"] = mgr_df["Jumlah Bawahan"].fillna(0).astype(int)
+
+# Tambah kolom Level Hierarki
+mgr_df["Level Hierarki"] = mgr_df["Employee ID"].apply(
+    lambda eid: {0: "Chief", 1: "C-1", 2: "C-2"}.get(hierarchy_levels.get(eid), "-")
+)
+
+# Tambah kolom: apakah punya bawahan Level 0
+def has_level0_subordinate(mgr_id, all_df, level0_set):
+    """Cek apakah manager ini punya bawahan langsung dengan Career Stage Level 0."""
+    direct_subs = all_df[all_df["Manager ID"] == mgr_id]["Employee ID"].tolist()
+    return any(sid in level0_set for sid in direct_subs)
+
+mgr_df["Ada Bawahan Level 0"] = mgr_df["Employee ID"].apply(
+    lambda eid: has_level0_subordinate(eid, df, level0_ids)
+)
+
+mgr_df = mgr_df.sort_values("Jumlah Bawahan", ascending=False)
+
+# ── Metrics ──
+m1, m2, m3 = st.columns(3)
+m1.metric("👔 Total Manager", len(mgr_df))
+m2.metric("📊 Rata-rata Bawahan", f"{mgr_df['Jumlah Bawahan'].mean():.1f}")
+m3.metric("🏆 Max Bawahan", int(mgr_df['Jumlah Bawahan'].max()))
+
+st.divider()
+
+# ── Filters ──
+col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+with col_m1:
+    search_mgr = st.text_input("🔍 Cari nama manager", key="search_mgr")
+with col_m2:
+    bu_mgr = st.selectbox(
+        "Filter BU",
+        ["Semua"] + sorted(mgr_df["Business Unit"].dropna().unique().tolist()),
+        key="bu_mgr"
+    )
+with col_m3:
+    div_mgr_opts = (
+        ["Semua"] + sorted(mgr_df[mgr_df["Business Unit"] == bu_mgr]["Division"].dropna().unique().tolist())
+        if bu_mgr != "Semua"
+        else ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist())
+    )
+    div_mgr = st.selectbox("Filter Divisi", div_mgr_opts, key="div_mgr")
+with col_m4:
+    level_filter = st.selectbox(
+        "🎯 Filter Level Hierarki",
+        ["Semua", "Chief", "C-1", "C-2"],
+        key="level_mgr",
+        help="Chief = bawahan langsung Suwandi (SLKR001) | C-1 = 1 tingkat di bawah Chief | C-2 = 2 tingkat di bawah Chief"
+    )
+
+# ── Toggle: sembunyikan manager yang punya bawahan Level 0 ──
+hide_level0 = st.checkbox(
+    "🚫 Sembunyikan manager yang memiliki bawahan Career Stage Level 0",
+    value=True,
+    help="Aktif = hanya tampilkan leader tanpa bawahan Level 0"
+)
+
+# ── Apply filters ──
+view_mgr = mgr_df.copy()
+if search_mgr:
+    view_mgr = view_mgr[view_mgr["Employee Name"].str.contains(search_mgr, case=False, na=False)]
+if bu_mgr != "Semua":
+    view_mgr = view_mgr[view_mgr["Business Unit"] == bu_mgr]
+if div_mgr != "Semua":
+    view_mgr = view_mgr[view_mgr["Division"] == div_mgr]
+if level_filter != "Semua":
+    view_mgr = view_mgr[view_mgr["Level Hierarki"] == level_filter]
+if hide_level0:
+    view_mgr = view_mgr[~view_mgr["Ada Bawahan Level 0"]]
+
+# ── Info badge filter aktif ──
+active_filters = []
+if level_filter != "Semua":
+    active_filters.append(f"Level: **{level_filter}**")
+if hide_level0:
+    active_filters.append("Tanpa bawahan Level 0")
+
+if active_filters:
     st.markdown(f"""
-    <div style="margin-bottom:20px;">
-        <div style="font-size:20px; font-weight:700; color:{T['text']};">Daftar Manager</div>
-        <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">
-            Seluruh karyawan yang memiliki bawahan langsung
-        </div>
+    <div style="background:{T['accent_bg']}; border:1px solid {T['border2']};
+        border-radius:8px; padding:8px 14px; margin-bottom:12px;
+        font-size:12px; color:{T['accent']};">
+        🔎 Filter aktif: {' · '.join(active_filters)}
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Bangun level hierarki dari SLKR001 (Suwandi) ──
-    CHIEF_ROOT = "SLKR001"
+st.caption(f"Menampilkan **{len(view_mgr)}** manager")
 
-    def get_level_from_root(root_id, all_df, max_depth=2):
-        """
-        Kembalikan dict {employee_id: level} di mana:
-        level 0 = Chief (bawahan langsung root)
-        level 1 = C-1 (bawahan Chief)
-        level 2 = C-2 (bawahan C-1)
-        """
-        levels = {}
-        current_level_ids = [root_id]
-        for depth in range(max_depth + 1):
-            next_level_ids = []
-            for mgr_id in current_level_ids:
-                children = all_df[all_df["Manager ID"] == mgr_id]["Employee ID"].tolist()
-                for child in children:
-                    if child not in levels:
-                        levels[child] = depth  # depth 0 = Chief, 1 = C-1, 2 = C-2
-                        next_level_ids.append(child)
-            current_level_ids = next_level_ids
-            if not current_level_ids:
-                break
-        return levels
+# ── Tampilkan kolom Level Hierarki dengan warna ──
+display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division",
+                    "Business Unit", "SBU/Tribe", "Level Hierarki", "Jumlah Bawahan"]
+available_display = [c for c in display_cols_mgr if c in view_mgr.columns]
 
-    hierarchy_levels = get_level_from_root(CHIEF_ROOT, df, max_depth=2)
+# Style Level Hierarki
+def style_level(val):
+    if val == "Chief":  return "background-color:#ddd6fe; color:#4c1d95; font-weight:700;"
+    if val == "C-1":    return "background-color:#ede9fe; color:#5b4fcf; font-weight:600;"
+    if val == "C-2":    return "background-color:#f3f0ff; color:#7c6fcd; font-weight:500;"
+    return ""
 
-    # ── Karyawan dengan Career Stage Level 0 ──
-    level0_ids = set(
-        df[df["Career Stage"].astype(str).str.strip().str.lower() == "level 0"]["Employee ID"].tolist()
+styled_view = view_mgr[available_display].reset_index(drop=True)
+st.dataframe(styled_view, use_container_width=True, height=480)
+
+st.divider()
+st.markdown("**⬇️ Download Data**")
+col_dm1, col_dm2, _ = st.columns([1, 1, 3])
+with col_dm1:
+    st.download_button(
+        "📄 CSV", view_mgr.to_csv(index=False).encode("utf-8"),
+        "daftar_manager.csv", "text/csv", use_container_width=True
     )
-
-    # ── Build manager list ──
-    mgr_ids = df[df["Manager ID"] != ""]["Manager ID"].unique().tolist()
-    mgr_df  = df[df["Employee ID"].isin(mgr_ids)].copy()
-
-    # Tambah kolom Jumlah Bawahan
-    sub_count = df[df["Manager ID"] != ""].groupby("Manager ID").size().reset_index(name="Jumlah Bawahan")
-    sub_count.rename(columns={"Manager ID": "Employee ID"}, inplace=True)
-    mgr_df = mgr_df.merge(sub_count, on="Employee ID", how="left")
-    mgr_df["Jumlah Bawahan"] = mgr_df["Jumlah Bawahan"].fillna(0).astype(int)
-
-    # Tambah kolom Level Hierarki
-    mgr_df["Level Hierarki"] = mgr_df["Employee ID"].apply(
-        lambda eid: {0: "Chief", 1: "C-1", 2: "C-2"}.get(hierarchy_levels.get(eid), "-")
+with col_dm2:
+    st.download_button(
+        "📊 Excel", to_excel(view_mgr),
+        "daftar_manager.xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True
     )
-
-    # Tambah kolom: apakah punya bawahan Level 0
-    def has_level0_subordinate(mgr_id, all_df, level0_set):
-        """Cek apakah manager ini punya bawahan langsung dengan Career Stage Level 0."""
-        direct_subs = all_df[all_df["Manager ID"] == mgr_id]["Employee ID"].tolist()
-        return any(sid in level0_set for sid in direct_subs)
-
-    mgr_df["Ada Bawahan Level 0"] = mgr_df["Employee ID"].apply(
-        lambda eid: has_level0_subordinate(eid, df, level0_ids)
-    )
-
-    mgr_df = mgr_df.sort_values("Jumlah Bawahan", ascending=False)
-
-    # ── Metrics ──
-    m1, m2, m3 = st.columns(3)
-    m1.metric("👔 Total Manager", len(mgr_df))
-    m2.metric("📊 Rata-rata Bawahan", f"{mgr_df['Jumlah Bawahan'].mean():.1f}")
-    m3.metric("🏆 Max Bawahan", int(mgr_df['Jumlah Bawahan'].max()))
-
-    st.divider()
-
-    # ── Filters ──
-    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-    with col_m1:
-        search_mgr = st.text_input("🔍 Cari nama manager", key="search_mgr")
-    with col_m2:
-        bu_mgr = st.selectbox(
-            "Filter BU",
-            ["Semua"] + sorted(mgr_df["Business Unit"].dropna().unique().tolist()),
-            key="bu_mgr"
-        )
-    with col_m3:
-        div_mgr_opts = (
-            ["Semua"] + sorted(mgr_df[mgr_df["Business Unit"] == bu_mgr]["Division"].dropna().unique().tolist())
-            if bu_mgr != "Semua"
-            else ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist())
-        )
-        div_mgr = st.selectbox("Filter Divisi", div_mgr_opts, key="div_mgr")
-    with col_m4:
-        level_filter = st.selectbox(
-            "🎯 Filter Level Hierarki",
-            ["Semua", "Chief", "C-1", "C-2"],
-            key="level_mgr",
-            help="Chief = bawahan langsung Suwandi (SLKR001) | C-1 = 1 tingkat di bawah Chief | C-2 = 2 tingkat di bawah Chief"
-        )
-
-    # ── Toggle: sembunyikan manager yang punya bawahan Level 0 ──
-    hide_level0 = st.checkbox(
-        "🚫 Sembunyikan manager yang memiliki bawahan Career Stage Level 0",
-        value=True,
-        help="Aktif = hanya tampilkan leader tanpa bawahan Level 0"
-    )
-
-    # ── Apply filters ──
-    view_mgr = mgr_df.copy()
-    if search_mgr:
-        view_mgr = view_mgr[view_mgr["Employee Name"].str.contains(search_mgr, case=False, na=False)]
-    if bu_mgr != "Semua":
-        view_mgr = view_mgr[view_mgr["Business Unit"] == bu_mgr]
-    if div_mgr != "Semua":
-        view_mgr = view_mgr[view_mgr["Division"] == div_mgr]
-    if level_filter != "Semua":
-        view_mgr = view_mgr[view_mgr["Level Hierarki"] == level_filter]
-    if hide_level0:
-        view_mgr = view_mgr[~view_mgr["Ada Bawahan Level 0"]]
-
-    # ── Info badge filter aktif ──
-    active_filters = []
-    if level_filter != "Semua":
-        active_filters.append(f"Level: **{level_filter}**")
-    if hide_level0:
-        active_filters.append("Tanpa bawahan Level 0")
-
-    if active_filters:
-        st.markdown(f"""
-        <div style="background:{T['accent_bg']}; border:1px solid {T['border2']};
-            border-radius:8px; padding:8px 14px; margin-bottom:12px;
-            font-size:12px; color:{T['accent']};">
-            🔎 Filter aktif: {' · '.join(active_filters)}
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.caption(f"Menampilkan **{len(view_mgr)}** manager")
-
-    # ── Tampilkan kolom Level Hierarki dengan warna ──
-    display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division",
-                        "Business Unit", "SBU/Tribe", "Level Hierarki", "Jumlah Bawahan"]
-    available_display = [c for c in display_cols_mgr if c in view_mgr.columns]
-
-    # Style Level Hierarki
-    def style_level(val):
-        if val == "Chief":  return "background-color:#ddd6fe; color:#4c1d95; font-weight:700;"
-        if val == "C-1":    return "background-color:#ede9fe; color:#5b4fcf; font-weight:600;"
-        if val == "C-2":    return "background-color:#f3f0ff; color:#7c6fcd; font-weight:500;"
-        return ""
-
-    styled_view = view_mgr[available_display].reset_index(drop=True)
-    st.dataframe(styled_view, use_container_width=True, height=480)
-
-    st.divider()
-    st.markdown("**⬇️ Download Data**")
-    col_dm1, col_dm2, _ = st.columns([1, 1, 3])
-    with col_dm1:
-        st.download_button(
-            "📄 CSV", view_mgr.to_csv(index=False).encode("utf-8"),
-            "daftar_manager.csv", "text/csv", use_container_width=True
-        )
-    with col_dm2:
-        st.download_button(
-            "📊 Excel", to_excel(view_mgr),
-            "daftar_manager.xlsx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            use_container_width=True
-        )
 
 # ══════════════════════════════════════════
 st.markdown(section_body_end(), unsafe_allow_html=True)
@@ -2046,556 +2042,522 @@ st.markdown(section_body_start(), unsafe_allow_html=True)
 
 # TAB 5 — CHANGE REQUEST
 # ══════════════════════════════════════════
-with tab5:
-    from datetime import datetime
+from datetime import datetime
 
+st.markdown(f"""
+<div style="margin-bottom:24px;">
+    <div style="font-size:20px; font-weight:700; color:{T['text']};">Structure Change Request</div>
+    <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">
+        Kelola permintaan perubahan struktur organisasi — Reporting Line & Divisi
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Sub-tabs ──
+cr_tab1, cr_tab2, cr_tab3 = st.tabs(["➕  Buat Request", "📥  Inbox & Review", "📜  History"])
+
+# ══════════════════════════════════
+# SUB-TAB 1 — FORM INPUT
+# ══════════════════════════════════
+with cr_tab1:
     st.markdown(f"""
-    <div style="margin-bottom:24px;">
-        <div style="font-size:20px; font-weight:700; color:{T['text']};">Structure Change Request</div>
-        <div style="font-size:13px; color:{T['text3']}; margin-top:4px;">
-            Kelola permintaan perubahan struktur organisasi — Reporting Line & Divisi
-        </div>
+    <div style="font-size:15px; font-weight:600; color:{T['text']}; margin-bottom:16px;">
+        Form Permintaan Perubahan Struktur
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Sub-tabs ──
-    cr_tab1, cr_tab2, cr_tab3 = st.tabs(["➕  Buat Request", "📥  Inbox & Review", "📜  History"])
+    # ── Helper: generate template download ──
+    def make_template(change_type_tmpl):
+        if change_type_tmpl == "Reporting Line":
+            cols = ["Employee ID", "Employee Name", "Previous Manager", "New Manager"]
+        else:
+            cols = ["Employee ID", "Employee Name", "Nama Divisi Lama", "Nama Divisi Baru"]
+        return pd.DataFrame(columns=cols)
 
-    # ══════════════════════════════════
-    # SUB-TAB 1 — FORM INPUT
-    # ══════════════════════════════════
-    with cr_tab1:
+    # ── Helper: validate & save rows ──
+    def process_and_save(rows_data, req_name, req_email, change_type, alasan, eff_date):
+        valid_rows = [(str(eid).strip(), str(en).strip(), str(ov).strip(), str(nv).strip())
+                      for eid, en, ov, nv in rows_data
+                      if str(eid).strip() or str(en).strip()]
+        if not valid_rows:
+            return [], [], 0
+
+        warnings = []
+        for emp_id, emp_name, old_val, new_val in valid_rows:
+            if emp_id and emp_id not in df["Employee ID"].values:
+                warnings.append(f"Employee ID **{emp_id}** tidak ditemukan di data.")
+            if change_type == "Reporting Line" and new_val:
+                if len(df[df["Employee Name"].str.lower() == new_val.lower()]) == 0:
+                    warnings.append(f"Manager baru **{new_val}** tidak ditemukan di data.")
+
+        success_count = 0
+        for emp_id, emp_name, old_val, new_val in valid_rows:
+            req_id = generate_request_id()
+            row = {
+                "request_id":      req_id,
+                "submitted_date":  datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "requester_name":  req_name.strip(),
+                "requester_email": req_email.strip(),
+                "change_type":     change_type,
+                "employee_id":     emp_id,
+                "employee_name":   emp_name,
+                "data_lama":       old_val,
+                "data_baru":       new_val,
+                "alasan":          f"{alasan.strip()} | Effective: {eff_date}",
+                "status":          "Pending",
+                "reviewed_by":     "",
+                "reviewed_date":   "",
+                "catatan":         "",
+            }
+            if save_change_request(row):
+                success_count += 1
+        return valid_rows, warnings, success_count
+
+    # ── CSS form buttons ──
+    st.markdown(f"""
+    <style>
+    [data-testid="stFormSubmitButton"] button {{
+        background: {T['accent']} !important;
+        color: white !important; border: none !important;
+        border-radius: 10px !important; font-weight: 600 !important;
+        font-size: 14px !important; padding: 12px !important;
+        transition: all 0.2s !important; width: 100% !important;
+    }}
+    [data-testid="stFormSubmitButton"] button:hover {{
+        background: {T['accent2']} !important;
+        box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
+        transform: translateY(-1px) !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # ── Informasi Requester & Jenis Perubahan (di luar form, shared) ──
+    st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Informasi Requester</div>", unsafe_allow_html=True)
+    col_r1, col_r2 = st.columns(2)
+    with col_r1:
+        req_name_shared  = st.text_input("Nama Requester *", placeholder="Nama lengkap pengirim request", key="req_name_shared")
+    with col_r2:
+        req_email_shared = st.text_input("Email Requester *", placeholder="email@mekari.com", key="req_email_shared")
+
+    st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Detail Perubahan</div>", unsafe_allow_html=True)
+    col_ct, col_ed = st.columns(2)
+    with col_ct:
+        change_type_shared = st.selectbox("Jenis Perubahan *", ["Reporting Line", "Nama Divisi"], key="ct_shared")
+    with col_ed:
+        eff_date_shared = st.date_input("Effective Date", value=datetime.today(), key="ed_shared")
+
+    st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+    alasan_shared = st.text_area("Alasan / Keterangan *", placeholder="Jelaskan alasan perubahan struktur ini...", height=90, key="alasan_shared")
+
+    st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+
+    # ── Mode Input: Manual atau Upload ──
+    st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:12px;'>Metode Input Data Karyawan</div>", unsafe_allow_html=True)
+
+    input_mode = st.radio(
+        "",
+        ["✏️  Input Manual (1–5 karyawan)", "📤  Upload Spreadsheet (>5 karyawan)"],
+        horizontal=True,
+        label_visibility="collapsed",
+        key="input_mode"
+    )
+
+    # ════════════════════════════════
+    # MODE 1 — INPUT MANUAL
+    # ════════════════════════════════
+    if input_mode == "✏️  Input Manual (1–5 karyawan)":
+        with st.form("cr_form_manual", clear_on_submit=True):
+            st.markdown(f"<div style='font-size:12px; color:{T['text3']}; margin-bottom:12px;'>Isi data karyawan yang akan diubah. Maksimal 5 karyawan per request.</div>", unsafe_allow_html=True)
+
+            num_rows = st.number_input("Jumlah karyawan", min_value=1, max_value=5, value=1, step=1, key="num_rows_manual")
+
+            # Header kolom
+            h1c, h2c, h3c, h4c = st.columns([1.5, 2, 2.5, 2.5])
+            h1c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Employee ID</div>", unsafe_allow_html=True)
+            h2c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Nama Karyawan</div>", unsafe_allow_html=True)
+            if change_type_shared == "Reporting Line":
+                h3c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Previous Manager</div>", unsafe_allow_html=True)
+                h4c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>New Manager</div>", unsafe_allow_html=True)
+            else:
+                h3c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Divisi Lama</div>", unsafe_allow_html=True)
+                h4c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Divisi Baru</div>", unsafe_allow_html=True)
+
+            rows_data_manual = []
+            for i in range(int(num_rows)):
+                c1, c2, c3, c4 = st.columns([1.5, 2, 2.5, 2.5])
+                with c1:
+                    emp_id = st.text_input("", key=f"eid_{i}", placeholder="EMP001", label_visibility="collapsed")
+                with c2:
+                    emp_match = df[df["Employee ID"] == emp_id]["Employee Name"].values
+                    emp_name_default = emp_match[0] if len(emp_match) > 0 else ""
+                    emp_name = st.text_input("", key=f"ename_{i}", value=emp_name_default,
+                                              placeholder="Nama lengkap", label_visibility="collapsed")
+                with c3:
+                    old_val = st.text_input("", key=f"old_{i}",
+                                             placeholder="Manager lama" if change_type_shared=="Reporting Line" else "Divisi saat ini",
+                                             label_visibility="collapsed")
+                with c4:
+                    new_val = st.text_input("", key=f"new_{i}",
+                                             placeholder="Manager baru" if change_type_shared=="Reporting Line" else "Divisi tujuan",
+                                             label_visibility="collapsed")
+                rows_data_manual.append((emp_id, emp_name, old_val, new_val))
+
+            submitted_manual = st.form_submit_button("📨  Kirim Request", use_container_width=True)
+
+        if submitted_manual:
+            errors = []
+            if not req_name_shared.strip():   errors.append("Nama Requester harus diisi")
+            if not req_email_shared.strip() or "@" not in req_email_shared: errors.append("Email Requester tidak valid")
+            if not alasan_shared.strip():     errors.append("Alasan perubahan harus diisi")
+            if errors:
+                for e in errors: st.error(f"❌ {e}")
+            else:
+                valid_rows, warnings, success_count = process_and_save(
+                    rows_data_manual, req_name_shared, req_email_shared,
+                    change_type_shared, alasan_shared, eff_date_shared
+                )
+                for w in warnings: st.warning(f"⚠️ {w}")
+                if success_count > 0:
+                    st.success(f"✅ **{success_count} request** berhasil dikirim! Tim OD akan segera mereview.")
+                    st.balloons()
+                elif not errors:
+                    st.error("❌ Tidak ada data yang valid untuk dikirim.")
+
+    # ════════════════════════════════
+    # MODE 2 — UPLOAD SPREADSHEET
+    # ════════════════════════════════
+    else:
+        # Download template
+        template_df = make_template(change_type_shared)
+        col_tmpl, _ = st.columns([2, 4])
+        with col_tmpl:
+            st.download_button(
+                "⬇️  Download Template",
+                data=to_excel(template_df),
+                file_name=f"template_cr_{change_type_shared.lower().replace(' ','_')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+
         st.markdown(f"""
-        <div style="font-size:15px; font-weight:600; color:{T['text']}; margin-bottom:16px;">
-            Form Permintaan Perubahan Struktur
+        <div style="background:{T['bg3']}; border:1px solid {T['border']}; border-radius:12px;
+            padding:14px 18px; margin:12px 0; font-size:13px; color:{T['text2']};">
+            <b style="color:{T['text']};">📋 Petunjuk Upload:</b><br>
+            1. Download template di atas sesuai jenis perubahan<br>
+            2. Isi data karyawan di template (jangan ubah nama kolom)<br>
+            3. Upload file yang sudah diisi di bawah ini<br>
+            4. Sistem akan memvalidasi data sebelum dikirim
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Helper: generate template download ──
-        def make_template(change_type_tmpl):
-            if change_type_tmpl == "Reporting Line":
-                cols = ["Employee ID", "Employee Name", "Previous Manager", "New Manager"]
-            else:
-                cols = ["Employee ID", "Employee Name", "Nama Divisi Lama", "Nama Divisi Baru"]
-            return pd.DataFrame(columns=cols)
-
-        # ── Helper: validate & save rows ──
-        def process_and_save(rows_data, req_name, req_email, change_type, alasan, eff_date):
-            valid_rows = [(str(eid).strip(), str(en).strip(), str(ov).strip(), str(nv).strip())
-                          for eid, en, ov, nv in rows_data
-                          if str(eid).strip() or str(en).strip()]
-            if not valid_rows:
-                return [], [], 0
-
-            warnings = []
-            for emp_id, emp_name, old_val, new_val in valid_rows:
-                if emp_id and emp_id not in df["Employee ID"].values:
-                    warnings.append(f"Employee ID **{emp_id}** tidak ditemukan di data.")
-                if change_type == "Reporting Line" and new_val:
-                    if len(df[df["Employee Name"].str.lower() == new_val.lower()]) == 0:
-                        warnings.append(f"Manager baru **{new_val}** tidak ditemukan di data.")
-
-            success_count = 0
-            for emp_id, emp_name, old_val, new_val in valid_rows:
-                req_id = generate_request_id()
-                row = {
-                    "request_id":      req_id,
-                    "submitted_date":  datetime.now().strftime("%Y-%m-%d %H:%M"),
-                    "requester_name":  req_name.strip(),
-                    "requester_email": req_email.strip(),
-                    "change_type":     change_type,
-                    "employee_id":     emp_id,
-                    "employee_name":   emp_name,
-                    "data_lama":       old_val,
-                    "data_baru":       new_val,
-                    "alasan":          f"{alasan.strip()} | Effective: {eff_date}",
-                    "status":          "Pending",
-                    "reviewed_by":     "",
-                    "reviewed_date":   "",
-                    "catatan":         "",
-                }
-                if save_change_request(row):
-                    success_count += 1
-            return valid_rows, warnings, success_count
-
-        # ── CSS form buttons ──
-        st.markdown(f"""
-        <style>
-        [data-testid="stFormSubmitButton"] button {{
-            background: {T['accent']} !important;
-            color: white !important; border: none !important;
-            border-radius: 10px !important; font-weight: 600 !important;
-            font-size: 14px !important; padding: 12px !important;
-            transition: all 0.2s !important; width: 100% !important;
-        }}
-        [data-testid="stFormSubmitButton"] button:hover {{
-            background: {T['accent2']} !important;
-            box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
-            transform: translateY(-1px) !important;
-        }}
-        </style>
-        """, unsafe_allow_html=True)
-
-        # ── Informasi Requester & Jenis Perubahan (di luar form, shared) ──
-        st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Informasi Requester</div>", unsafe_allow_html=True)
-        col_r1, col_r2 = st.columns(2)
-        with col_r1:
-            req_name_shared  = st.text_input("Nama Requester *", placeholder="Nama lengkap pengirim request", key="req_name_shared")
-        with col_r2:
-            req_email_shared = st.text_input("Email Requester *", placeholder="email@mekari.com", key="req_email_shared")
-
-        st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:8px;'>Detail Perubahan</div>", unsafe_allow_html=True)
-        col_ct, col_ed = st.columns(2)
-        with col_ct:
-            change_type_shared = st.selectbox("Jenis Perubahan *", ["Reporting Line", "Nama Divisi"], key="ct_shared")
-        with col_ed:
-            eff_date_shared = st.date_input("Effective Date", value=datetime.today(), key="ed_shared")
-
-        st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
-        alasan_shared = st.text_area("Alasan / Keterangan *", placeholder="Jelaskan alasan perubahan struktur ini...", height=90, key="alasan_shared")
-
-        st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
-
-        # ── Mode Input: Manual atau Upload ──
-        st.markdown(f"<div style='font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:{T['text3']}; margin-bottom:12px;'>Metode Input Data Karyawan</div>", unsafe_allow_html=True)
-
-        input_mode = st.radio(
-            "",
-            ["✏️  Input Manual (1–5 karyawan)", "📤  Upload Spreadsheet (>5 karyawan)"],
-            horizontal=True,
-            label_visibility="collapsed",
-            key="input_mode"
+        uploaded_file = st.file_uploader(
+            "Upload file Excel (.xlsx) atau CSV (.csv)",
+            type=["xlsx", "csv"],
+            key="cr_upload"
         )
 
-        # ════════════════════════════════
-        # MODE 1 — INPUT MANUAL
-        # ════════════════════════════════
-        if input_mode == "✏️  Input Manual (1–5 karyawan)":
-            with st.form("cr_form_manual", clear_on_submit=True):
-                st.markdown(f"<div style='font-size:12px; color:{T['text3']}; margin-bottom:12px;'>Isi data karyawan yang akan diubah. Maksimal 5 karyawan per request.</div>", unsafe_allow_html=True)
+        if uploaded_file:
+            try:
+                if uploaded_file.name.endswith(".csv"):
+                    upload_df = pd.read_csv(uploaded_file)
+                else:
+                    upload_df = pd.read_excel(uploaded_file)
 
-                num_rows = st.number_input("Jumlah karyawan", min_value=1, max_value=5, value=1, step=1, key="num_rows_manual")
+                upload_df.columns = upload_df.columns.str.strip()
+                upload_df = upload_df.dropna(how="all")
 
-                # Header kolom
-                h1c, h2c, h3c, h4c = st.columns([1.5, 2, 2.5, 2.5])
-                h1c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Employee ID</div>", unsafe_allow_html=True)
-                h2c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Nama Karyawan</div>", unsafe_allow_html=True)
+                # Validasi kolom
                 if change_type_shared == "Reporting Line":
-                    h3c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Previous Manager</div>", unsafe_allow_html=True)
-                    h4c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>New Manager</div>", unsafe_allow_html=True)
+                    required_cols = ["Employee ID", "Employee Name", "Previous Manager", "New Manager"]
+                    old_col, new_col = "Previous Manager", "New Manager"
                 else:
-                    h3c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Divisi Lama</div>", unsafe_allow_html=True)
-                    h4c.markdown(f"<div style='font-size:11px; font-weight:700; color:{T['text3']};'>Divisi Baru</div>", unsafe_allow_html=True)
+                    required_cols = ["Employee ID", "Employee Name", "Nama Divisi Lama", "Nama Divisi Baru"]
+                    old_col, new_col = "Nama Divisi Lama", "Nama Divisi Baru"
 
-                rows_data_manual = []
-                for i in range(int(num_rows)):
-                    c1, c2, c3, c4 = st.columns([1.5, 2, 2.5, 2.5])
-                    with c1:
-                        emp_id = st.text_input("", key=f"eid_{i}", placeholder="EMP001", label_visibility="collapsed")
-                    with c2:
-                        emp_match = df[df["Employee ID"] == emp_id]["Employee Name"].values
-                        emp_name_default = emp_match[0] if len(emp_match) > 0 else ""
-                        emp_name = st.text_input("", key=f"ename_{i}", value=emp_name_default,
-                                                  placeholder="Nama lengkap", label_visibility="collapsed")
-                    with c3:
-                        old_val = st.text_input("", key=f"old_{i}",
-                                                 placeholder="Manager lama" if change_type_shared=="Reporting Line" else "Divisi saat ini",
-                                                 label_visibility="collapsed")
-                    with c4:
-                        new_val = st.text_input("", key=f"new_{i}",
-                                                 placeholder="Manager baru" if change_type_shared=="Reporting Line" else "Divisi tujuan",
-                                                 label_visibility="collapsed")
-                    rows_data_manual.append((emp_id, emp_name, old_val, new_val))
-
-                submitted_manual = st.form_submit_button("📨  Kirim Request", use_container_width=True)
-
-            if submitted_manual:
-                errors = []
-                if not req_name_shared.strip():   errors.append("Nama Requester harus diisi")
-                if not req_email_shared.strip() or "@" not in req_email_shared: errors.append("Email Requester tidak valid")
-                if not alasan_shared.strip():     errors.append("Alasan perubahan harus diisi")
-                if errors:
-                    for e in errors: st.error(f"❌ {e}")
+                missing_cols = [c for c in required_cols if c not in upload_df.columns]
+                if missing_cols:
+                    st.error(f"❌ Kolom tidak sesuai template. Kolom yang kurang: {', '.join(missing_cols)}")
                 else:
-                    valid_rows, warnings, success_count = process_and_save(
-                        rows_data_manual, req_name_shared, req_email_shared,
-                        change_type_shared, alasan_shared, eff_date_shared
-                    )
-                    for w in warnings: st.warning(f"⚠️ {w}")
-                    if success_count > 0:
-                        st.success(f"✅ **{success_count} request** berhasil dikirim! Tim OD akan segera mereview.")
-                        st.balloons()
-                    elif not errors:
-                        st.error("❌ Tidak ada data yang valid untuk dikirim.")
+                    # Preview data
+                    st.markdown(f"<div style='font-size:13px; font-weight:600; color:{T['text']}; margin:12px 0 8px 0;'>Preview Data ({len(upload_df)} karyawan)</div>", unsafe_allow_html=True)
+                    st.dataframe(upload_df[required_cols], use_container_width=True, height=200)
 
-        # ════════════════════════════════
-        # MODE 2 — UPLOAD SPREADSHEET
-        # ════════════════════════════════
+                    # Validasi per baris
+                    upload_warnings = []
+                    for _, urow in upload_df.iterrows():
+                        eid = str(urow.get("Employee ID","")).strip()
+                        nv  = str(urow.get(new_col,"")).strip()
+                        if eid and eid not in df["Employee ID"].values:
+                            upload_warnings.append(f"Employee ID **{eid}** tidak ditemukan di data")
+                        if change_type_shared == "Reporting Line" and nv:
+                            if len(df[df["Employee Name"].str.lower() == nv.lower()]) == 0:
+                                upload_warnings.append(f"Manager baru **{nv}** tidak ditemukan di data")
+
+                    if upload_warnings:
+                        with st.expander(f"⚠️ {len(upload_warnings)} peringatan validasi — klik untuk lihat detail"):
+                            for w in upload_warnings:
+                                st.warning(w)
+
+                    # Tombol submit upload
+                    errors_upload = []
+                    if not req_name_shared.strip():   errors_upload.append("Nama Requester harus diisi")
+                    if not req_email_shared.strip() or "@" not in req_email_shared: errors_upload.append("Email Requester tidak valid")
+                    if not alasan_shared.strip():     errors_upload.append("Alasan perubahan harus diisi")
+
+                    if errors_upload:
+                        for e in errors_upload: st.error(f"❌ {e}")
+                    else:
+                        if st.button("📨  Kirim Semua Request dari File", use_container_width=True, key="submit_upload"):
+                            rows_from_file = [
+                                (
+                                    str(r.get("Employee ID","")).strip(),
+                                    str(r.get("Employee Name","")).strip(),
+                                    str(r.get(old_col,"")).strip(),
+                                    str(r.get(new_col,"")).strip(),
+                                )
+                                for _, r in upload_df.iterrows()
+                            ]
+                            _, _, success_count = process_and_save(
+                                rows_from_file, req_name_shared, req_email_shared,
+                                change_type_shared, alasan_shared, eff_date_shared
+                            )
+                            if success_count > 0:
+                                st.success(f"✅ **{success_count} request** dari file berhasil dikirim!")
+                                st.balloons()
+                            else:
+                                st.error("❌ Tidak ada data yang berhasil disimpan. Periksa koneksi Google Sheets.")
+
+            except Exception as e:
+                st.error(f"❌ Gagal membaca file: {str(e)}")
+
+# ══════════════════════════════════
+# SUB-TAB 2 — INBOX & REVIEW
+# ══════════════════════════════════
+with cr_tab2:
+    col_reload, _ = st.columns([1, 5])
+    with col_reload:
+        if st.button("🔄 Refresh", key="refresh_cr"):
+            st.rerun()
+
+    cr_df = load_change_requests()
+
+    if cr_df.empty:
+        st.info("📭 Belum ada request yang masuk.")
+    else:
+        # Ensure status column exists
+        if "status" not in cr_df.columns:
+            cr_df["status"] = "Pending"
+
+        pending_df  = cr_df[cr_df["status"] == "Pending"].copy()
+        inreview_df = cr_df[cr_df["status"] == "In Review"].copy()
+
+        # Metrics
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("📥 Total Masuk",   len(cr_df))
+        m2.metric("🟡 Pending",       len(pending_df))
+        m3.metric("✅ Approved",      len(cr_df[cr_df["status"] == "Approved"]))
+        m4.metric("❌ Rejected",      len(cr_df[cr_df["status"] == "Rejected"]))
+
+        st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
+
+        # Pending requests
+        if len(pending_df) == 0:
+            st.success("✅ Semua request sudah diproses!")
         else:
-            # Download template
-            template_df = make_template(change_type_shared)
-            col_tmpl, _ = st.columns([2, 4])
-            with col_tmpl:
-                st.download_button(
-                    "⬇️  Download Template",
-                    data=to_excel(template_df),
-                    file_name=f"template_cr_{change_type_shared.lower().replace(' ','_')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-
             st.markdown(f"""
-            <div style="background:{T['bg3']}; border:1px solid {T['border']}; border-radius:12px;
-                padding:14px 18px; margin:12px 0; font-size:13px; color:{T['text2']};">
-                <b style="color:{T['text']};">📋 Petunjuk Upload:</b><br>
-                1. Download template di atas sesuai jenis perubahan<br>
-                2. Isi data karyawan di template (jangan ubah nama kolom)<br>
-                3. Upload file yang sudah diisi di bawah ini<br>
-                4. Sistem akan memvalidasi data sebelum dikirim
+            <div style="font-size:14px; font-weight:700; color:{T['text']}; margin-bottom:12px;">
+                🟡 Pending — Perlu Direview ({len(pending_df)} request)
             </div>
             """, unsafe_allow_html=True)
 
-            uploaded_file = st.file_uploader(
-                "Upload file Excel (.xlsx) atau CSV (.csv)",
-                type=["xlsx", "csv"],
-                key="cr_upload"
-            )
-
-            if uploaded_file:
+            for _, row in pending_df.iterrows():
+                # Hitung usia request
                 try:
-                    if uploaded_file.name.endswith(".csv"):
-                        upload_df = pd.read_csv(uploaded_file)
-                    else:
-                        upload_df = pd.read_excel(uploaded_file)
+                    submitted = datetime.strptime(str(row.get("submitted_date",""))[:16], "%Y-%m-%d %H:%M")
+                    age_days  = (datetime.now() - submitted).days
+                    age_label = f"{age_days} hari yang lalu" if age_days > 0 else "Hari ini"
+                    age_color = "#ef4444" if age_days >= 3 else "#f59e0b" if age_days >= 1 else "#22c55e"
+                except Exception:
+                    age_label = "-"
+                    age_color = T["text3"]
 
-                    upload_df.columns = upload_df.columns.str.strip()
-                    upload_df = upload_df.dropna(how="all")
+                with st.expander(
+                    f"📋 {row.get('request_id','-')}  ·  {row.get('change_type','-')}  ·  "
+                    f"{row.get('employee_name','-')}  ·  dari {row.get('requester_name','-')}",
+                    expanded=False
+                ):
+                    # Detail card
+                    col_info, col_action = st.columns([3, 2])
+                    with col_info:
+                        st.markdown(f"""
+                        <div style="background:{T['bg3']}; border-radius:12px; padding:16px;
+                            border:1px solid {T['border']};">
+                            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                                <div>
+                                    <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Request ID</div>
+                                    <div style="font-size:13px; font-weight:600; color:{T['text']};">{row.get('request_id','-')}</div>
+                                </div>
+                                <div>
+                                    <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Masuk</div>
+                                    <div style="font-size:13px; color:{age_color}; font-weight:600;">{age_label}</div>
+                                </div>
+                                <div>
+                                    <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Karyawan</div>
+                                    <div style="font-size:13px; font-weight:600; color:{T['text']};">{row.get('employee_name','-')} ({row.get('employee_id','-')})</div>
+                                </div>
+                                <div>
+                                    <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Jenis</div>
+                                    <div style="font-size:13px; font-weight:600; color:{T['accent']};">{row.get('change_type','-')}</div>
+                                </div>
+                            </div>
+                            <div style="margin-top:12px; padding-top:12px; border-top:1px solid {T['border']};">
+                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                                    <div>
+                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Sebelum</div>
+                                        <div style="font-size:13px; color:#ef4444; font-weight:500;">❌ {row.get('data_lama','-')}</div>
+                                    </div>
+                                    <div>
+                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Sesudah</div>
+                                        <div style="font-size:13px; color:#22c55e; font-weight:500;">✅ {row.get('data_baru','-')}</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div style="margin-top:12px; padding-top:12px; border-top:1px solid {T['border']};">
+                                <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Alasan</div>
+                                <div style="font-size:13px; color:{T['text2']};">{row.get('alasan','-')}</div>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
 
-                    # Validasi kolom
-                    if change_type_shared == "Reporting Line":
-                        required_cols = ["Employee ID", "Employee Name", "Previous Manager", "New Manager"]
-                        old_col, new_col = "Previous Manager", "New Manager"
-                    else:
-                        required_cols = ["Employee ID", "Employee Name", "Nama Divisi Lama", "Nama Divisi Baru"]
-                        old_col, new_col = "Nama Divisi Lama", "Nama Divisi Baru"
+                    with col_action:
+                        st.markdown(f"""
+                        <div style="font-size:12px; font-weight:700; color:{T['text3']};
+                            text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;">
+                            Tindakan
+                        </div>
+                        """, unsafe_allow_html=True)
 
-                    missing_cols = [c for c in required_cols if c not in upload_df.columns]
-                    if missing_cols:
-                        st.error(f"❌ Kolom tidak sesuai template. Kolom yang kurang: {', '.join(missing_cols)}")
-                    else:
-                        # Preview data
-                        st.markdown(f"<div style='font-size:13px; font-weight:600; color:{T['text']}; margin:12px 0 8px 0;'>Preview Data ({len(upload_df)} karyawan)</div>", unsafe_allow_html=True)
-                        st.dataframe(upload_df[required_cols], use_container_width=True, height=200)
+                        reviewer = st.text_input("Nama Reviewer *",
+                            key=f"reviewer_{row.get('request_id','')}",
+                            placeholder="Nama Anda")
+                        catatan_review = st.text_area("Catatan (opsional)",
+                            key=f"catatan_{row.get('request_id','')}",
+                            height=80, placeholder="Catatan untuk requester...")
 
-                        # Validasi per baris
-                        upload_warnings = []
-                        for _, urow in upload_df.iterrows():
-                            eid = str(urow.get("Employee ID","")).strip()
-                            nv  = str(urow.get(new_col,"")).strip()
-                            if eid and eid not in df["Employee ID"].values:
-                                upload_warnings.append(f"Employee ID **{eid}** tidak ditemukan di data")
-                            if change_type_shared == "Reporting Line" and nv:
-                                if len(df[df["Employee Name"].str.lower() == nv.lower()]) == 0:
-                                    upload_warnings.append(f"Manager baru **{nv}** tidak ditemukan di data")
-
-                        if upload_warnings:
-                            with st.expander(f"⚠️ {len(upload_warnings)} peringatan validasi — klik untuk lihat detail"):
-                                for w in upload_warnings:
-                                    st.warning(w)
-
-                        # Tombol submit upload
-                        errors_upload = []
-                        if not req_name_shared.strip():   errors_upload.append("Nama Requester harus diisi")
-                        if not req_email_shared.strip() or "@" not in req_email_shared: errors_upload.append("Email Requester tidak valid")
-                        if not alasan_shared.strip():     errors_upload.append("Alasan perubahan harus diisi")
-
-                        if errors_upload:
-                            for e in errors_upload: st.error(f"❌ {e}")
-                        else:
-                            if st.button("📨  Kirim Semua Request dari File", use_container_width=True, key="submit_upload"):
-                                rows_from_file = [
-                                    (
-                                        str(r.get("Employee ID","")).strip(),
-                                        str(r.get("Employee Name","")).strip(),
-                                        str(r.get(old_col,"")).strip(),
-                                        str(r.get(new_col,"")).strip(),
-                                    )
-                                    for _, r in upload_df.iterrows()
-                                ]
-                                _, _, success_count = process_and_save(
-                                    rows_from_file, req_name_shared, req_email_shared,
-                                    change_type_shared, alasan_shared, eff_date_shared
-                                )
-                                if success_count > 0:
-                                    st.success(f"✅ **{success_count} request** dari file berhasil dikirim!")
-                                    st.balloons()
+                        req_id_key = row.get('request_id','').replace('-','_')
+                        st.markdown(f"""
+                        <style>
+                        [data-testid="stButton"][key="approve_{req_id_key}"] button {{
+                            background: #059669 !important; color: white !important;
+                            border: none !important; border-radius: 10px !important;
+                            font-weight: 600 !important;
+                        }}
+                        [data-testid="stButton"][key="reject_{req_id_key}"] button {{
+                            background: #dc2626 !important; color: white !important;
+                            border: none !important; border-radius: 10px !important;
+                            font-weight: 600 !important;
+                        }}
+                        </style>
+                        """, unsafe_allow_html=True)
+                        col_a, col_r = st.columns(2)
+                        with col_a:
+                            if st.button("✅ Approve",
+                                key=f"approve_{row.get('request_id','')}",
+                                use_container_width=True):
+                                if not reviewer.strip():
+                                    st.error("Nama reviewer harus diisi")
                                 else:
-                                    st.error("❌ Tidak ada data yang berhasil disimpan. Periksa koneksi Google Sheets.")
+                                    if update_cr_status(
+                                        row.get("request_id",""), "Approved",
+                                        reviewer.strip(), catatan_review.strip()
+                                    ):
+                                        st.success("✅ Approved!")
+                                        st.rerun()
+                        with col_r:
+                            if st.button("❌ Reject",
+                                key=f"reject_{row.get('request_id','')}",
+                                use_container_width=True):
+                                if not reviewer.strip():
+                                    st.error("Nama reviewer harus diisi")
+                                else:
+                                    if update_cr_status(
+                                        row.get("request_id",""), "Rejected",
+                                        reviewer.strip(), catatan_review.strip()
+                                    ):
+                                        st.warning("❌ Rejected")
+                                        st.rerun()
 
-                except Exception as e:
-                    st.error(f"❌ Gagal membaca file: {str(e)}")
+# ══════════════════════════════════
+# SUB-TAB 3 — HISTORY
+# ══════════════════════════════════
+with cr_tab3:
+    col_rl, _ = st.columns([1, 5])
+    with col_rl:
+        if st.button("🔄 Refresh", key="refresh_hist"):
+            st.rerun()
 
-    # ══════════════════════════════════
-    # SUB-TAB 2 — INBOX & REVIEW
-    # ══════════════════════════════════
-    with cr_tab2:
-        col_reload, _ = st.columns([1, 5])
-        with col_reload:
-            if st.button("🔄 Refresh", key="refresh_cr"):
-                st.rerun()
+    cr_hist = load_change_requests()
 
-        cr_df = load_change_requests()
+    if cr_hist.empty:
+        st.info("📭 Belum ada history request.")
+    else:
+        processed = cr_hist[cr_hist["status"].isin(["Approved","Rejected"])].copy()
 
-        if cr_df.empty:
-            st.info("📭 Belum ada request yang masuk.")
+        if processed.empty:
+            st.info("Belum ada request yang telah diproses.")
         else:
-            # Ensure status column exists
-            if "status" not in cr_df.columns:
-                cr_df["status"] = "Pending"
-
-            pending_df  = cr_df[cr_df["status"] == "Pending"].copy()
-            inreview_df = cr_df[cr_df["status"] == "In Review"].copy()
-
             # Metrics
-            m1, m2, m3, m4 = st.columns(4)
-            m1.metric("📥 Total Masuk",   len(cr_df))
-            m2.metric("🟡 Pending",       len(pending_df))
-            m3.metric("✅ Approved",      len(cr_df[cr_df["status"] == "Approved"]))
-            m4.metric("❌ Rejected",      len(cr_df[cr_df["status"] == "Rejected"]))
+            h1m, h2m, h3m = st.columns(3)
+            h1m.metric("📊 Total Diproses", len(processed))
+            h2m.metric("✅ Approved",  len(processed[processed["status"]=="Approved"]))
+            h3m.metric("❌ Rejected",  len(processed[processed["status"]=="Rejected"]))
 
             st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
 
-            # Pending requests
-            if len(pending_df) == 0:
-                st.success("✅ Semua request sudah diproses!")
-            else:
-                st.markdown(f"""
-                <div style="font-size:14px; font-weight:700; color:{T['text']}; margin-bottom:12px;">
-                    🟡 Pending — Perlu Direview ({len(pending_df)} request)
-                </div>
-                """, unsafe_allow_html=True)
+            # Filter
+            col_hf1, col_hf2, col_hf3 = st.columns(3)
+            with col_hf1:
+                hist_type = st.selectbox("Filter Jenis", ["Semua"] + sorted(processed["change_type"].unique().tolist()), key="hf_type")
+            with col_hf2:
+                hist_status = st.selectbox("Filter Status", ["Semua", "Approved", "Rejected"], key="hf_status")
+            with col_hf3:
+                hist_search = st.text_input("Cari nama karyawan", key="hf_search")
 
-                for _, row in pending_df.iterrows():
-                    # Hitung usia request
-                    try:
-                        submitted = datetime.strptime(str(row.get("submitted_date",""))[:16], "%Y-%m-%d %H:%M")
-                        age_days  = (datetime.now() - submitted).days
-                        age_label = f"{age_days} hari yang lalu" if age_days > 0 else "Hari ini"
-                        age_color = "#ef4444" if age_days >= 3 else "#f59e0b" if age_days >= 1 else "#22c55e"
-                    except Exception:
-                        age_label = "-"
-                        age_color = T["text3"]
+            view_hist = processed.copy()
+            if hist_type   != "Semua": view_hist = view_hist[view_hist["change_type"] == hist_type]
+            if hist_status != "Semua": view_hist = view_hist[view_hist["status"] == hist_status]
+            if hist_search: view_hist = view_hist[view_hist["employee_name"].str.contains(hist_search, case=False, na=False)]
 
-                    with st.expander(
-                        f"📋 {row.get('request_id','-')}  ·  {row.get('change_type','-')}  ·  "
-                        f"{row.get('employee_name','-')}  ·  dari {row.get('requester_name','-')}",
-                        expanded=False
-                    ):
-                        # Detail card
-                        col_info, col_action = st.columns([3, 2])
-                        with col_info:
-                            st.markdown(f"""
-                            <div style="background:{T['bg3']}; border-radius:12px; padding:16px;
-                                border:1px solid {T['border']};">
-                                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                                    <div>
-                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Request ID</div>
-                                        <div style="font-size:13px; font-weight:600; color:{T['text']};">{row.get('request_id','-')}</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Masuk</div>
-                                        <div style="font-size:13px; color:{age_color}; font-weight:600;">{age_label}</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Karyawan</div>
-                                        <div style="font-size:13px; font-weight:600; color:{T['text']};">{row.get('employee_name','-')} ({row.get('employee_id','-')})</div>
-                                    </div>
-                                    <div>
-                                        <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Jenis</div>
-                                        <div style="font-size:13px; font-weight:600; color:{T['accent']};">{row.get('change_type','-')}</div>
-                                    </div>
-                                </div>
-                                <div style="margin-top:12px; padding-top:12px; border-top:1px solid {T['border']};">
-                                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-                                        <div>
-                                            <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Sebelum</div>
-                                            <div style="font-size:13px; color:#ef4444; font-weight:500;">❌ {row.get('data_lama','-')}</div>
-                                        </div>
-                                        <div>
-                                            <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Sesudah</div>
-                                            <div style="font-size:13px; color:#22c55e; font-weight:500;">✅ {row.get('data_baru','-')}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div style="margin-top:12px; padding-top:12px; border-top:1px solid {T['border']};">
-                                    <div style="font-size:10px; color:{T['text3']}; text-transform:uppercase; letter-spacing:0.06em;">Alasan</div>
-                                    <div style="font-size:13px; color:{T['text2']};">{row.get('alasan','-')}</div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
+            # Style status
+            def style_status(val):
+                if val == "Approved": return "background-color:#d1fae5; color:#065f46; font-weight:600;"
+                if val == "Rejected": return "background-color:#fee2e2; color:#991b1b; font-weight:600;"
+                return ""
 
-                        with col_action:
-                            st.markdown(f"""
-                            <div style="font-size:12px; font-weight:700; color:{T['text3']};
-                                text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px;">
-                                Tindakan
-                            </div>
-                            """, unsafe_allow_html=True)
+            display_cols = ["request_id","submitted_date","requester_name","change_type",
+                            "employee_name","employee_id","data_lama","data_baru",
+                            "status","reviewed_by","reviewed_date","catatan"]
+            available_cols = [c for c in display_cols if c in view_hist.columns]
 
-                            reviewer = st.text_input("Nama Reviewer *",
-                                key=f"reviewer_{row.get('request_id','')}",
-                                placeholder="Nama Anda")
-                            catatan_review = st.text_area("Catatan (opsional)",
-                                key=f"catatan_{row.get('request_id','')}",
-                                height=80, placeholder="Catatan untuk requester...")
+            st.caption(f"Menampilkan **{len(view_hist)}** request")
+            st.dataframe(
+                view_hist[available_cols].reset_index(drop=True),
+                use_container_width=True, height=480
+            )
 
-                            req_id_key = row.get('request_id','').replace('-','_')
-                            st.markdown(f"""
-                            <style>
-                            [data-testid="stButton"][key="approve_{req_id_key}"] button {{
-                                background: #059669 !important; color: white !important;
-                                border: none !important; border-radius: 10px !important;
-                                font-weight: 600 !important;
-                            }}
-                            [data-testid="stButton"][key="reject_{req_id_key}"] button {{
-                                background: #dc2626 !important; color: white !important;
-                                border: none !important; border-radius: 10px !important;
-                                font-weight: 600 !important;
-                            }}
-                            </style>
-                            """, unsafe_allow_html=True)
-                            col_a, col_r = st.columns(2)
-                            with col_a:
-                                if st.button("✅ Approve",
-                                    key=f"approve_{row.get('request_id','')}",
-                                    use_container_width=True):
-                                    if not reviewer.strip():
-                                        st.error("Nama reviewer harus diisi")
-                                    else:
-                                        if update_cr_status(
-                                            row.get("request_id",""), "Approved",
-                                            reviewer.strip(), catatan_review.strip()
-                                        ):
-                                            st.success("✅ Approved!")
-                                            st.rerun()
-                            with col_r:
-                                if st.button("❌ Reject",
-                                    key=f"reject_{row.get('request_id','')}",
-                                    use_container_width=True):
-                                    if not reviewer.strip():
-                                        st.error("Nama reviewer harus diisi")
-                                    else:
-                                        if update_cr_status(
-                                            row.get("request_id",""), "Rejected",
-                                            reviewer.strip(), catatan_review.strip()
-                                        ):
-                                            st.warning("❌ Rejected")
-                                            st.rerun()
-
-    # ══════════════════════════════════
-    # SUB-TAB 3 — HISTORY
-    # ══════════════════════════════════
-    with cr_tab3:
-        col_rl, _ = st.columns([1, 5])
-        with col_rl:
-            if st.button("🔄 Refresh", key="refresh_hist"):
-                st.rerun()
-
-        cr_hist = load_change_requests()
-
-        if cr_hist.empty:
-            st.info("📭 Belum ada history request.")
-        else:
-            processed = cr_hist[cr_hist["status"].isin(["Approved","Rejected"])].copy()
-
-            if processed.empty:
-                st.info("Belum ada request yang telah diproses.")
-            else:
-                # Metrics
-                h1m, h2m, h3m = st.columns(3)
-                h1m.metric("📊 Total Diproses", len(processed))
-                h2m.metric("✅ Approved",  len(processed[processed["status"]=="Approved"]))
-                h3m.metric("❌ Rejected",  len(processed[processed["status"]=="Rejected"]))
-
-                st.markdown(f"<div style='height:1px; background:{T['border']}; margin:16px 0;'></div>", unsafe_allow_html=True)
-
-                # Filter
-                col_hf1, col_hf2, col_hf3 = st.columns(3)
-                with col_hf1:
-                    hist_type = st.selectbox("Filter Jenis", ["Semua"] + sorted(processed["change_type"].unique().tolist()), key="hf_type")
-                with col_hf2:
-                    hist_status = st.selectbox("Filter Status", ["Semua", "Approved", "Rejected"], key="hf_status")
-                with col_hf3:
-                    hist_search = st.text_input("Cari nama karyawan", key="hf_search")
-
-                view_hist = processed.copy()
-                if hist_type   != "Semua": view_hist = view_hist[view_hist["change_type"] == hist_type]
-                if hist_status != "Semua": view_hist = view_hist[view_hist["status"] == hist_status]
-                if hist_search: view_hist = view_hist[view_hist["employee_name"].str.contains(hist_search, case=False, na=False)]
-
-                # Style status
-                def style_status(val):
-                    if val == "Approved": return "background-color:#d1fae5; color:#065f46; font-weight:600;"
-                    if val == "Rejected": return "background-color:#fee2e2; color:#991b1b; font-weight:600;"
-                    return ""
-
-                display_cols = ["request_id","submitted_date","requester_name","change_type",
-                                "employee_name","employee_id","data_lama","data_baru",
-                                "status","reviewed_by","reviewed_date","catatan"]
-                available_cols = [c for c in display_cols if c in view_hist.columns]
-
-                st.caption(f"Menampilkan **{len(view_hist)}** request")
-                st.dataframe(
-                    view_hist[available_cols].reset_index(drop=True),
-                    use_container_width=True, height=480
-                )
-
-                st.divider()
-                st.markdown("**⬇️ Download History**")
-                col_hd1, col_hd2, _ = st.columns([1,1,3])
-                with col_hd1:
-                    st.download_button("📄 CSV", view_hist.to_csv(index=False).encode("utf-8"),
-                        "cr_history.csv", "text/csv", use_container_width=True)
-                with col_hd2:
-                    st.download_button("📊 Excel", to_excel(view_hist),
-                        "cr_history.xlsx",
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True)
+            st.divider()
+            st.markdown("**⬇️ Download History**")
+            col_hd1, col_hd2, _ = st.columns([1,1,3])
+            with col_hd1:
+                st.download_button("📄 CSV", view_hist.to_csv(index=False).encode("utf-8"),
+                    "cr_history.csv", "text/csv", use_container_width=True)
+            with col_hd2:
+                st.download_button("📊 Excel", to_excel(view_hist),
+                    "cr_history.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True)
 
 st.markdown(section_body_end(), unsafe_allow_html=True)
 
-# ══════════════════════════════════════════
-# AUTO-NAVIGATE via JS — click tab by index
-# ══════════════════════════════════════════
-if st.session_state.active_tab > 0:
-    tab_index = st.session_state.active_tab
-    # JS robust: coba beberapa selector dan retry lebih lama
-    st.markdown(f"""
-    <script>
-    (function() {{
-        function clickTab() {{
-            // Coba selector di berbagai level parent
-            let found = false;
-            for (let win of [window, window.parent, window.top]) {{
-                try {{
-                    const tabs = win.document.querySelectorAll('[data-testid="stTabs"] button[role="tab"]');
-                    if (tabs.length > {tab_index}) {{
-                        tabs[{tab_index}].click();
-                        found = true;
-                        break;
-                    }}
-                }} catch(e) {{}}
-            }}
-            return found;
-        }}
-        // Retry beberapa kali sampai berhasil
-        let attempts = 0;
-        const interval = setInterval(function() {{
-            if (clickTab() || attempts > 15) clearInterval(interval);
-            attempts++;
-        }}, 150);
-    }})();
-    </script>
-    """, unsafe_allow_html=True)
-    st.session_state.active_tab = 0
+# Navigation handled by scroll-to-section JS above
