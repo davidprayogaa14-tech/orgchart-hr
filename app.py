@@ -1328,7 +1328,7 @@ st.markdown(f"""
         Org Chart Dashboard
     </div>
     <div style="font-size:14px; color:{T['text3']}; margin-top:6px; font-weight:400;">
-        Visualisasi & analitik struktur organisasi real-time
+        Visualisasi & Dashboard Organisasi
     </div>
 </div>
 """, unsafe_allow_html=True)
