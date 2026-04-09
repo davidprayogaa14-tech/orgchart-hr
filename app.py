@@ -700,145 +700,11 @@ if df is None:
     st.stop()
 
 # ══════════════════════════════════════════
-# LOGIN SYSTEM
-# ══════════════════════════════════════════
-def get_users_sheet():
-    """Ambil worksheet 'users' dari Google Sheets."""
-    client = get_gspread_client()
-    if not client:
-        return None
-    try:
-        wb = client.open_by_key(SHEET_ID)
-        try:
-            return wb.worksheet("users")
-        except:
-            # Buat sheet baru jika belum ada
-            ws = wb.add_worksheet(title="users", rows=100, cols=5)
-            ws.append_row(["username", "password", "nama", "role", "email"])
-            # Tambah akun admin default
-            import hashlib
-            default_pass = hashlib.sha256("admin123".encode()).hexdigest()
-            ws.append_row(["admin", default_pass, "Administrator", "admin", "admin@mekari.com"])
-            return ws
-    except Exception:
-        return None
-
-def verify_login(username: str, password: str):
-    """Cek username & password ke Google Sheets."""
-    import hashlib
-    ws = get_users_sheet()
-    if not ws:
-        # Fallback: hardcoded admin jika Sheets tidak tersedia
-        if username == "admin" and password == "admin123":
-            return {"username": "admin", "nama": "Administrator", "role": "admin"}
-        return None
-    try:
-        records = ws.get_all_records()
-        hashed = hashlib.sha256(password.encode()).hexdigest()
-        for row in records:
-            if str(row.get("username","")).strip().lower() == username.strip().lower():
-                if str(row.get("password","")).strip() == hashed:
-                    return {
-                        "username": row.get("username",""),
-                        "nama":     row.get("nama",""),
-                        "role":     row.get("role","user"),
-                        "email":    row.get("email",""),
-                    }
-        return None
-    except Exception:
-        return None
-
-# ── Init session state login ──
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in   = False
-if "user_info" not in st.session_state:
-    st.session_state.user_info   = {}
-
-# ── Halaman Login ──
-if not st.session_state.logged_in:
-    dm_login = st.session_state.get("dark_mode", False)
-    bg_login   = "#0f1117" if dm_login else "#f8f7ff"
-    card_bg    = "#1a1d2e" if dm_login else "#ffffff"
-    text_login = "#e8e6ff" if dm_login else "#1a1a2e"
-    border_login = "#2d3160" if dm_login else "#ede9fe"
-
-    st.markdown(f"""
-    <style>
-    .stApp {{ background: {bg_login} !important; }}
-    .block-container {{ display:flex; align-items:center; justify-content:center;
-        min-height:100vh; padding-top:0 !important; }}
-    [data-testid="stSidebar"] {{ display: none !important; }}
-    </style>
-    """, unsafe_allow_html=True)
-
-    col_l, col_center, col_r = st.columns([1, 1.2, 1])
-    with col_center:
-        st.markdown(f"""
-        <div style="text-align:center; padding: 40px 0 32px 0;">
-            <div style="
-                width:64px; height:64px; border-radius:18px;
-                background: linear-gradient(135deg, #5b4fcf, #9b8fef);
-                display:inline-flex; align-items:center; justify-content:center;
-                font-size:30px; margin-bottom:16px;
-                box-shadow: 0 8px 32px rgba(91,79,207,0.35);
-            ">🏢</div>
-            <div style="font-size:24px; font-weight:700; color:{text_login};
-                font-family:'DM Sans',sans-serif;">OrgChart HR</div>
-            <div style="font-size:13px; color:#9e9ec0; margin-top:6px;">
-                Masuk untuk mengakses dashboard
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        with st.form("login_form"):
-            username_input = st.text_input("Username", placeholder="Masukkan username Anda")
-            password_input = st.text_input("Password", type="password", placeholder="Masukkan password Anda")
-
-            st.markdown(f"""
-            <style>
-            [data-testid="stFormSubmitButton"] button {{
-                background: linear-gradient(135deg, #5b4fcf, #7c6fcd) !important;
-                color: white !important; border: none !important;
-                border-radius: 12px !important; font-weight: 600 !important;
-                font-size: 15px !important; padding: 14px !important;
-                width: 100% !important; transition: all 0.2s !important;
-                box-shadow: 0 4px 16px rgba(91,79,207,0.3) !important;
-            }}
-            [data-testid="stFormSubmitButton"] button:hover {{
-                transform: translateY(-2px) !important;
-                box-shadow: 0 8px 24px rgba(91,79,207,0.4) !important;
-            }}
-            </style>
-            """, unsafe_allow_html=True)
-            login_btn = st.form_submit_button("Masuk →", use_container_width=True)
-
-        if login_btn:
-            if not username_input.strip() or not password_input.strip():
-                st.error("Username dan password harus diisi")
-            else:
-                with st.spinner("Memverifikasi..."):
-                    user = verify_login(username_input, password_input)
-                if user:
-                    st.session_state.logged_in = True
-                    st.session_state.user_info = user
-                    st.rerun()
-                else:
-                    st.error("❌ Username atau password salah")
-
-        st.markdown(f"""
-        <div style="text-align:center; margin-top:20px;
-            font-size:12px; color:#6b6b9e;">
-            Hubungi administrator untuk mendapatkan akses
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.stop()  # Hentikan render dashboard jika belum login
-
-# ══════════════════════════════════════════
 # THEME — Dark / Light
 # ══════════════════════════════════════════
 dm = st.session_state.dark_mode
 
+# Color tokens
 T = {
     "bg":           "#0f1117" if dm else "#f8f7ff",
     "bg2":          "#1a1d2e" if dm else "#ffffff",
@@ -880,335 +746,419 @@ T = {
     "radio_txt":    "#c4b5fd" if dm else "#4b4b6b",
     "label_txt":    "#6b6b9e" if dm else "#9e9ec0",
 }
-# ══════════════════════════════════════════
-# GLOBAL CSS — Split Layout
-# ══════════════════════════════════════════
+
+# ── Inject CSS ──
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
 
-/* ── Reset & Base ── */
-*, *::before, *::after {{ box-sizing: border-box; }}
-html, body, [class*="css"] {{
-    font-family: 'DM Sans', sans-serif !important;
-    color: {T["text"]} !important;
-}}
+    html, body, [class*="css"] {{
+        font-family: 'DM Sans', sans-serif !important;
+        color: {T["text"]} !important;
+    }}
 
-/* ── Full app background ── */
-.stApp {{
-    background: {T["bg"]} !important;
-}}
+    .stApp {{
+        background-color: {T["bg"]} !important;
+        transition: background-color 0.3s ease, color 0.3s ease;
+    }}
 
-/* ── Hide Streamlit chrome ── */
-#MainMenu, footer, header {{ visibility: hidden !important; }}
-[data-testid="stToolbar"] {{ display: none !important; }}
+    .block-container {{
+        padding-top: 0 !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
+        max-width: 100% !important;
+        background-color: {T["bg"]} !important;
+    }}
 
-/* ── Force full viewport ── */
-.stApp > div:first-child {{
-    min-height: 100vh;
-}}
+    /* ── Sidebar ── */
+    [data-testid="stSidebar"] {{
+        background: {T["sidebar_bg"]} !important;
+        border-right: 1px solid {T["border"]} !important;
+        transition: background 0.3s ease;
+    }}
+    [data-testid="stSidebar"] .block-container {{
+        padding: 0 1rem 2rem 1rem !important;
+        background: {T["sidebar_bg"]} !important;
+    }}
+    [data-testid="stSidebar"] label {{
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+        color: {T["accent2"]} !important;
+    }}
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] div {{
+        color: {T["text"]} !important;
+    }}
 
-/* ── Main block container — right panel ── */
-.block-container {{
-    padding: 0 0 60px 0 !important;
-    max-width: 100% !important;
-    background: {T["bg"]} !important;
-}}
+    /* ── Selectbox ── */
+    [data-testid="stSelectbox"] > div > div {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        font-size: 14px !important;
+        color: {T["text"]} !important;
+        transition: border-color 0.2s !important;
+    }}
+    [data-testid="stSelectbox"] > div > div:focus-within {{
+        border-color: {T["accent"]} !important;
+        box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
+    }}
+    [data-testid="stSelectbox"] svg {{
+        fill: {T["text2"]} !important;
+    }}
 
-/* ── Ensure content doesn't go under sidebar ── */
-section.main {{
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-}}
+    /* ── Selectbox dropdown popup ── */
+    [data-testid="stSelectbox"] ul,
+    div[data-baseweb="popover"] ul,
+    div[data-baseweb="menu"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 10px !important;
+    }}
+    div[data-baseweb="popover"] li,
+    div[data-baseweb="menu"] li,
+    [data-testid="stSelectbox"] li {{
+        color: {T["text"]} !important;
+        background: {T["bg2"]} !important;
+    }}
+    div[data-baseweb="popover"] li:hover,
+    div[data-baseweb="menu"] li:hover,
+    [data-testid="stSelectbox"] li:hover {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
+    /* Override dark default dari Streamlit */
+    div[data-baseweb="popover"] {{
+        background: {T["bg2"]} !important;
+    }}
+    div[data-baseweb="select"] div,
+    div[data-baseweb="select"] span {{
+        color: {T["text"]} !important;
+        background: transparent !important;
+    }}
+    /* Dropdown container portal */
+    [data-testid="stSelectbox"] + div,
+    .stSelectbox [role="listbox"],
+    [role="listbox"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+    }}
+    [role="option"] {{
+        background: {T["bg2"]} !important;
+        color: {T["text"]} !important;
+    }}
+    [role="option"]:hover,
+    [role="option"][aria-selected="true"] {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
 
-/* ── SIDEBAR — Fixed left panel ── */
-[data-testid="stSidebar"] {{
-    background: {T["sidebar_bg"]} !important;
-    min-width: 260px !important;
-    max-width: 260px !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    height: 100vh !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    border-right: none !important;
-    box-shadow: 4px 0 24px rgba(0,0,0,0.12) !important;
-    z-index: 999 !important;
-    transition: background 0.3s ease !important;
-}}
-[data-testid="stSidebar"] > div {{
-    padding: 0 !important;
-    height: 100% !important;
-}}
-[data-testid="stSidebar"] .block-container {{
-    padding: 0 !important;
-    background: transparent !important;
-}}
-[data-testid="stSidebar"] * {{
-    color: {T["sidebar_text"]} !important;
-}}
+    /* ── Radio ── */
+    [data-testid="stRadio"] label {{
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        color: {T["radio_txt"]} !important;
+    }}
+    [data-testid="stRadio"] > div {{
+        gap: 8px !important;
+    }}
 
-/* Sidebar scrollbar */
-[data-testid="stSidebar"]::-webkit-scrollbar {{ width: 4px; }}
-[data-testid="stSidebar"]::-webkit-scrollbar-track {{ background: transparent; }}
-[data-testid="stSidebar"]::-webkit-scrollbar-thumb {{ background: {T["sidebar_hover"]}; border-radius: 2px; }}
+    /* ── Tabs ── */
+    [data-testid="stTabs"] {{
+        background: transparent !important;
+    }}
+    [data-testid="stTabs"] button {{
+        font-family: 'DM Sans', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        color: {T["tab_inactive"]} !important;
+        border-radius: 0 !important;
+        padding: 10px 20px !important;
+        background: transparent !important;
+        transition: color 0.2s !important;
+    }}
+    [data-testid="stTabs"] button[aria-selected="true"] {{
+        color: {T["tab_active"]} !important;
+        border-bottom: 2px solid {T["tab_active"]} !important;
+    }}
+    [data-testid="stTabs"] button:hover {{
+        color: {T["tab_active"]} !important;
+        background: {T["accent_bg"]} !important;
+    }}
 
-/* ── MAIN CONTENT — offset for sidebar ── */
-section.main > div {{
-    margin-left: 260px !important;
-    padding: 0 !important;
-    min-height: 100vh !important;
-}}
+    /* ── Metric cards ── */
+    div[data-testid="stMetric"] {{
+        background: {T["bg2"]} !important;
+        border-radius: 16px !important;
+        padding: 20px 24px !important;
+        border: 1px solid {T["border"]} !important;
+        box-shadow: 0 2px 12px {T["metric_shadow"]} !important;
+        transition: all 0.25s ease !important;
+    }}
+    div[data-testid="stMetric"]:hover {{
+        box-shadow: 0 8px 28px {T["metric_shadow"]} !important;
+        transform: translateY(-2px) !important;
+    }}
+    div[data-testid="stMetric"] label {{
+        font-size: 12px !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+        color: {T["text3"]} !important;
+    }}
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
+        font-size: 32px !important;
+        font-weight: 700 !important;
+        color: {T["text"]} !important;
+    }}
 
-/* ── Tabs — hidden completely (content rendered as sections) ── */
-[data-testid="stTabs"] {{
-    display: none !important;
-}}
+    /* ── Regular buttons ── */
+    [data-testid="stButton"] button {{
+        background: {T["accent"]} !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        transition: all 0.2s !important;
+    }}
+    [data-testid="stButton"] button:hover {{
+        background: {T["accent2"]} !important;
+        box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
+        transform: translateY(-1px) !important;
+    }}
 
-/* ── Selectbox ── */
-[data-testid="stSelectbox"] > div > div {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    font-size: 14px !important;
-    color: {T["text"]} !important;
-}}
-[data-testid="stSelectbox"] > div > div:focus-within {{
-    border-color: {T["accent"]} !important;
-    box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
-}}
-[data-testid="stSelectbox"] svg {{ fill: {T["text2"]} !important; }}
-div[data-baseweb="popover"] ul,
-div[data-baseweb="menu"] {{
-    background: {T["bg2"]} !important;
-    border: 1px solid {T["border"]} !important;
-    border-radius: 10px !important;
-}}
-div[data-baseweb="popover"] li,
-[role="option"] {{
-    background: {T["bg2"]} !important;
-    color: {T["text"]} !important;
-}}
-div[data-baseweb="popover"] li:hover,
-[role="option"]:hover {{
-    background: {T["accent_bg"]} !important;
-    color: {T["accent"]} !important;
-}}
+    /* ── Download buttons ── */
+    [data-testid="stDownloadButton"] button {{
+        background: {T["dl_btn_bg"]} !important;
+        color: {T["dl_btn_color"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-size: 13px !important;
+        transition: all 0.2s !important;
+    }}
+    [data-testid="stDownloadButton"] button:hover {{
+        background: {T["accent_bg"]} !important;
+        border-color: {T["accent"]} !important;
+    }}
 
-/* ── Radio ── */
-[data-testid="stRadio"] label {{
-    font-size: 13px !important;
-    font-weight: 500 !important;
-    color: {T["radio_txt"]} !important;
-}}
+    /* ── Dataframe ── */
+    [data-testid="stDataFrame"] {{
+        border-radius: 12px !important;
+        overflow: hidden !important;
+        border: 1px solid {T["border"]} !important;
+    }}
+    [data-testid="stDataFrame"] th {{
+        background: {T["bg3"]} !important;
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stDataFrame"] td {{
+        background: {T["bg2"]} !important;
+        color: {T["text"]} !important;
+    }}
 
-/* ── Metric cards ── */
-div[data-testid="stMetric"] {{
-    background: {T["bg2"]} !important;
-    border-radius: 16px !important;
-    padding: 20px 24px !important;
-    border: 1px solid {T["border"]} !important;
-    box-shadow: 0 2px 16px {T["metric_shadow"]} !important;
-    transition: all 0.25s ease !important;
-}}
-div[data-testid="stMetric"]:hover {{
-    box-shadow: 0 8px 32px {T["metric_shadow"]} !important;
-    transform: translateY(-2px) !important;
-}}
-div[data-testid="stMetric"] label {{
-    font-size: 11px !important;
-    font-weight: 700 !important;
-    text-transform: uppercase !important;
-    letter-spacing: 0.07em !important;
-    color: {T["text3"]} !important;
-}}
-div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
-    font-size: 30px !important;
-    font-weight: 700 !important;
-    color: {T["text"]} !important;
-    font-family: 'DM Sans', sans-serif !important;
-}}
+    /* ── Text input ── */
+    [data-testid="stTextInput"] input {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        font-size: 14px !important;
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stTextInput"] input:focus {{
+        border-color: {T["accent"]} !important;
+        box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
+    }}
+    [data-testid="stTextInput"] input::placeholder {{
+        color: {T["text3"]} !important;
+    }}
 
-/* ── Buttons ── */
-[data-testid="stButton"] button {{
-    background: {T["accent"]} !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 10px !important;
-    font-weight: 600 !important;
-    font-size: 13px !important;
-    transition: all 0.2s !important;
-}}
-[data-testid="stButton"] button:hover {{
-    background: {T["accent2"]} !important;
-    box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
-    transform: translateY(-1px) !important;
-}}
+    /* ── Divider ── */
+    hr {{ border-color: {T["divider"]} !important; }}
 
-/* ── Download buttons ── */
-[data-testid="stDownloadButton"] button {{
-    background: {T["dl_btn_bg"]} !important;
-    color: {T["dl_btn_color"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    font-weight: 600 !important;
-    font-size: 13px !important;
-    transition: all 0.2s !important;
-}}
-[data-testid="stDownloadButton"] button:hover {{
-    background: {T["accent_bg"]} !important;
-    border-color: {T["accent"]} !important;
-}}
+    /* ── Alerts ── */
+    [data-testid="stAlert"] {{
+        border-radius: 12px !important;
+        font-size: 13px !important;
+        background: {T["bg2"]} !important;
+        color: {T["text"]} !important;
+    }}
 
-/* ── Dataframe ── */
-[data-testid="stDataFrame"] {{
-    border-radius: 12px !important;
-    overflow: hidden !important;
-    border: 1px solid {T["border"]} !important;
-}}
+    /* ── General text colors ── */
+    p, span, div, h1, h2, h3, h4 {{
+        color: {T["text"]};
+    }}
 
-/* ── Text input ── */
-[data-testid="stTextInput"] input {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    font-size: 14px !important;
-    color: {T["text"]} !important;
-}}
-[data-testid="stTextInput"] input:focus {{
-    border-color: {T["accent"]} !important;
-    box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
-}}
-[data-testid="stTextInput"] input::placeholder {{ color: {T["text3"]} !important; }}
+    /* ── Caption ── */
+    [data-testid="stCaptionContainer"] p {{
+        color: {T["text3"]} !important;
+    }}
 
-/* ── Textarea ── */
-[data-testid="stTextArea"] textarea {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    color: {T["text"]} !important;
-    font-size: 14px !important;
-    font-family: 'DM Sans', sans-serif !important;
-}}
-[data-testid="stTextArea"] textarea:focus {{
-    border-color: {T["accent"]} !important;
-    box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
-}}
-[data-testid="stTextArea"] textarea::placeholder {{ color: {T["text3"]} !important; }}
+    /* ── Hide branding ── */
+    #MainMenu, footer {{ visibility: hidden; }}
+    header {{ visibility: hidden; }}
 
-/* ── Number input ── */
-[data-testid="stNumberInput"] input {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-    color: {T["text"]} !important;
-    font-size: 14px !important;
-}}
-[data-testid="stNumberInput"] button {{
-    background: {T["bg3"]} !important;
-    border: 1px solid {T["border"]} !important;
-    color: {T["text"]} !important;
-}}
+    /* ── Calendar / Date picker popup ── */
+    div[data-baseweb="calendar"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 14px !important;
+    }}
+    div[data-baseweb="calendar"] * {{
+        color: {T["text"]} !important;
+        font-family: 'DM Sans', sans-serif !important;
+    }}
+    div[data-baseweb="calendar"] button {{
+        background: transparent !important;
+        color: {T["text"]} !important;
+        border-radius: 8px !important;
+        border: none !important;
+    }}
+    div[data-baseweb="calendar"] button:hover {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
+    /* Selected date */
+    div[data-baseweb="calendar"] [aria-selected="true"] button,
+    div[data-baseweb="calendar"] [aria-selected="true"] {{
+        background: {T["accent"]} !important;
+        color: white !important;
+        border-radius: 50% !important;
+    }}
+    /* Today highlight */
+    div[data-baseweb="calendar"] [data-today="true"] button {{
+        border: 2px solid {T["accent"]} !important;
+        color: {T["accent"]} !important;
+    }}
+    /* Month/year navigation */
+    div[data-baseweb="calendar"] [data-baseweb="select"] {{
+        background: {T["bg3"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 8px !important;
+    }}
+    div[data-baseweb="calendar"] [data-baseweb="select"] * {{
+        color: {T["text"]} !important;
+        background: transparent !important;
+    }}
+    /* Header row (Su Mo Tu etc) */
+    div[data-baseweb="calendar"] [data-testid="CalendarHeader"] * {{
+        color: {T["text3"]} !important;
+        font-weight: 600 !important;
+    }}
+    /* Disabled dates */
+    div[data-baseweb="calendar"] [aria-disabled="true"] button {{
+        color: {T["text3"]} !important;
+        opacity: 0.4 !important;
+    }}
+    /* Arrow navigation buttons */
+    div[data-baseweb="calendar"] [data-baseweb="button"] {{
+        background: {T["bg3"]} !important;
+        color: {T["text"]} !important;
+        border-radius: 8px !important;
+    }}
+    div[data-baseweb="calendar"] [data-baseweb="button"]:hover {{
+        background: {T["accent_bg"]} !important;
+        color: {T["accent"]} !important;
+    }}
 
-/* ── Date input ── */
-[data-testid="stDateInput"] > div > div {{
-    background: {T["input_bg"]} !important;
-    border: 1.5px solid {T["border"]} !important;
-    border-radius: 10px !important;
-}}
-[data-testid="stDateInput"] input {{
-    color: {T["text"]} !important;
-    background: transparent !important;
-}}
+    /* ── Number input ── */
+    [data-testid="stNumberInput"] input {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        color: {T["text"]} !important;
+        font-size: 14px !important;
+    }}
+    [data-testid="stNumberInput"] button {{
+        background: {T["bg3"]} !important;
+        border: 1px solid {T["border"]} !important;
+        color: {T["text"]} !important;
+    }}
+    [data-testid="stNumberInput"] button:hover {{
+        background: {T["accent_bg"]} !important;
+    }}
 
-/* ── Calendar popup ── */
-div[data-baseweb="calendar"] {{
-    background: {T["bg2"]} !important;
-    border: 1px solid {T["border"]} !important;
-    border-radius: 14px !important;
-}}
-div[data-baseweb="calendar"] * {{ color: {T["text"]} !important; font-family: 'DM Sans', sans-serif !important; }}
-div[data-baseweb="calendar"] button {{ background: transparent !important; border-radius: 8px !important; border: none !important; }}
-div[data-baseweb="calendar"] button:hover {{ background: {T["accent_bg"]} !important; color: {T["accent"]} !important; }}
-div[data-baseweb="calendar"] [aria-selected="true"] button {{ background: {T["accent"]} !important; color: white !important; border-radius: 50% !important; }}
-div[data-baseweb="calendar"] [data-baseweb="button"] {{ background: {T["bg3"]} !important; }}
-div[data-baseweb="calendar"] [data-baseweb="button"]:hover {{ background: {T["accent_bg"]} !important; }}
+    /* ── Date input ── */
+    [data-testid="stDateInput"] input {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        color: {T["text"]} !important;
+        font-size: 14px !important;
+    }}
 
-/* ── Form container ── */
-[data-testid="stForm"] {{
-    background: {T["bg2"]} !important;
-    border: 1px solid {T["border"]} !important;
-    border-radius: 16px !important;
-    padding: 24px !important;
-}}
+    /* ── Textarea ── */
+    [data-testid="stTextArea"] textarea {{
+        background: {T["input_bg"]} !important;
+        border: 1.5px solid {T["border"]} !important;
+        border-radius: 10px !important;
+        color: {T["text"]} !important;
+        font-size: 14px !important;
+    }}
+    [data-testid="stTextArea"] textarea:focus {{
+        border-color: {T["accent"]} !important;
+        box-shadow: 0 0 0 3px {T["accent_bg"]} !important;
+    }}
+    [data-testid="stTextArea"] textarea::placeholder {{
+        color: {T["text3"]} !important;
+    }}
 
-/* ── Expander ── */
-[data-testid="stExpander"] {{
-    background: {T["bg2"]} !important;
-    border: 1px solid {T["border"]} !important;
-    border-radius: 12px !important;
-    margin-bottom: 8px !important;
-}}
-[data-testid="stExpander"] summary {{
-    color: {T["text"]} !important;
-    font-weight: 500 !important;
-}}
+    /* ── Form container ── */
+    [data-testid="stForm"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 16px !important;
+        padding: 24px !important;
+    }}
 
-/* ── Alerts ── */
-[data-testid="stAlert"] {{
-    border-radius: 12px !important;
-    font-size: 13px !important;
-    background: {T["bg2"]} !important;
-    color: {T["text"]} !important;
-}}
+    /* ── Form submit button ── */
+    [data-testid="stFormSubmitButton"] button {{
+        background: {T["accent"]} !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        width: 100% !important;
+        transition: all 0.2s !important;
+    }}
+    [data-testid="stFormSubmitButton"] button:hover {{
+        background: {T["accent2"]} !important;
+        box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
+        transform: translateY(-1px) !important;
+    }}
 
-/* ── Caption ── */
-[data-testid="stCaptionContainer"] p {{ color: {T["text3"]} !important; }}
-small {{ color: {T["text3"]} !important; }}
+    /* ── Expander ── */
+    [data-testid="stExpander"] {{
+        background: {T["bg2"]} !important;
+        border: 1px solid {T["border"]} !important;
+        border-radius: 12px !important;
+        margin-bottom: 8px !important;
+    }}
+    [data-testid="stExpander"] summary {{
+        color: {T["text"]} !important;
+        font-weight: 500 !important;
+        background: {T["bg2"]} !important;
+    }}
+    [data-testid="stExpander"] > div {{
+        background: {T["bg2"]} !important;
+    }}
 
-/* ── Divider ── */
-hr {{ border-color: {T["divider"]} !important; }}
-
-/* ── Form submit button ── */
-[data-testid="stFormSubmitButton"] button {{
-    background: {T["accent"]} !important;
-    color: white !important;
-    border: none !important;
-    border-radius: 10px !important;
-    font-weight: 600 !important;
-    font-size: 14px !important;
-    padding: 12px !important;
-    transition: all 0.2s !important;
-    width: 100% !important;
-}}
-[data-testid="stFormSubmitButton"] button:hover {{
-    background: {T["accent2"]} !important;
-    box-shadow: 0 4px 16px rgba(124,111,205,0.4) !important;
-    transform: translateY(-1px) !important;
-}}
-
-/* ── Nested tabs (sub-tabs) ── */
-[data-testid="stTabs"] [data-testid="stTabs"] [data-baseweb="tab-list"] {{
-    display: flex !important;
-    border-bottom: 1px solid {T["border"]} !important;
-    background: transparent !important;
-    padding: 0 !important;
-    margin-bottom: 16px !important;
-}}
-[data-testid="stTabs"] [data-testid="stTabs"] button {{
-    font-family: 'DM Sans', sans-serif !important;
-    font-weight: 600 !important;
-    font-size: 13px !important;
-    color: {T["tab_inactive"]} !important;
-    padding: 8px 16px !important;
-    border-radius: 0 !important;
-    background: transparent !important;
-}}
-[data-testid="stTabs"] [data-testid="stTabs"] button[aria-selected="true"] {{
-    color: {T["tab_active"]} !important;
-    border-bottom: 2px solid {T["tab_active"]} !important;
-}}
+    /* ── Nested sub-tabs ── */
+    [data-testid="stTabs"] [data-testid="stTabs"] button {{
+        font-size: 13px !important;
+        padding: 8px 16px !important;
+        color: {T["tab_inactive"]} !important;
+        background: transparent !important;
+    }}
+    [data-testid="stTabs"] [data-testid="stTabs"] button[aria-selected="true"] {{
+        color: {T["tab_active"]} !important;
+        border-bottom: 2px solid {T["tab_active"]} !important;
+    }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1293,7 +1243,41 @@ with st.sidebar:
     total_div      = df["Division"].nunique()
     total_mgr      = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
 
-    # Style override for metric cards
+    # Clickable metric cards
+    cards = [
+        ("Total Karyawan", f"{total_karyawan:,}", "👥", 1, {}),
+        ("Business Unit",  str(total_bu),         "🏢", 0, {"mode": "Per Divisi", "focus": "bu"}),
+        ("Divisi",         str(total_div),         "📁", 0, {"mode": "Per Divisi", "focus": "div"}),
+        ("Total Manager",  str(total_mgr),         "👔", 3, {}),
+    ]
+    # active_tab index mapping:
+    # 0 = Org Chart, 1 = Data Karyawan, 2 = Manager ID Hilang, 3 = Daftar Manager
+
+    st.markdown(f"""
+    <style>
+    .metric-card-btn button {{
+        background: {T['bg3']} !important;
+        border: 1px solid {T['border']} !important;
+        border-radius: 12px !important;
+        padding: 12px 16px !important;
+        width: 100% !important;
+        text-align: left !important;
+        cursor: pointer !important;
+        transition: all 0.2s ease !important;
+        margin-bottom: 8px !important;
+        color: {T['text']} !important;
+        font-family: 'DM Sans', sans-serif !important;
+    }}
+    .metric-card-btn button:hover {{
+        background: {T['accent_bg']} !important;
+        border-color: {T['accent']} !important;
+        transform: translateX(3px) !important;
+        box-shadow: 0 4px 16px {T['metric_shadow']} !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Style override for metric cards (different from accent buttons)
     st.markdown(f"""
     <style>
     [data-testid="stSidebar"] [data-testid="stButton"] button {{
@@ -1318,13 +1302,6 @@ with st.sidebar:
     </style>
     """, unsafe_allow_html=True)
 
-    cards = [
-        ("Total Karyawan", f"{total_karyawan:,}", "👥", 1, {}),
-        ("Business Unit",  str(total_bu),         "🏢", 0, {}),
-        ("Divisi",         str(total_div),         "📁", 0, {}),
-        ("Total Manager",  str(total_mgr),         "👔", 3, {}),
-    ]
-
     for label, value, icon, tab_idx, nav_ctx in cards:
         btn_label = f"{icon}  {label} : {value}"
         if st.button(btn_label, key=f"card_{label}", use_container_width=True):
@@ -1337,34 +1314,6 @@ with st.sidebar:
         Auto-refresh setiap 5 menit
     </div>
     """, unsafe_allow_html=True)
-
-    # ── User info & logout ──
-    st.markdown(f"<div style='margin:16px 0 8px 0; height:1px; background:{T['border']};'></div>", unsafe_allow_html=True)
-    user_info = st.session_state.get("user_info", {})
-    role_badge_color = "#5b4fcf" if user_info.get("role") == "admin" else "#059669"
-    role_label = "Admin" if user_info.get("role") == "admin" else "User"
-    st.markdown(f"""
-    <div style="background:{T['bg3']}; border-radius:12px; padding:12px 14px;
-        border:1px solid {T['border']}; margin-bottom:8px;">
-        <div style="font-size:13px; font-weight:600; color:{T['text']};">
-            👤 {user_info.get('nama', 'User')}
-        </div>
-        <div style="display:flex; align-items:center; gap:6px; margin-top:4px;">
-            <span style="font-size:10px; background:{role_badge_color}; color:white;
-                padding:2px 8px; border-radius:999px; font-weight:600;">
-                {role_label}
-            </span>
-            <span style="font-size:11px; color:{T['text3']};">
-                {user_info.get('email', '')}
-            </span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if st.button("🚪 Keluar", use_container_width=True, key="logout_btn"):
-        st.session_state.logged_in = False
-        st.session_state.user_info = {}
-        st.rerun()
 
 # ══════════════════════════════════════════
 # MAIN — Header
@@ -1379,7 +1328,7 @@ st.markdown(f"""
         Org Chart Dashboard
     </div>
     <div style="font-size:14px; color:{T['text3']}; margin-top:6px; font-weight:400;">
-        Visualisasi & analitik struktur organisasi real-time
+        Visualisasi & Dashboard Srganisasi
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -1388,6 +1337,7 @@ st.markdown(f"""
 TAB_LABELS = ["🌳  Org Chart", "📋  Data Karyawan", "⚠️  Manager ID Hilang", "👔  Daftar Manager", "📝  Change Request"]
 active = st.session_state.active_tab
 
+# JavaScript trick: use query params to activate correct tab
 tab1, tab2, tab3, tab4, tab5 = st.tabs(TAB_LABELS)
 
 # ══════════════════════════════════════════
@@ -1622,11 +1572,9 @@ setTimeout(fitView, 300);
     return html_code
 
 # ══════════════════════════════════════════
-# ══════════════════════════════════════════
-# TAB 1 — ORG CHART  
+# TAB 1 — ORG CHART
 # ══════════════════════════════════════════
 with tab1:
-
 
     st.markdown(f"""
     <div style="margin-bottom:16px;">
@@ -1770,18 +1718,10 @@ with tab1:
             except Exception:
                 st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
 
-    # ══════════════════════════════════════════
-    # TAB 2 — DATA KARYAWAN
-    # ══════════════════════════════════════════
-
-    # ══════════════════════════════════════════
-
-
 # ══════════════════════════════════════════
 # TAB 2 — DATA KARYAWAN
 # ══════════════════════════════════════════
 with tab2:
-
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px; font-weight:700; color:{T['text']};">Data Karyawan</div>
@@ -1832,18 +1772,10 @@ with tab2:
         st.download_button("📊 Excel", to_excel(data_view), "filtered.xlsx",
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
-    # ══════════════════════════════════════════
-    # TAB 3 — KARYAWAN DENGAN MANAGER ID HILANG
-    # ══════════════════════════════════════════
-
-    # ══════════════════════════════════════════
-
-
 # ══════════════════════════════════════════
-# TAB 3 — MANAGER ID HILANG
+# TAB 3 — KARYAWAN DENGAN MANAGER ID HILANG
 # ══════════════════════════════════════════
 with tab3:
-
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px; font-weight:700; color:{T['text']};">Manager ID Hilang</div>
@@ -1925,18 +1857,10 @@ with tab3:
             use_container_width=True
         )
 
-    # ══════════════════════════════════════════
-
-    # ══════════════════════════════════════════
-
-
 # ══════════════════════════════════════════
 # TAB 4 — DAFTAR MANAGER
 # ══════════════════════════════════════════
 with tab4:
-
-    # TAB 4 — DAFTAR MANAGER
-    # ══════════════════════════════════════════
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px; font-weight:700; color:{T['text']};">Daftar Manager</div>
@@ -2106,11 +2030,6 @@ with tab4:
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
-
-    # ══════════════════════════════════════════
-
-    # ══════════════════════════════════════════
-
 
 # ══════════════════════════════════════════
 # TAB 5 — CHANGE REQUEST
@@ -2632,5 +2551,37 @@ with tab5:
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True)
 
-
-    # Navigation handled by scroll-to-section JS above
+# ══════════════════════════════════════════
+# AUTO-NAVIGATE via JS — click tab by index
+# ══════════════════════════════════════════
+if st.session_state.active_tab > 0:
+    tab_index = st.session_state.active_tab
+    # JS robust: coba beberapa selector dan retry lebih lama
+    st.markdown(f"""
+    <script>
+    (function() {{
+        function clickTab() {{
+            // Coba selector di berbagai level parent
+            let found = false;
+            for (let win of [window, window.parent, window.top]) {{
+                try {{
+                    const tabs = win.document.querySelectorAll('[data-testid="stTabs"] button[role="tab"]');
+                    if (tabs.length > {tab_index}) {{
+                        tabs[{tab_index}].click();
+                        found = true;
+                        break;
+                    }}
+                }} catch(e) {{}}
+            }}
+            return found;
+        }}
+        // Retry beberapa kali sampai berhasil
+        let attempts = 0;
+        const interval = setInterval(function() {{
+            if (clickTab() || attempts > 15) clearInterval(interval);
+            attempts++;
+        }}, 150);
+    }})();
+    </script>
+    """, unsafe_allow_html=True)
+    st.session_state.active_tab = 0
