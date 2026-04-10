@@ -781,58 +781,31 @@ html, body, [class*="css"] {{
     background: {T["bg"]} !important;
 }}
 
-/* ── Ensure content doesn't go under sidebar ── */
-section.main {{
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-}}
+/* ── Sidebar ── */
+    [data-testid="stSidebar"] {{
+        background: {T["sidebar_bg"]} !important;
+        border-right: 1px solid {T["border"]} !important;
+        transition: background 0.3s ease;
+    }}
+    [data-testid="stSidebar"] .block-container {{
+        padding: 0 1rem 2rem 1rem !important;
+        background: {T["sidebar_bg"]} !important;
+    }}
+    [data-testid="stSidebar"] label {{
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.06em !important;
+        color: {T["accent2"]} !important;
+    }}
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] div {{
+        color: {T["text"]} !important;
+    }}
 
-/* ── SIDEBAR — Fixed left panel ── */
-[data-testid="stSidebar"] {{
-    background: {T["sidebar_bg"]} !important;
-    min-width: 260px !important;
-    max-width: 260px !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    height: 100vh !important;
-    overflow-y: auto !important;
-    overflow-x: hidden !important;
-    border-right: none !important;
-    box-shadow: 4px 0 24px rgba(0,0,0,0.12) !important;
-    z-index: 999 !important;
-    transition: background 0.3s ease !important;
-}}
-[data-testid="stSidebar"] > div {{
-    padding: 0 !important;
-    height: 100% !important;
-}}
-[data-testid="stSidebar"] .block-container {{
-    padding: 0 !important;
-    background: transparent !important;
-}}
-[data-testid="stSidebar"] * {{
-    color: {T["sidebar_text"]} !important;
-}}
+    /* ── Selectbox ── */
 
-/* Sidebar scrollbar */
-[data-testid="stSidebar"]::-webkit-scrollbar {{ width: 4px; }}
-[data-testid="stSidebar"]::-webkit-scrollbar-track {{ background: transparent; }}
-[data-testid="stSidebar"]::-webkit-scrollbar-thumb {{ background: {T["sidebar_hover"]}; border-radius: 2px; }}
-
-/* ── MAIN CONTENT — offset for sidebar ── */
-section.main > div {{
-    margin-left: 260px !important;
-    padding: 0 !important;
-    min-height: 100vh !important;
-}}
-
-/* ── Tabs — hidden completely (content rendered as sections) ── */
-[data-testid="stTabs"] {{
-    display: none !important;
-}}
-
-/* ── Selectbox ── */
 [data-testid="stSelectbox"] > div > div {{
     background: {T["input_bg"]} !important;
     border: 1.5px solid {T["border"]} !important;
