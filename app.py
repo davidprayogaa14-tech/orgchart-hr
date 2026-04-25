@@ -546,7 +546,7 @@ if "dark_mode" not in st.session_state:
 
 # ── Active tab navigation from sidebar cards ──
 if "active_tab" not in st.session_state:
-    st.session_state.active_tab = 0
+    pass  # active_tab preserved for sidebar navigation
 if "nav_filter" not in st.session_state:
     st.session_state.nav_filter = {}
 
@@ -839,6 +839,8 @@ header {{ visibility: hidden !important; }}
 }}
 
 /* ── Sidebar buttons — pill active state ── */
+/* ── Sidebar nav — inactive ── */
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"],
 [data-testid="stSidebar"] [data-testid="stButton"] button {{
     background: transparent !important;
     color: {T["sidebar_text"]} !important;
@@ -855,11 +857,26 @@ header {{ visibility: hidden !important; }}
     font-family: 'Plus Jakarta Sans', sans-serif !important;
     letter-spacing: 0.01em !important;
 }}
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="secondary"]:hover,
 [data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
     background: {T["sidebar_pill"]} !important;
     color: {T["sidebar_active"]} !important;
     transform: none !important;
     box-shadow: 0 2px 16px rgba(66,52,182,0.15) !important;
+}}
+/* ── Sidebar nav — active (primary type) ── */
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {{
+    background: {T["sidebar_pill"]} !important;
+    color: {T["sidebar_active"]} !important;
+    border: none !important;
+    border-radius: 9999px !important;
+    font-size: 13.5px !important;
+    font-weight: 700 !important;
+    padding: 10px 18px !important;
+    box-shadow: 0 2px 16px rgba(66,52,182,0.20) !important;
+    letter-spacing: 0.01em !important;
+    transform: none !important;
+    filter: none !important;
 }}
 
 /* ══════════════════════════════════════════
@@ -1292,20 +1309,31 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Nav buttons ──
-    cards = [
-        ("📊", "Data Summary",      0, {}),
-        ("🌳", "Org Chart",         0, {}),
-        ("👥", "Data Karyawan",     1, {}),
-        ("⚠️", "Manager ID Hilang", 2, {}),
-        ("👔", "Daftar Manager",    3, {}),
-        ("📝", "Change Request",    4, {}),
+    # ── Nav buttons — each section has unique index ──
+    if "active_tab" not in st.session_state:
+        pass  # active_tab preserved for sidebar navigation
+
+    nav_items = [
+        ("🌳", "Org Chart",         0),
+        ("👥", "Data Karyawan",     1),
+        ("⚠️", "Manager ID Hilang", 2),
+        ("👔", "Daftar Manager",    3),
+        ("📝", "Change Request",    4),
     ]
 
-    for icon_nav, label_nav, tab_idx, nav_ctx in cards:
-        if st.button(f"{icon_nav}  {label_nav}", key=f"nav_{label_nav}", use_container_width=True):
+    # Style: active item gets pill highlight
+    active_idx = st.session_state.active_tab
+    for icon_nav, label_nav, tab_idx in nav_items:
+        is_active = (active_idx == tab_idx)
+        # Inject per-button active state styling
+        btn_key = f"nav_{tab_idx}"
+        if st.button(
+            f"{icon_nav}  {label_nav}",
+            key=btn_key,
+            use_container_width=True,
+            type="primary" if is_active else "secondary"
+        ):
             st.session_state.active_tab = tab_idx
-            st.session_state.nav_filter = nav_ctx
             st.rerun()
 
     st.markdown(f"""
@@ -1375,9 +1403,17 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Tab navigation ──
+# ── Tab navigation — hidden tabs, sidebar controls active section ──
 TAB_LABELS = ["🌳  Org Chart", "📋  Data Karyawan", "⚠️  Manager ID Hilang", "👔  Daftar Manager", "📝  Change Request"]
 active = st.session_state.active_tab
+
+# Hide the tab bar completely — navigation is via sidebar
+st.markdown("""
+<style>
+[data-testid="stTabs"] [data-baseweb="tab-list"] { display: none !important; }
+[data-testid="stTabs"] [data-baseweb="tab-panel"] { padding-top: 0 !important; }
+</style>
+""", unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs(TAB_LABELS)
 
@@ -1619,10 +1655,11 @@ setTimeout(fitView, 300);
 with tab1:
 
 
+    # ── Mode label inline ──
     st.markdown(f"""
-    <div style="margin-bottom:16px;">
-        <div style="font-size:13px; font-weight:600; color:{T['text3']}; text-transform:uppercase;
-            letter-spacing:0.06em; margin-bottom:10px;">Mode Tampilan</div>
+    <div style="font-size:10px; font-weight:700; text-transform:uppercase;
+        letter-spacing:0.09em; color:{T['text3']}; margin-bottom:10px;">
+        MODE TAMPILAN
     </div>
     """, unsafe_allow_html=True)
     view_mode = st.radio("", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True, label_visibility="collapsed")
