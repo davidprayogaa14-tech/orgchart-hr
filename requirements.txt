@@ -5,3 +5,4 @@ google-auth
 google-auth-oauthlib
 reportlab>=4.0.0
 openpyxl
+plotly
