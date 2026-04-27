@@ -2089,8 +2089,11 @@ elif _active == 5:
                          hole=0.5)
         fig_pie.update_traces(textposition="inside", textinfo="percent+label",
                               hovertemplate="<b>%{label}</b><br>%{value} responden (%{percent})<extra></extra>")
-        fig_pie.update_layout(**plotly_layout, height=280,
-                              legend=dict(orientation="v", x=1.0, y=0.5))
+        # Panggil plotly_layout utama dulu
+        fig_pie.update_layout(**plotly_layout)
+        # Lalu timpa khusus untuk setting tinggi dan posisi legend pie chart
+        fig_pie.update_layout(height=280, legend_orientation="v", legend_x=1.0, legend_y=0.5)
+        
         st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
 
     with row4_right:
