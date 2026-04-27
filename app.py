@@ -150,18 +150,28 @@ def generate_request_id() -> str:
 # ══════════════════════════════════════════════════════════════════
 @st.cache_data(ttl=120)
 def load_survey_responses():
+    """
+    Load data dari worksheet spesifik Leader's Archetype
+    """
     client = get_gspread_client()
     if client:
         try:
-            ws   = client.open_by_key(SHEET_ID).worksheet("survey_responses")
+            # Mengarahkan ke sheet data Archetype Anda
+            target_sheet = "[Analysis] Leader's Archetype - 2026 - [Quant] Data Processing"
+            ws   = client.open_by_key(SHEET_ID).worksheet(target_sheet)
             data = ws.get_all_records()
             if data:
                 df = pd.DataFrame(data)
-                df["submitted_date"] = pd.to_datetime(df["submitted_date"], errors="coerce")
+                df.columns = df.columns.str.strip() # Bersihkan spasi pada nama kolom
+                
+                # Pastikan kolom tanggal aman
+                if "submitted_date" in df.columns:
+                    df["submitted_date"] = pd.to_datetime(df["submitted_date"], errors="coerce")
                 return df, "google_sheets"
-        except Exception:
+        except Exception as e:
             pass
 
+    # ── Demo data generator (Fallback jika sheet tidak ditemukan/error) ──
     import numpy as np
     rng = np.random.default_rng(42)
     bus       = ["Technology", "Finance", "Operations", "Marketing", "HR", "Legal", "Sales", "Product"]
@@ -175,17 +185,12 @@ def load_survey_responses():
         "Sales":       ["B2B Sales", "B2C Sales", "Partnership"],
         "Product":     ["Product Design", "Product Management"],
     }
-    surveys   = [
-        {"id": "EE2024Q1", "name": "Employee Engagement Q1 2024"},
-        {"id": "EE2024Q2", "name": "Employee Engagement Q2 2024"},
-        {"id": "ENPS2024", "name": "eNPS Mid-Year 2024"},
-        {"id": "MGR2024",  "name": "Manager Effectiveness 2024"},
-    ]
+    surveys   = [{"id": "DEMO1", "name": "Demo Data Archetype"}]
     stages    = ["Level 1", "Level 2", "Level 3", "Level 4", "Level 5"]
     months    = pd.date_range("2024-01-01", periods=12, freq="MS")
     rows = []
     for sv in surveys:
-        n = rng.integers(120, 280)
+        n = rng.integers(50, 100)
         for _ in range(n):
             bu       = rng.choice(bus)
             division = rng.choice(divs[bu])
@@ -2033,50 +2038,58 @@ elif _active == 5:
                                xaxis=dict(side="top"), yaxis=dict(autorange="reversed"))
         st.plotly_chart(fig_heat, use_container_width=True, config={"displayModeBar": False})
 
-    with row3_right:
+        with row3_right:
         st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
             Top & Bottom Statements</div>""", unsafe_allow_html=True)
 
+        # Proteksi agar tidak IndexError jika jumlah kolom _score berbeda
         stmt_dict = {}
         for i, col in enumerate(q_cols):
-            # Cek apakah indeks i ada di q_labels, jika tidak gunakan nama kolom
-            lbl = q_labels[i] if i < len(q_labels) else col
+            # Cek apakah kita punya teks default untuk pertanyaan ini, jika tidak pakai nama kolomnya
+            if i < len(SURVEY_QUESTIONS.get("default", [])):
+                lbl = SURVEY_QUESTIONS["default"][i]
+            else:
+                lbl = col 
+                
             lbl_short = f"{lbl[:40]}…" if len(lbl) > 40 else lbl
-            stmt_dict[f"Q{i+1}: {lbl_short}"] = sv_df[col].mean()
+            
+            # Hitung rata-rata skor per kolom dengan aman
+            val = sv_df[col].mean()
+            if not pd.isna(val):
+                stmt_dict[f"Q{i+1}: {lbl_short}"] = val
 
-        stmt_scores = pd.Series(stmt_dict).sort_values(ascending=False).round(2)
+        if stmt_dict: # Pastikan dict tidak kosong
+            stmt_scores = pd.Series(stmt_dict).sort_values(ascending=False).round(2)
+            top3    = stmt_scores.head(3)
+            bottom3 = stmt_scores.tail(3).sort_values()
 
-        top3    = stmt_scores.head(3)
-        bottom3 = stmt_scores.tail(3).sort_values()
-
-        for label, score in top3.items():
-            color = score_to_color(score)
-            st.markdown(f"""
-            <div style="background:{color}11;border-left:3px solid {color};
-                border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;">
-                <div style="font-size:11px;font-weight:700;color:{color};margin-bottom:2px;">
-                    TOP ▲ &nbsp; {score:.2f} / 5.00
+            # Render UI untuk Top 3
+            for label, score in top3.items():
+                color = score_to_color(score)
+                st.markdown(f"""
+                <div style="background:{color}11;border-left:3px solid {color};
+                    border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;">
+                    <div style="font-size:11px;font-weight:700;color:{color};margin-bottom:2px;">
+                        TOP ▲ &nbsp; {score:.2f} / 5.00
+                    </div>
+                    <div style="font-size:12px;color:{T['text']};line-height:1.4;">{label}</div>
                 </div>
-                <div style="font-size:12px;color:{T['text']};line-height:1.4;">{label}</div>
-            </div>
-            """, unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
 
-        st.markdown(f"<div style='height:8px;'></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-        for label, score in bottom3.items():
-            color = "#dc2626"
-            st.markdown(f"""
-            <div style="background:{color}11;border-left:3px solid {color};
-                border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;">
-                <div style="font-size:11px;font-weight:700;color:{color};margin-bottom:2px;">
-                    BOTTOM ▼ &nbsp; {score:.2f} / 5.00
+            # Render UI untuk Bottom 3
+            for label, score in bottom3.items():
+                color = "#dc2626"
+                st.markdown(f"""
+                <div style="background:{color}11;border-left:3px solid {color};
+                    border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;">
+                    <div style="font-size:11px;font-weight:700;color:{color};margin-bottom:2px;">
+                        BOTTOM ▼ &nbsp; {score:.2f} / 5.00
+                    </div>
+                    <div style="font-size:12px;color:{T['text']};line-height:1.4;">{label}</div>
                 </div>
-                <div style="font-size:12px;color:{T['text']};line-height:1.4;">{label}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
-    row4_left, row4_right = st.columns(2)
+                """, unsafe_allow_html=True)
 
     with row4_left:
         st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
