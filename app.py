@@ -156,22 +156,18 @@ def load_survey_responses():
     client = get_gspread_client()
     if client:
         try:
-            # Mengarahkan ke sheet data Archetype Anda
             target_sheet = "[Analysis] Leader's Archetype - 2026 - [Quant] Data Processing"
             ws   = client.open_by_key(SHEET_ID).worksheet(target_sheet)
             data = ws.get_all_records()
             if data:
                 df = pd.DataFrame(data)
-                df.columns = df.columns.str.strip() # Bersihkan spasi pada nama kolom
-                
-                # Pastikan kolom tanggal aman
+                df.columns = df.columns.str.strip() 
                 if "submitted_date" in df.columns:
                     df["submitted_date"] = pd.to_datetime(df["submitted_date"], errors="coerce")
                 return df, "google_sheets"
         except Exception as e:
             pass
 
-    # ── Demo data generator (Fallback jika sheet tidak ditemukan/error) ──
     import numpy as np
     rng = np.random.default_rng(42)
     bus       = ["Technology", "Finance", "Operations", "Marketing", "HR", "Legal", "Sales", "Product"]
@@ -1028,7 +1024,6 @@ with st.sidebar:
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = 0
 
-    # ── PERUBAHAN NAMA TAB DI SINI ──
     nav_items = [
         ("🌳", "Org Chart",          0),
         ("👥", "Data Karyawan",      1),
@@ -1353,13 +1348,11 @@ elif _active == 3:
     mgr_ids = df[df["Manager ID"] != ""]["Manager ID"].unique().tolist()
     mgr_df  = df[df["Employee ID"].isin(mgr_ids)].copy()
     
-    # Hitung Bawahan Langsung (Direct Reports)
     sub_count = df[df["Manager ID"] != ""].groupby("Manager ID").size().reset_index(name="Bawahan Langsung")
     sub_count.rename(columns={"Manager ID": "Employee ID"}, inplace=True)
     mgr_df = mgr_df.merge(sub_count, on="Employee ID", how="left")
     mgr_df["Bawahan Langsung"] = mgr_df["Bawahan Langsung"].fillna(0).astype(int)
     
-    # ── LOGIKA BARU: Hitung Total Span (Seluruh Bawahan dalam Hirarki) ──
     children_map = df[df["Manager ID"] != ""].groupby("Manager ID")["Employee ID"].apply(list).to_dict()
     
     def get_total_span(mgr_id):
@@ -1372,7 +1365,6 @@ elif _active == 3:
         return total
 
     mgr_df["Total Span (Semua Bawahan)"] = mgr_df["Employee ID"].apply(get_total_span)
-    # ────────────────────────────────────────────────────────────────────
 
     mgr_df["Level Hierarki"] = mgr_df["Employee ID"].apply(
         lambda eid: {0: "Chief", 1: "C-1", 2: "C-2"}.get(hierarchy_levels.get(eid), "-")
@@ -1382,7 +1374,6 @@ elif _active == 3:
         lambda eid: bool(direct_subs_map.get(eid, set()) & level0_ids)
     )
     
-    # Urutkan berdasarkan total span tertinggi
     mgr_df = mgr_df.sort_values("Total Span (Semua Bawahan)", ascending=False)
 
     m1, m2, m3, m4 = st.columns(4)
@@ -2038,14 +2029,12 @@ elif _active == 5:
                                xaxis=dict(side="top"), yaxis=dict(autorange="reversed"))
         st.plotly_chart(fig_heat, use_container_width=True, config={"displayModeBar": False})
 
-        with row3_right:
+    with row3_right:
         st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
             Top & Bottom Statements</div>""", unsafe_allow_html=True)
 
-        # Proteksi agar tidak IndexError jika jumlah kolom _score berbeda
         stmt_dict = {}
         for i, col in enumerate(q_cols):
-            # Cek apakah kita punya teks default untuk pertanyaan ini, jika tidak pakai nama kolomnya
             if i < len(SURVEY_QUESTIONS.get("default", [])):
                 lbl = SURVEY_QUESTIONS["default"][i]
             else:
@@ -2053,17 +2042,15 @@ elif _active == 5:
                 
             lbl_short = f"{lbl[:40]}…" if len(lbl) > 40 else lbl
             
-            # Hitung rata-rata skor per kolom dengan aman
             val = sv_df[col].mean()
             if not pd.isna(val):
                 stmt_dict[f"Q{i+1}: {lbl_short}"] = val
 
-        if stmt_dict: # Pastikan dict tidak kosong
+        if stmt_dict: 
             stmt_scores = pd.Series(stmt_dict).sort_values(ascending=False).round(2)
             top3    = stmt_scores.head(3)
             bottom3 = stmt_scores.tail(3).sort_values()
 
-            # Render UI untuk Top 3
             for label, score in top3.items():
                 color = score_to_color(score)
                 st.markdown(f"""
@@ -2078,7 +2065,6 @@ elif _active == 5:
 
             st.markdown(f"<div style='height:8px;'></div>", unsafe_allow_html=True)
 
-            # Render UI untuk Bottom 3
             for label, score in bottom3.items():
                 color = "#dc2626"
                 st.markdown(f"""
@@ -2091,6 +2077,9 @@ elif _active == 5:
                 </div>
                 """, unsafe_allow_html=True)
 
+    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
+    row4_left, row4_right = st.columns(2)
+
     with row4_left:
         st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
             Distribusi Responden per Career Stage</div>""", unsafe_allow_html=True)
@@ -2102,11 +2091,8 @@ elif _active == 5:
                          hole=0.5)
         fig_pie.update_traces(textposition="inside", textinfo="percent+label",
                               hovertemplate="<b>%{label}</b><br>%{value} responden (%{percent})<extra></extra>")
-        # Panggil plotly_layout utama dulu
         fig_pie.update_layout(**plotly_layout)
-        # Lalu timpa khusus untuk setting tinggi dan posisi legend pie chart
         fig_pie.update_layout(height=280, legend_orientation="v", legend_x=1.0, legend_y=0.5)
-        
         st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
 
     with row4_right:
@@ -2157,8 +2143,6 @@ elif _active == 5:
         <div style="margin-top:20px;background:{T['warn_bg']};border:1px solid {T['warn_bdr']};
             border-radius:12px;padding:14px 18px;font-size:13px;color:{T['warn_txt']};">
             <strong>⚠️ Mode Demo</strong> — Data di atas adalah data dummy untuk preview tampilan.<br>
-            Untuk data nyata, buat worksheet <code>survey_responses</code> di Google Sheet yang sama
-            dengan kolom: <code>response_id | survey_id | survey_name | respondent_hash | bu | division |
-            submitted_date | career_stage | q1_score...q8_score</code>
+            Untuk data nyata, pastikan worksheet sesuai dengan format.
         </div>
         """, unsafe_allow_html=True)
