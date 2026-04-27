@@ -2037,10 +2037,14 @@ elif _active == 5:
         st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
             Top & Bottom Statements</div>""", unsafe_allow_html=True)
 
-        stmt_scores = pd.Series(
-            {f"Q{i+1}: {q_labels[i][:40]}{'…' if len(q_labels[i])>40 else ''}": sv_df[col].mean()
-             for i, col in enumerate(q_cols)}
-        ).sort_values(ascending=False).round(2)
+        stmt_dict = {}
+        for i, col in enumerate(q_cols):
+            # Cek apakah indeks i ada di q_labels, jika tidak gunakan nama kolom
+            lbl = q_labels[i] if i < len(q_labels) else col
+            lbl_short = f"{lbl[:40]}…" if len(lbl) > 40 else lbl
+            stmt_dict[f"Q{i+1}: {lbl_short}"] = sv_df[col].mean()
+
+        stmt_scores = pd.Series(stmt_dict).sort_values(ascending=False).round(2)
 
         top3    = stmt_scores.head(3)
         bottom3 = stmt_scores.tail(3).sort_values()
