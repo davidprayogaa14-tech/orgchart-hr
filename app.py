@@ -39,7 +39,6 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     df.columns = df.columns.str.strip()
     df["Employee ID"] = df["Employee ID"].astype(str).str.strip()
     df["Manager ID"]  = df["Manager ID"].fillna("").astype(str).str.strip()
-    # [FIX-2] SBU/Tribe dan Career Stage: safe access agar tidak crash jika kolom tidak ada
     df["SBU/Tribe"] = df["SBU/Tribe"].fillna("").astype(str).str.strip() if "SBU/Tribe" in df.columns else ""
     if "Career Stage" not in df.columns:
         df["Career Stage"] = ""
@@ -47,7 +46,6 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def get_gspread_client():
-    """Buat gspread client dari Secrets atau file lokal."""
     try:
         import gspread
         from google.oauth2.service_account import Credentials
@@ -64,31 +62,14 @@ def get_gspread_client():
 
 @st.cache_data(ttl=300)
 def load_data():
-    """Load data karyawan dari Google Sheets atau CSV lokal."""
-    try:
-        import gspread
-        from google.oauth2.service_account import Credentials
-        if "gcp_service_account" in st.secrets:
-            creds  = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=SCOPES)
-            client = gspread.authorize(creds)
-            sheet  = client.open_by_key(SHEET_ID).sheet1
-            df     = pd.DataFrame(sheet.get_all_records())
+    client = get_gspread_client()
+    if client:
+        try:
+            sheet = client.open_by_key(SHEET_ID).sheet1
+            df = pd.DataFrame(sheet.get_all_records())
             return clean_df(df), "google_sheets"
-    except Exception as e:
-        st.warning(f"⚠️ Gagal membaca via Secrets: {str(e)[:80]}")
-
-    try:
-        import gspread
-        from google.oauth2.service_account import Credentials
-        if os.path.exists(CREDS_FILE):
-            creds  = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
-            client = gspread.authorize(creds)
-            sheet  = client.open_by_key(SHEET_ID).sheet1
-            df     = pd.DataFrame(sheet.get_all_records())
-            return clean_df(df), "google_sheets"
-    except Exception as e:
-        st.warning(f"⚠️ Gagal via credentials.json: {str(e)[:80]}")
-
+        except Exception as e:
+            st.warning(f"⚠️ Gagal membaca dari Google Sheets: {str(e)[:80]}")
     try:
         df = pd.read_csv("employee_data.csv")
         return clean_df(df), "local_csv"
@@ -96,10 +77,8 @@ def load_data():
         return None, "error"
 
 
-# [FIX-3] load_change_requests sekarang di-cache TTL 60 detik
 @st.cache_data(ttl=60)
 def load_change_requests():
-    """Load semua change requests — cached 60 detik."""
     client = get_gspread_client()
     if not client:
         return pd.DataFrame()
@@ -167,18 +146,10 @@ def generate_request_id() -> str:
 
 
 # ══════════════════════════════════════════════════════════════════
-# SURVEY DATA HELPERS (NEW)
+# SURVEY DATA HELPERS 
 # ══════════════════════════════════════════════════════════════════
 @st.cache_data(ttl=120)
 def load_survey_responses():
-    """
-    Load data dari worksheet 'survey_responses'.
-    Kolom yang diharapkan:
-      response_id | survey_id | survey_name | respondent_hash |
-      bu | division | submitted_date | career_stage |
-      q1_score..q10_score (numerik 1-5) | engagement_score (avg)
-    Jika worksheet belum ada, return DataFrame dummy untuk demo.
-    """
     client = get_gspread_client()
     if client:
         try:
@@ -191,7 +162,6 @@ def load_survey_responses():
         except Exception:
             pass
 
-    # ── Demo data generator — hapus setelah worksheet nyata tersedia ──
     import numpy as np
     rng = np.random.default_rng(42)
     bus       = ["Technology", "Finance", "Operations", "Marketing", "HR", "Legal", "Sales", "Product"]
@@ -256,7 +226,6 @@ SURVEY_QUESTIONS = {
 # ORG CHART HELPERS
 # ══════════════════════════════════════════════════════════════════
 def get_all_managers(emp_ids: list, all_data: pd.DataFrame) -> set:
-    """BFS ke atas — temukan semua rantai manajer dari sekumpulan employee."""
     result   = set(emp_ids)
     to_check = set(emp_ids)
     while to_check:
@@ -270,14 +239,9 @@ def get_all_managers(emp_ids: list, all_data: pd.DataFrame) -> set:
 
 
 def build_tree_json(full_data: pd.DataFrame, selected_div: str, root_ids: list, mode: str = "division") -> list:
-    """
-    [FIX-5] Ganti iterrows() dengan vectorized groupby dan dict lookup.
-    """
-    # children_map: mgr_id -> [child_id, ...]
     valid = full_data[full_data["Manager ID"].notna() & (full_data["Manager ID"] != "") & (full_data["Manager ID"] != "nan")]
     children_map: dict = valid.groupby("Manager ID")["Employee ID"].apply(list).to_dict()
 
-    # info_map: emp_id -> dict
     info_map: dict = (
         full_data
         .set_index("Employee ID")[["Employee Name", "Job Position", "Division", "SBU/Tribe", "Business Unit"]]
@@ -320,7 +284,7 @@ def to_excel(dataframe: pd.DataFrame) -> bytes:
 
 
 # ══════════════════════════════════════════════════════════════════
-# PDF GENERATORS (unchanged — only available locally)
+# PDF GENERATORS 
 # ══════════════════════════════════════════════════════════════════
 def generate_pdf(tree_nodes, title_text):
     if not REPORTLAB_OK:
@@ -738,7 +702,6 @@ T = {
     "label_txt":       "#6b6b9e"   if dm else "#76767f",
 }
 
-# Chart colors for survey (always use fixed palette for readability)
 CHART_COLORS = {
     "primary":   "#4234b6",
     "secondary": "#5b4fcf",
@@ -746,7 +709,7 @@ CHART_COLORS = {
     "warning":   "#d97706",
     "danger":    "#dc2626",
     "info":      "#0284c7",
-    "scale":     ["#dc2626","#f59e0b","#6b7280","#3b82f6","#059669"],  # 1-5 Likert
+    "scale":     ["#dc2626","#f59e0b","#6b7280","#3b82f6","#059669"],  
     "bars":      ["#4234b6","#5b4fcf","#7c6fcd","#9b8fef","#c4b5fd","#e4dfff","#ddd6fe","#ede9fe"],
 }
 
@@ -1060,13 +1023,14 @@ with st.sidebar:
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = 0
 
+    # ── PERUBAHAN NAMA TAB DI SINI ──
     nav_items = [
         ("🌳", "Org Chart",          0),
         ("👥", "Data Karyawan",      1),
         ("⚠️", "Manager ID Hilang",  2),
         ("👔", "Daftar Manager",     3),
         ("📝", "Change Request",     4),
-        ("📊", "Survey Dashboard",   5),   # NEW
+        ("📊", "Survey dan Form",    5),
     ]
     active_idx = st.session_state.active_tab
     for icon_nav, label_nav, tab_idx in nav_items:
@@ -1186,7 +1150,6 @@ if _active == 0:
         full_data       = df[df["Employee ID"].isin(all_ids_needed)].copy()
         all_ids_set     = set(full_data["Employee ID"].tolist())
 
-        # [FIX-5] root detection vectorized
         root_ids = full_data[
             ~full_data["Manager ID"].isin(all_ids_set) | full_data["Manager ID"].isin({"", "nan"})
         ]["Employee ID"].astype(str).tolist()
@@ -1358,7 +1321,7 @@ elif _active == 3:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Daftar Manager</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">Seluruh karyawan yang memiliki bawahan langsung</div>
+        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1380,15 +1343,32 @@ elif _active == 3:
 
     hierarchy_levels = get_level_from_root(CHIEF_ROOT, df, max_depth=2)
 
-    # [FIX-2] Career Stage: safe access — kolom sudah dipastikan ada oleh clean_df()
     level0_ids = set(df[df["Career Stage"].astype(str).str.strip().str.lower() == "level 0"]["Employee ID"].tolist())
 
     mgr_ids = df[df["Manager ID"] != ""]["Manager ID"].unique().tolist()
     mgr_df  = df[df["Employee ID"].isin(mgr_ids)].copy()
-    sub_count = df[df["Manager ID"] != ""].groupby("Manager ID").size().reset_index(name="Jumlah Bawahan")
+    
+    # Hitung Bawahan Langsung (Direct Reports)
+    sub_count = df[df["Manager ID"] != ""].groupby("Manager ID").size().reset_index(name="Bawahan Langsung")
     sub_count.rename(columns={"Manager ID": "Employee ID"}, inplace=True)
     mgr_df = mgr_df.merge(sub_count, on="Employee ID", how="left")
-    mgr_df["Jumlah Bawahan"] = mgr_df["Jumlah Bawahan"].fillna(0).astype(int)
+    mgr_df["Bawahan Langsung"] = mgr_df["Bawahan Langsung"].fillna(0).astype(int)
+    
+    # ── LOGIKA BARU: Hitung Total Span (Seluruh Bawahan dalam Hirarki) ──
+    children_map = df[df["Manager ID"] != ""].groupby("Manager ID")["Employee ID"].apply(list).to_dict()
+    
+    def get_total_span(mgr_id):
+        total = 0
+        to_visit = children_map.get(mgr_id, [])[:]
+        while to_visit:
+            curr = to_visit.pop(0)
+            total += 1
+            to_visit.extend(children_map.get(curr, [])) 
+        return total
+
+    mgr_df["Total Span (Semua Bawahan)"] = mgr_df["Employee ID"].apply(get_total_span)
+    # ────────────────────────────────────────────────────────────────────
+
     mgr_df["Level Hierarki"] = mgr_df["Employee ID"].apply(
         lambda eid: {0: "Chief", 1: "C-1", 2: "C-2"}.get(hierarchy_levels.get(eid), "-")
     )
@@ -1396,12 +1376,15 @@ elif _active == 3:
     mgr_df["Ada Bawahan Level 0"] = mgr_df["Employee ID"].apply(
         lambda eid: bool(direct_subs_map.get(eid, set()) & level0_ids)
     )
-    mgr_df = mgr_df.sort_values("Jumlah Bawahan", ascending=False)
+    
+    # Urutkan berdasarkan total span tertinggi
+    mgr_df = mgr_df.sort_values("Total Span (Semua Bawahan)", ascending=False)
 
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("👔 Total Manager", len(mgr_df))
-    m2.metric("📊 Rata-rata Bawahan", f"{mgr_df['Jumlah Bawahan'].mean():.1f}")
-    m3.metric("🏆 Max Bawahan", int(mgr_df["Jumlah Bawahan"].max()))
+    m2.metric("📊 Rata-rata Bawahan Langsung", f"{mgr_df['Bawahan Langsung'].mean():.1f}")
+    m3.metric("🏆 Max Bawahan Langsung", int(mgr_df["Bawahan Langsung"].max()))
+    m4.metric("📈 Max Total Span", int(mgr_df["Total Span (Semua Bawahan)"].max()))
     st.divider()
 
     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
@@ -1440,9 +1423,11 @@ elif _active == 3:
         """, unsafe_allow_html=True)
 
     st.caption(f"Menampilkan **{len(view_mgr)}** manager")
+    
     display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division",
-                        "Business Unit", "SBU/Tribe", "Level Hierarki", "Jumlah Bawahan"]
+                        "Business Unit", "SBU/Tribe", "Level Hierarki", "Bawahan Langsung", "Total Span (Semua Bawahan)"]
     available_display = [c for c in display_cols_mgr if c in view_mgr.columns]
+    
     st.dataframe(view_mgr[available_display].reset_index(drop=True), use_container_width=True, height=480)
     st.divider()
     st.markdown("**⬇️ Download Data**")
@@ -1470,7 +1455,6 @@ elif _active == 4:
 
     cr_tab1, cr_tab2, cr_tab3 = st.tabs(["➕  Buat Request", "📥  Inbox & Review", "📜  History"])
 
-    # ── Template helper ──
     def make_template(change_type_tmpl):
         cols = (["Employee ID", "Employee Name", "Previous Manager", "New Manager"]
                 if change_type_tmpl == "Reporting Line"
@@ -1511,7 +1495,6 @@ elif _active == 4:
                 success_count += 1
         return valid_rows, warnings_list, success_count
 
-    # ── SUB-TAB 1: BUAT REQUEST ──
     with cr_tab1:
         st.markdown(f"""<div style="font-size:15px;font-weight:600;color:{T['text']};margin-bottom:16px;">
             Form Permintaan Perubahan Struktur</div>""", unsafe_allow_html=True)
@@ -1615,8 +1598,6 @@ elif _active == 4:
                 except Exception as e:
                     st.error(f"❌ Gagal membaca file: {str(e)}")
 
-    # ── SUB-TAB 2: INBOX ──
-    # [FIX-4] CSS style block untuk approve/reject dipindah ke sini (satu kali, di luar loop)
     with cr_tab2:
         st.markdown(f"""
         <style>
@@ -1715,7 +1696,6 @@ elif _active == 4:
                                         if update_cr_status(row.get("request_id",""), "Rejected", reviewer.strip(), catatan_review.strip()):
                                             st.warning("❌ Rejected"); st.rerun()
 
-    # ── SUB-TAB 3: HISTORY ──
     with cr_tab3:
         col_rl, _ = st.columns([1, 5])
         with col_rl:
@@ -1763,7 +1743,7 @@ elif _active == 4:
 
 
 # ══════════════════════════════════════════════════════════════════
-# TAB 6 — SURVEY DASHBOARD  (NEW)
+# TAB 6 — SURVEY DAN FORM
 # ══════════════════════════════════════════════════════════════════
 elif _active == 5:
     import plotly.express as px
@@ -1771,10 +1751,9 @@ elif _active == 5:
 
     survey_df, survey_source = load_survey_responses()
 
-    # ── Page header ──
     st.markdown(f"""
     <div style="margin-bottom:24px;">
-        <div style="font-size:20px;font-weight:700;color:{T['text']};">Survey Dashboard</div>
+        <div style="font-size:20px;font-weight:700;color:{T['text']};">Survey dan Form</div>
         <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
             Analitik hasil employee survey — pilih survey & segmen untuk menampilkan insight
             {'<span style="margin-left:12px;background:#fde68a;color:#92400e;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">Demo Data</span>' if survey_source == "demo" else ''}
@@ -1788,7 +1767,6 @@ elif _active == 5:
 
     q_cols = [c for c in survey_df.columns if c.endswith("_score")]
 
-    # ══ FILTER PANEL ══════════════════════════════════════════════
     st.markdown(f"""
     <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;
         color:{T['text3']};margin-bottom:10px;">Filter & Segmentasi</div>
@@ -1835,13 +1813,11 @@ elif _active == 5:
         st.warning("⚠️ Tidak ada data dengan kombinasi filter ini. Coba perluas filter.")
         st.stop()
 
-    # ── Recompute engagement score per filter ──
     sv_df["engagement_score"] = sv_df[q_cols].mean(axis=1)
     eng_score = sv_df["engagement_score"].mean()
     response_rate = len(sv_df)
     avg_per_q = sv_df[q_cols].mean()
 
-    # ── Skor ke kategori teks ──
     def score_to_label(s):
         if s >= 4.5: return "Sangat Tinggi"
         if s >= 3.5: return "Tinggi"
@@ -1862,7 +1838,6 @@ elif _active == 5:
         legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0),
     )
 
-    # ══ KPI CARDS ══
     st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
     k1, k2, k3, k4, k5 = st.columns(5)
 
@@ -1877,7 +1852,6 @@ elif _active == 5:
 
     st.markdown(f"<div style='height:1px;background:{T['outline']};margin:20px 0 12px 0;'></div>", unsafe_allow_html=True)
 
-    # ══ ROW 1: Gauge + Likert Distribution ══
     row1_left, row1_right = st.columns([1, 2])
 
     with row1_left:
@@ -1952,7 +1926,6 @@ elif _active == 5:
                                  yaxis=dict(gridcolor="rgba(0,0,0,0)"))
         st.plotly_chart(fig_likert, use_container_width=True, config={"displayModeBar": False})
 
-    # ══ ROW 2: Trend Bulanan + Radar per Dimensi ══
     st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
     row2_left, row2_right = st.columns([3, 2])
 
@@ -2027,7 +2000,6 @@ elif _active == 5:
         )
         st.plotly_chart(fig_radar, use_container_width=True, config={"displayModeBar": False})
 
-    # ══ ROW 3: Heatmap BU × Dimensi + Top/Bottom Statements ══
     st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
     row3_left, row3_right = st.columns([3, 2])
 
@@ -2099,7 +2071,6 @@ elif _active == 5:
             </div>
             """, unsafe_allow_html=True)
 
-    # ══ ROW 4: Distribusi Responden + Skor per Division ══
     st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
     row4_left, row4_right = st.columns(2)
 
@@ -2149,7 +2120,6 @@ elif _active == 5:
                               yaxis=dict(gridcolor="rgba(0,0,0,0)"))
         st.plotly_chart(fig_div, use_container_width=True, config={"displayModeBar": False})
 
-    # ══ EXPORT ══
     st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
     st.markdown("**⬇️ Download Data Survey**")
     col_sv1, col_sv2, _ = st.columns([1, 1, 3])
