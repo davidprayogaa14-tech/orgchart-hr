@@ -1,17 +1,3 @@
-"""
-OrgChart HR Dashboard — v4.0
-Mekari People Analytics
-
-PERUBAHAN dari v3:
-  [FIX-1] Hapus dead code: load_dataframe() yang tidak pernah dipakai
-  [FIX-2] Career Stage — akses kolom dengan safe .get() agar tidak crash jika kolom tidak ada
-  [FIX-3] load_change_requests() kini pakai @st.cache_data(ttl=60) — tidak lagi duplikat API call
-  [FIX-4] CSS style block di Change Request inbox dipindah ke luar loop agar tidak inject ulang setiap iterasi
-  [FIX-5] build_tree_json & root_id detection: ganti iterrows() dengan operasi vectorized Pandas
-  [NEW]   Tab 6 — Survey Dashboard: pilih survey, filter BU/Divisi/periode, lihat KPI cards,
-           Likert distribution, trend bulanan, heatmap per divisi, top/bottom statements, export CSV
-"""
-
 import streamlit as st
 import pandas as pd
 import json
