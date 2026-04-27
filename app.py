@@ -630,7 +630,7 @@ treeData.forEach(n => applyInitialCollapse(n, 0)); rerenderTree(); setTimeout(fi
 # ══════════════════════════════════════════════════════════════════
 # STREAMLIT PAGE CONFIG
 # ══════════════════════════════════════════════════════════════════
-st.set_page_config(page_title="OrgChart HR", layout="wide", page_icon="🏢", initial_sidebar_state="expanded")
+st.set_page_config(page_title="HRIS", layout="wide", page_icon="🏢", initial_sidebar_state="expanded")
 
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
@@ -975,7 +975,7 @@ with st.sidebar:
                 box-shadow:0 4px 20px rgba(66,52,182,0.35);">🏢</div>
             <div>
                 <div style="font-size:16px;font-weight:800;color:{T['sidebar_active']};
-                    font-family:'Manrope',sans-serif;line-height:1.2;letter-spacing:-0.02em;">OrgChart HR</div>
+                    font-family:'Manrope',sans-serif;line-height:1.2;letter-spacing:-0.02em;">HRIS</div>
                 <div style="font-size:11px;color:{T['sidebar_text2']};font-weight:500;
                     letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">People Analytics</div>
             </div>
