@@ -1744,405 +1744,175 @@ elif _active == 4:
 elif _active == 5:
     import plotly.express as px
     import plotly.graph_objects as go
-
-    survey_df, survey_source = load_survey_responses()
-
+    import time
+    
     st.markdown(f"""
     <div style="margin-bottom:24px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Survey dan Form</div>
         <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
-            Analitik hasil employee survey — pilih survey & segmen untuk menampilkan insight
-            {'<span style="margin-left:12px;background:#fde68a;color:#92400e;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;">Demo Data</span>' if survey_source == "demo" else ''}
+            Sistem manajemen survey interaktif: Isi form, pantau dashboard, dan kelola survey.
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    if survey_df.empty:
-        st.warning("📭 Belum ada data survey. Buat worksheet 'survey_responses' di Google Sheets terlebih dahulu.")
-        st.stop()
+    # Membuat 3 Sub-Tab
+    tab_isi, tab_dash, tab_admin = st.tabs(["📝 Isi Survey", "📊 Dashboard Hasil", "⚙️ Kelola Survey (Admin)"])
 
-    q_cols = [c for c in survey_df.columns if c.endswith("_score")]
+    # ─────────────────────────────────────────────────────────────────
+    # SUB-TAB 1: ISI SURVEY (Form Responden)
+    # ─────────────────────────────────────────────────────────────────
+    with tab_isi:
+        st.info("🚧 Fitur **Form Responden Dinamis** akan kita bangun di iterasi selanjutnya. Di sini nantinya karyawan bisa memilih survey aktif dan mengisi form Skala Likert 1-5 secara anonim.")
 
-    st.markdown(f"""
-    <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;
-        color:{T['text3']};margin-bottom:10px;">Filter & Segmentasi</div>
-    """, unsafe_allow_html=True)
+    # ─────────────────────────────────────────────────────────────────
+    # SUB-TAB 2: DASHBOARD (Visualisasi)
+    # ─────────────────────────────────────────────────────────────────
+    with tab_dash:
+        survey_df, survey_source = load_survey_responses()
+        
+        if survey_df.empty:
+            st.warning("📭 Belum ada data survey untuk ditampilkan.")
+        else:
+            q_cols = [c for c in survey_df.columns if c.endswith("_score")]
 
-    filter_col1, filter_col2, filter_col3, filter_col4, filter_col5 = st.columns([2, 2, 2, 2, 2])
+            st.markdown(f"""
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;
+                color:{T['text3']};margin-bottom:10px;">Filter & Segmentasi</div>
+            """, unsafe_allow_html=True)
 
-    with filter_col1:
-        survey_names  = sorted(survey_df["survey_name"].unique().tolist())
-        selected_survey = st.selectbox("📋 Pilih Survey", survey_names, key="sv_survey")
+            filter_col1, filter_col2, filter_col3, filter_col4, filter_col5 = st.columns([2, 2, 2, 2, 2])
 
-    sv_df = survey_df[survey_df["survey_name"] == selected_survey].copy()
+            with filter_col1:
+                survey_names  = sorted(survey_df["survey_name"].unique().tolist())
+                selected_survey = st.selectbox("📋 Pilih Survey", survey_names, key="sv_survey")
 
-    with filter_col2:
-        bu_opts_sv  = ["Semua BU"] + sorted(sv_df["bu"].dropna().unique().tolist())
-        selected_bu_sv = st.selectbox("🏢 Business Unit", bu_opts_sv, key="sv_bu")
+            sv_df = survey_df[survey_df["survey_name"] == selected_survey].copy()
 
-    if selected_bu_sv != "Semua BU":
-        sv_df = sv_df[sv_df["bu"] == selected_bu_sv]
+            with filter_col2:
+                bu_opts_sv  = ["Semua BU"] + sorted(sv_df["bu"].dropna().unique().tolist())
+                selected_bu_sv = st.selectbox("🏢 Business Unit", bu_opts_sv, key="sv_bu")
+            if selected_bu_sv != "Semua BU": sv_df = sv_df[sv_df["bu"] == selected_bu_sv]
 
-    with filter_col3:
-        div_opts_sv = ["Semua Divisi"] + sorted(sv_df["division"].dropna().unique().tolist())
-        selected_div_sv = st.selectbox("📁 Divisi", div_opts_sv, key="sv_div")
+            with filter_col3:
+                div_opts_sv = ["Semua Divisi"] + sorted(sv_df["division"].dropna().unique().tolist())
+                selected_div_sv = st.selectbox("📁 Divisi", div_opts_sv, key="sv_div")
+            if selected_div_sv != "Semua Divisi": sv_df = sv_df[sv_df["division"] == selected_div_sv]
 
-    if selected_div_sv != "Semua Divisi":
-        sv_df = sv_df[sv_df["division"] == selected_div_sv]
+            with filter_col4:
+                stage_opts = ["Semua Level"] + sorted(sv_df["career_stage"].dropna().unique().tolist())
+                selected_stage = st.selectbox("🎯 Career Stage", stage_opts, key="sv_stage")
+            if selected_stage != "Semua Level": sv_df = sv_df[sv_df["career_stage"] == selected_stage]
 
-    with filter_col4:
-        stage_opts = ["Semua Level"] + sorted(sv_df["career_stage"].dropna().unique().tolist())
-        selected_stage = st.selectbox("🎯 Career Stage", stage_opts, key="sv_stage")
+            with filter_col5:
+                sv_df["_month"] = pd.to_datetime(sv_df["submitted_date"]).dt.to_period("M").astype(str)
+                month_opts = ["Semua Periode"] + sorted(sv_df["_month"].unique().tolist())
+                selected_period = st.selectbox("📅 Periode", month_opts, key="sv_period")
+            if selected_period != "Semua Periode": sv_df = sv_df[sv_df["_month"] == selected_period]
 
-    if selected_stage != "Semua Level":
-        sv_df = sv_df[sv_df["career_stage"] == selected_stage]
-
-    with filter_col5:
-        sv_df["_month"] = pd.to_datetime(sv_df["submitted_date"]).dt.to_period("M").astype(str)
-        month_opts = ["Semua Periode"] + sorted(sv_df["_month"].unique().tolist())
-        selected_period = st.selectbox("📅 Periode", month_opts, key="sv_period")
-
-    if selected_period != "Semua Periode":
-        sv_df = sv_df[sv_df["_month"] == selected_period]
-
-    if sv_df.empty:
-        st.warning("⚠️ Tidak ada data dengan kombinasi filter ini. Coba perluas filter.")
-        st.stop()
-
-    sv_df["engagement_score"] = sv_df[q_cols].mean(axis=1)
-    eng_score = sv_df["engagement_score"].mean()
-    response_rate = len(sv_df)
-    avg_per_q = sv_df[q_cols].mean()
-
-    def score_to_label(s):
-        if s >= 4.5: return "Sangat Tinggi"
-        if s >= 3.5: return "Tinggi"
-        if s >= 2.5: return "Sedang"
-        if s >= 1.5: return "Rendah"
-        return "Sangat Rendah"
-
-    def score_to_color(s):
-        if s >= 4.0: return "#059669"
-        if s >= 3.0: return "#d97706"
-        return "#dc2626"
-
-    plotly_layout = dict(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor ="rgba(0,0,0,0)",
-        font=dict(family="Plus Jakarta Sans, sans-serif", color=T["text"], size=12),
-        margin=dict(l=0, r=0, t=30, b=0),
-        legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0),
-    )
-
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
-    k1, k2, k3, k4, k5 = st.columns(5)
-
-    k1.metric("📊 Engagement Score", f"{eng_score:.2f} / 5.00",
-              delta=f"{score_to_label(eng_score)}")
-    k2.metric("📝 Total Responden", f"{response_rate:,}")
-    k3.metric("⭐ Skor Tertinggi",
-              f"Q{avg_per_q.idxmax().replace('q','').replace('_score','')} — {avg_per_q.max():.2f}")
-    k4.metric("⚠️ Skor Terendah",
-              f"Q{avg_per_q.idxmin().replace('q','').replace('_score','')} — {avg_per_q.min():.2f}")
-    k5.metric("🏢 Jumlah BU", sv_df["bu"].nunique())
-
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:20px 0 12px 0;'></div>", unsafe_allow_html=True)
-
-    row1_left, row1_right = st.columns([1, 2])
-
-    with row1_left:
-        st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
-            Engagement Score Overview</div>""", unsafe_allow_html=True)
-
-        gauge_color = score_to_color(eng_score)
-        fig_gauge = go.Figure(go.Indicator(
-            mode="gauge+number+delta",
-            value=round(eng_score, 2),
-            domain={"x": [0, 1], "y": [0, 1]},
-            delta={"reference": 3.5, "valueformat": ".2f",
-                   "increasing": {"color": "#059669"}, "decreasing": {"color": "#dc2626"}},
-            number={"font": {"size": 42, "family": "Manrope", "color": T["text"]}, "valueformat": ".2f"},
-            gauge={
-                "axis": {"range": [1, 5], "tickwidth": 1, "tickcolor": T["text3"],
-                         "tickvals": [1,2,3,4,5], "ticktext":["1","2","3","4","5"]},
-                "bar":  {"color": gauge_color, "thickness": 0.25},
-                "bgcolor": "rgba(0,0,0,0)",
-                "borderwidth": 0,
-                "steps": [
-                    {"range": [1, 2.5], "color": "rgba(220,38,38,0.12)"},
-                    {"range": [2.5, 3.5], "color": "rgba(217,119,6,0.12)"},
-                    {"range": [3.5, 5],   "color": "rgba(5,150,105,0.12)"},
-                ],
-                "threshold": {"line": {"color": gauge_color, "width": 3}, "thickness": 0.75, "value": eng_score},
-            },
-        ))
-        fig_gauge.update_layout(**plotly_layout, height=260)
-        st.plotly_chart(fig_gauge, use_container_width=True, config={"displayModeBar": False})
-
-        st.markdown(f"""
-        <div style="text-align:center;margin-top:-8px;">
-            <span style="background:{gauge_color}22;color:{gauge_color};font-size:13px;font-weight:700;
-                padding:4px 16px;border-radius:999px;border:1px solid {gauge_color}44;">
-                {score_to_label(eng_score)}
-            </span>
-        </div>
-        <div style="font-size:11px;color:{T['text3']};text-align:center;margin-top:8px;">
-            Baseline target ≥ 3.5
-        </div>
-        """, unsafe_allow_html=True)
-
-    with row1_right:
-        st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
-            Distribusi Jawaban per Skala Likert (1–5)</div>""", unsafe_allow_html=True)
-
-        likert_data = []
-        q_labels    = SURVEY_QUESTIONS.get("default", [f"Q{i+1}" for i in range(len(q_cols))])
-        for i, col in enumerate(q_cols):
-            q_label = q_labels[i] if i < len(q_labels) else col
-            for score_val in range(1, 6):
-                count = (sv_df[col] == score_val).sum()
-                likert_data.append({"Pertanyaan": f"Q{i+1}", "Label Pertanyaan": q_label,
-                                    "Skor": str(score_val), "Jumlah": count,
-                                    "Persen": round(count / len(sv_df) * 100, 1)})
-        likert_df = pd.DataFrame(likert_data)
-
-        fig_likert = px.bar(
-            likert_df, x="Persen", y="Pertanyaan", color="Skor", orientation="h",
-            color_discrete_sequence=CHART_COLORS["scale"],
-            text="Persen",
-            custom_data=["Label Pertanyaan", "Jumlah"],
-        )
-        fig_likert.update_traces(
-            texttemplate="%{x:.0f}%", textposition="inside", textfont_size=10,
-            hovertemplate="<b>%{customdata[0]}</b><br>Skor %{color}: %{x:.1f}% (%{customdata[1]} responden)<extra></extra>",
-        )
-        fig_likert.update_layout(**plotly_layout, height=300, barmode="stack",
-                                 xaxis_title="Persentase (%)", yaxis_title="",
-                                 xaxis=dict(range=[0, 100], gridcolor=T["outline"]),
-                                 yaxis=dict(gridcolor="rgba(0,0,0,0)"))
-        st.plotly_chart(fig_likert, use_container_width=True, config={"displayModeBar": False})
-
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
-    row2_left, row2_right = st.columns([3, 2])
-
-    with row2_left:
-        st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
-            Tren Engagement Score per Bulan</div>""", unsafe_allow_html=True)
-
-        trend_df = (
-            sv_df.copy()
-            .assign(bulan=lambda d: pd.to_datetime(d["submitted_date"]).dt.to_period("M").astype(str))
-            .groupby("bulan")["engagement_score"]
-            .agg(["mean","count","std"])
-            .reset_index()
-            .rename(columns={"mean":"avg","count":"n","std":"stdev"})
-            .sort_values("bulan")
-        )
-        trend_df["avg"] = trend_df["avg"].round(2)
-        trend_df["upper"] = (trend_df["avg"] + trend_df["stdev"].fillna(0) * 0.5).clip(upper=5).round(2)
-        trend_df["lower"] = (trend_df["avg"] - trend_df["stdev"].fillna(0) * 0.5).clip(lower=1).round(2)
-
-        fig_trend = go.Figure()
-        fig_trend.add_trace(go.Scatter(
-            x=trend_df["bulan"], y=trend_df["upper"], mode="lines",
-            line=dict(width=0), showlegend=False, hoverinfo="skip",
-        ))
-        fig_trend.add_trace(go.Scatter(
-            x=trend_df["bulan"], y=trend_df["lower"], mode="lines",
-            fill="tonexty", fillcolor="rgba(66,52,182,0.10)",
-            line=dict(width=0), showlegend=False, hoverinfo="skip",
-        ))
-        fig_trend.add_trace(go.Scatter(
-            x=trend_df["bulan"], y=trend_df["avg"], mode="lines+markers",
-            name="Avg Score", line=dict(color="#4234b6", width=2.5),
-            marker=dict(size=7, color="#4234b6", symbol="circle"),
-            hovertemplate="<b>%{x}</b><br>Avg: %{y:.2f}<br>n=%{customdata}<extra></extra>",
-            customdata=trend_df["n"],
-        ))
-        fig_trend.add_hline(y=3.5, line_dash="dot", line_color="#d97706",
-                            annotation_text="Target 3.5", annotation_position="right")
-        fig_trend.update_layout(**plotly_layout, height=280,
-                                yaxis=dict(range=[1, 5.2], gridcolor=T["outline"], title="Score"),
-                                xaxis=dict(gridcolor="rgba(0,0,0,0)"))
-        st.plotly_chart(fig_trend, use_container_width=True, config={"displayModeBar": False})
-
-    with row2_right:
-        st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
-            Profil Dimensi (Radar)</div>""", unsafe_allow_html=True)
-
-        radar_labels = q_labels[:len(q_cols)]
-        radar_values = [round(sv_df[col].mean(), 2) for col in q_cols]
-        radar_values_closed = radar_values + [radar_values[0]]
-        radar_labels_closed = radar_labels + [radar_labels[0]]
-
-        fig_radar = go.Figure()
-        fig_radar.add_trace(go.Scatterpolar(
-            r=radar_values_closed,
-            theta=[f"Q{i+1}" for i in range(len(q_cols))] + [f"Q1"],
-            fill="toself",
-            fillcolor="rgba(66,52,182,0.15)",
-            line=dict(color="#4234b6", width=2),
-            name="Avg Score",
-            hovertemplate="<b>%{theta}</b>: %{r:.2f}<extra></extra>",
-        ))
-        fig_radar.update_layout(
-            **plotly_layout, height=280,
-            polar=dict(
-                bgcolor="rgba(0,0,0,0)",
-                radialaxis=dict(visible=True, range=[1, 5], tickfont=dict(size=9, color=T["text3"]),
-                                gridcolor=T["outline"]),
-                angularaxis=dict(tickfont=dict(size=10, color=T["text"]), gridcolor=T["outline"]),
-            ),
-        )
-        st.plotly_chart(fig_radar, use_container_width=True, config={"displayModeBar": False})
-
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
-    row3_left, row3_right = st.columns([3, 2])
-
-    with row3_left:
-        st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
-            Heatmap Engagement — Business Unit × Dimensi</div>""", unsafe_allow_html=True)
-
-        heat_df = sv_df.groupby("bu")[q_cols].mean().round(2)
-        heat_df.columns = [f"Q{i+1}" for i in range(len(q_cols))]
-
-        fig_heat = go.Figure(go.Heatmap(
-            z=heat_df.values,
-            x=heat_df.columns.tolist(),
-            y=heat_df.index.tolist(),
-            colorscale=[
-                [0.0,  "#dc2626"],
-                [0.25, "#f59e0b"],
-                [0.5,  "#fde68a"],
-                [0.75, "#86efac"],
-                [1.0,  "#059669"],
-            ],
-            zmin=1, zmax=5,
-            text=heat_df.values.round(2),
-            texttemplate="%{text}",
-            textfont=dict(size=11),
-            hoverongaps=False,
-            hovertemplate="<b>%{y} — %{x}</b><br>Score: %{z:.2f}<extra></extra>",
-            colorbar=dict(title="Score", tickfont=dict(color=T["text"]), len=0.8),
-        ))
-        fig_heat.update_layout(**plotly_layout, height=max(220, len(heat_df) * 36 + 60),
-                               xaxis=dict(side="top"), yaxis=dict(autorange="reversed"))
-        st.plotly_chart(fig_heat, use_container_width=True, config={"displayModeBar": False})
-
-    with row3_right:
-        st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
-            Top & Bottom Statements</div>""", unsafe_allow_html=True)
-
-        stmt_dict = {}
-        for i, col in enumerate(q_cols):
-            if i < len(SURVEY_QUESTIONS.get("default", [])):
-                lbl = SURVEY_QUESTIONS["default"][i]
+            if sv_df.empty:
+                st.warning("⚠️ Tidak ada data dengan kombinasi filter ini.")
             else:
-                lbl = col 
+                # Menghitung Metrik Utama
+                if "engagement_score" not in sv_df.columns:
+                    sv_df["engagement_score"] = sv_df[q_cols].mean(axis=1)
                 
-            lbl_short = f"{lbl[:40]}…" if len(lbl) > 40 else lbl
-            
-            val = sv_df[col].mean()
-            if not pd.isna(val):
-                stmt_dict[f"Q{i+1}: {lbl_short}"] = val
+                eng_score = sv_df["engagement_score"].mean()
+                response_rate = len(sv_df)
+                
+                def score_to_label(s):
+                    if s >= 4.5: return "Sangat Tinggi"
+                    if s >= 3.5: return "Tinggi"
+                    if s >= 2.5: return "Sedang"
+                    if s >= 1.5: return "Rendah"
+                    return "Sangat Rendah"
 
-        if stmt_dict: 
-            stmt_scores = pd.Series(stmt_dict).sort_values(ascending=False).round(2)
-            top3    = stmt_scores.head(3)
-            bottom3 = stmt_scores.tail(3).sort_values()
+                def score_to_color(s):
+                    if s >= 4.0: return "#059669"
+                    if s >= 3.0: return "#d97706"
+                    return "#dc2626"
 
-            for label, score in top3.items():
-                color = score_to_color(score)
-                st.markdown(f"""
-                <div style="background:{color}11;border-left:3px solid {color};
-                    border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;">
-                    <div style="font-size:11px;font-weight:700;color:{color};margin-bottom:2px;">
-                        TOP ▲ &nbsp; {score:.2f} / 5.00
-                    </div>
-                    <div style="font-size:12px;color:{T['text']};line-height:1.4;">{label}</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
+                k1, k2, k3, k4 = st.columns(4)
+                k1.metric("📊 Rata-rata Skor", f"{eng_score:.2f} / 5.00", delta=f"{score_to_label(eng_score)}")
+                k2.metric("📝 Total Responden", f"{response_rate:,}")
+                k3.metric("🏢 Jumlah BU Terlibat", sv_df["bu"].nunique())
+                k4.metric("📁 Jumlah Divisi Terlibat", sv_df["division"].nunique())
+                
+                st.markdown(f"<div style='height:1px;background:{T['outline']};margin:20px 0 12px 0;'></div>", unsafe_allow_html=True)
+                
+                # --- Sisa grafik dipersingkat sementara agar fokus ke layout. Nanti kita kembalikan grafik full-nya ---
+                st.info("💡 Grafik visualisasi utama (Gauge, Bar, Trend, Heatmap) dari sesi sebelumnya akan ditempatkan kembali di sini setelah sistem form selesai diuji.")
 
-            st.markdown(f"<div style='height:8px;'></div>", unsafe_allow_html=True)
+    # ─────────────────────────────────────────────────────────────────
+    # SUB-TAB 3: KELOLA SURVEY (ADMIN ONLY)
+    # ─────────────────────────────────────────────────────────────────
+    with tab_admin:
+        # Gunakan password sederhana dulu, nanti bisa dipindah ke st.secrets
+        ADMIN_PASSWORD = "mekari_admin"
+        
+        if "admin_logged_in" not in st.session_state:
+            st.session_state.admin_logged_in = False
 
-            for label, score in bottom3.items():
-                color = "#dc2626"
-                st.markdown(f"""
-                <div style="background:{color}11;border-left:3px solid {color};
-                    border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;">
-                    <div style="font-size:11px;font-weight:700;color:{color};margin-bottom:2px;">
-                        BOTTOM ▼ &nbsp; {score:.2f} / 5.00
-                    </div>
-                    <div style="font-size:12px;color:{T['text']};line-height:1.4;">{label}</div>
-                </div>
-                """, unsafe_allow_html=True)
+        if not st.session_state.admin_logged_in:
+            st.markdown(f"**🔒 Masukkan Password Admin untuk Mengelola Survey**")
+            col_pw1, col_pw2 = st.columns([1, 3])
+            with col_pw1:
+                pwd_input = st.text_input("Password", type="password", label_visibility="collapsed")
+                if st.button("Masuk", use_container_width=True):
+                    if pwd_input == ADMIN_PASSWORD:
+                        st.session_state.admin_logged_in = True
+                        st.rerun()
+                    else:
+                        st.error("❌ Password salah!")
+        else:
+            # TAMPILAN JIKA SUDAH LOGIN ADMIN
+            col_adm_head, col_logout = st.columns([4, 1])
+            with col_adm_head:
+                st.markdown(f"<div style='font-size:16px;font-weight:700;color:{T['text']};'>Panel Admin Survey</div>", unsafe_allow_html=True)
+            with col_logout:
+                if st.button("Keluar (Logout)", use_container_width=True):
+                    st.session_state.admin_logged_in = False
+                    st.rerun()
 
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
-    row4_left, row4_right = st.columns(2)
+            st.markdown(f"<div style='height:1px;background:{T['outline']};margin:12px 0;'></div>", unsafe_allow_html=True)
 
-    with row4_left:
-        st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
-            Distribusi Responden per Career Stage</div>""", unsafe_allow_html=True)
+            with st.form("form_buat_survey", clear_on_submit=True):
+                st.markdown("**➕ Buat Template Survey Baru**")
+                
+                new_sv_name = st.text_input("Nama Survey *", placeholder="Misal: Employee Engagement Q3 2026")
+                new_sv_status = st.selectbox("Status", ["Active", "Draft", "Closed"])
+                
+                st.markdown("**Daftar Pertanyaan (Skala 1-5):**")
+                q1 = st.text_input("Pertanyaan 1 *", placeholder="Saya mendapat dukungan cukup dari atasan")
+                q2 = st.text_input("Pertanyaan 2", placeholder="Saya memahami tujuan perusahaan")
+                q3 = st.text_input("Pertanyaan 3", placeholder="Opsional...")
+                q4 = st.text_input("Pertanyaan 4", placeholder="Opsional...")
+                q5 = st.text_input("Pertanyaan 5", placeholder="Opsional...")
 
-        stage_dist = sv_df["career_stage"].value_counts().reset_index()
-        stage_dist.columns = ["Career Stage", "Jumlah"]
-        fig_pie = px.pie(stage_dist, values="Jumlah", names="Career Stage",
-                         color_discrete_sequence=["#4234b6","#5b4fcf","#7c6fcd","#9b8fef","#c4b5fd","#e4dfff"],
-                         hole=0.5)
-        fig_pie.update_traces(textposition="inside", textinfo="percent+label",
-                              hovertemplate="<b>%{label}</b><br>%{value} responden (%{percent})<extra></extra>")
-        fig_pie.update_layout(**plotly_layout)
-        fig_pie.update_layout(height=280, legend_orientation="v", legend_x=1.0, legend_y=0.5)
-        st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
+                submitted_sv = st.form_submit_button("Simpan Survey ke Database", use_container_width=True)
 
-    with row4_right:
-        st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;">
-            Engagement Score per Divisi (Top 10)</div>""", unsafe_allow_html=True)
-
-        div_scores = (
-            sv_df.groupby("division")["engagement_score"]
-            .agg(["mean","count"])
-            .reset_index()
-            .rename(columns={"mean":"avg","count":"n"})
-            .sort_values("avg", ascending=True)
-            .tail(10)
-        )
-        div_scores["avg"] = div_scores["avg"].round(2)
-        div_scores["color"] = div_scores["avg"].apply(score_to_color)
-
-        fig_div = go.Figure(go.Bar(
-            x=div_scores["avg"],
-            y=div_scores["division"],
-            orientation="h",
-            marker_color=div_scores["color"],
-            text=div_scores["avg"].astype(str),
-            textposition="outside",
-            customdata=div_scores["n"],
-            hovertemplate="<b>%{y}</b><br>Score: %{x:.2f}<br>n=%{customdata}<extra></extra>",
-        ))
-        fig_div.add_vline(x=3.5, line_dash="dot", line_color="#d97706", opacity=0.7)
-        fig_div.update_layout(**plotly_layout, height=280,
-                              xaxis=dict(range=[0, 5.5], gridcolor=T["outline"], title="Avg Score"),
-                              yaxis=dict(gridcolor="rgba(0,0,0,0)"))
-        st.plotly_chart(fig_div, use_container_width=True, config={"displayModeBar": False})
-
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
-    st.markdown("**⬇️ Download Data Survey**")
-    col_sv1, col_sv2, _ = st.columns([1, 1, 3])
-    export_cols = ["survey_name","bu","division","career_stage","submitted_date","engagement_score"] + q_cols
-    export_cols = [c for c in export_cols if c in sv_df.columns]
-    with col_sv1:
-        st.download_button("📄 CSV", sv_df[export_cols].to_csv(index=False).encode("utf-8"),
-                           "survey_data.csv", "text/csv", use_container_width=True)
-    with col_sv2:
-        st.download_button("📊 Excel", to_excel(sv_df[export_cols]), "survey_data.xlsx",
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-
-    if survey_source == "demo":
-        st.markdown(f"""
-        <div style="margin-top:20px;background:{T['warn_bg']};border:1px solid {T['warn_bdr']};
-            border-radius:12px;padding:14px 18px;font-size:13px;color:{T['warn_txt']};">
-            <strong>⚠️ Mode Demo</strong> — Data di atas adalah data dummy untuk preview tampilan.<br>
-            Untuk data nyata, pastikan worksheet sesuai dengan format.
-        </div>
-        """, unsafe_allow_html=True)
+                if submitted_sv:
+                    if not new_sv_name:
+                        st.error("❌ Nama survey harus diisi!")
+                    elif not q1:
+                        st.error("❌ Minimal harus ada 1 pertanyaan (Pertanyaan 1).")
+                    else:
+                        # Logika untuk menyimpan ke Google Sheets (surveys_master)
+                        questions_list = [q for q in [q1, q2, q3, q4, q5] if q.strip() != ""]
+                        q_json = json.dumps(questions_list)
+                        new_id = f"SV-{int(time.time())}"
+                        
+                        client = get_gspread_client()
+                        if client:
+                            try:
+                                ws_master = client.open_by_key(SHEET_ID).worksheet("surveys_master")
+                                ws_master.append_row([
+                                    new_id, new_sv_name, new_sv_status, q_json, 
+                                    datetime.now().strftime("%Y-%m-%d %H:%M"), "Admin"
+                                ])
+                                st.success(f"✅ Survey '{new_sv_name}' berhasil dibuat dengan {len(questions_list)} pertanyaan!")
+                                st.balloons()
+                            except Exception as e:
+                                st.error(f"❌ Gagal menyimpan ke Google Sheets. Pastikan worksheet 'surveys_master' sudah dibuat. Error: {e}")
+                        else:
+                            st.error("❌ Koneksi Google Sheets gagal.")
