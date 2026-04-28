@@ -1876,34 +1876,53 @@ elif _active == 5:
 
             st.markdown(f"<div style='height:1px;background:{T['outline']};margin:12px 0;'></div>", unsafe_allow_html=True)
 
-            with st.form("form_buat_survey", clear_on_submit=True):
+          with st.form("form_buat_survey", clear_on_submit=True):
                 st.markdown("**➕ Buat Template Survey Baru**")
                 
-                new_sv_name = st.text_input("Nama Survey *", placeholder="Misal: Employee Engagement Q3 2026")
-                new_sv_status = st.selectbox("Status", ["Active", "Draft", "Closed"])
+                col_n1, col_n2 = st.columns([3, 1])
+                with col_n1:
+                    new_sv_name = st.text_input("Nama Survey *", placeholder="Misal: Employee Engagement Q3 2026")
+                with col_n2:
+                    new_sv_status = st.selectbox("Status", ["Active", "Draft", "Closed"])
                 
-                st.markdown("**Daftar Pertanyaan & Tipe Jawaban:**")
+                st.markdown(f"<div style='height:1px;background:{T['outline']};margin:10px 0;'></div>", unsafe_allow_html=True)
+                st.markdown("**Daftar Pertanyaan:**")
                 
                 questions_data = []
-                for i in range(1, 6):  # Kita buat 5 slot pertanyaan sebagai contoh
-                    col_q, col_t = st.columns([3, 1])
-                    with col_q:
-                        q_text = st.text_input(f"Pertanyaan {i}", key=f"admin_q_{i}")
-                    with col_t:
-                        q_type = st.selectbox("Tipe", ["Likert 1-5", "Free Text", "Multiple Choice"], key=f"admin_t_{i}")
-                    
-                    if q_text.strip():
-                        questions_data.append({"text": q_text, "type": q_type})
+                # Kita berikan 5 slot pertanyaan (bisa ditambah nanti)
+                for i in range(1, 6):
+                    with st.container():
+                        c1, c2 = st.columns([3, 1])
+                        with c1:
+                            q_text = st.text_input(f"Pertanyaan {i}", key=f"q_txt_{i}", placeholder="Ketik pertanyaan di sini...")
+                        with c2:
+                            q_type = st.selectbox("Tipe Jawaban", 
+                                               ["Likert 1-5", "Free Text", "Multiple Choice"], 
+                                               key=f"q_typ_{i}")
+                        
+                        # FITUR ALA GOOGLE FORM: Input Opsi jika Multiple Choice
+                        q_options = ""
+                        if q_type == "Multiple Choice":
+                            q_options = st.text_input(f"Opsi Jawaban untuk P{i} (Pisahkan dengan koma)", 
+                                                   key=f"q_opt_{i}",
+                                                   placeholder="Contoh: Ya, Tidak, Mungkin")
+                        
+                        if q_text.strip():
+                            questions_data.append({
+                                "text": q_text, 
+                                "type": q_type,
+                                "options": [opt.strip() for opt in q_options.split(",")] if q_options else []
+                            })
+                        st.markdown("<br>", unsafe_allow_html=True)
 
-                submitted_sv = st.form_submit_button("Simpan Survey ke Database", use_container_width=True)
+                submitted_sv = st.form_submit_button("Simpan Template Survey", use_container_width=True)
 
                 if submitted_sv:
                     if not new_sv_name:
-                        st.error("❌ Nama survey harus diisi!")
+                        st.error("❌ Nama survey wajib diisi!")
                     elif len(questions_data) == 0:
-                        st.error("❌ Minimal harus ada 1 pertanyaan.")
+                        st.error("❌ Minimal buat 1 pertanyaan!")
                     else:
-                        # Sekarang kita simpan JSON yang berisi TEKS dan TIPE
                         q_json = json.dumps(questions_data)
                         new_id = f"SV-{int(time.time())}"
                         
@@ -1915,7 +1934,9 @@ elif _active == 5:
                                     new_id, new_sv_name, new_sv_status, q_json, 
                                     datetime.now().strftime("%Y-%m-%d %H:%M"), "Admin"
                                 ])
-                                st.success(f"✅ Survey '{new_sv_name}' berhasil disimpan dengan tipe jawaban yang sesuai!")
+                                st.success(f"✅ Survey '{new_sv_name}' berhasil disimpan!")
                                 st.balloons()
+                                time.sleep(1)
+                                st.rerun()
                             except Exception as e:
-                                st.error(f"❌ Gagal menyimpan. Error: {e}")
+                                st.error(f"❌ Gagal simpan: {e}")
