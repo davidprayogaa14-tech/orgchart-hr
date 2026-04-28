@@ -1741,163 +1741,909 @@ elif _active == 4:
 # ══════════════════════════════════════════════════════════════════
 # TAB 6 — SURVEY DAN FORM
 # ══════════════════════════════════════════════════════════════════
+#   Ganti seluruh blok `elif _active == 5:` di app kamu dengan kode ini.
+#   Pastikan import di bawah sudah ada di bagian atas file.
+#
+# Import yang dibutuhkan (tambah di atas file jika belum ada):
+#   import hashlib, time
+#   import plotly.express as px
+#   import plotly.graph_objects as go
+#
+# Google Sheets yang dibutuhkan:
+#   1. "surveys_master"   — kolom: survey_id | survey_name | description | status | questions_json | created_date | created_by
+#   2. "survey_responses" — kolom: response_id | survey_id | survey_name | respondent_hash | bu | division | career_stage | submitted_date | q1_score..q10_score
+#
+# ══════════════════════════════════════════════════════════════════
+
 elif _active == 5:
+    import hashlib
+    import time as _time
     import plotly.express as px
     import plotly.graph_objects as go
-    import hashlib
-    import time
 
-    st.markdown(f"""
-    <div style="margin-bottom:24px;">
-        <div style="font-size:20px;font-weight:700;color:{T['text']};">Survey dan Form</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
-            Manajemen survey internal Mekari — Form dinamis & Dashboard analitik.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── Session state untuk navigasi internal ──
+    if "sv_view" not in st.session_state:
+        st.session_state.sv_view = "list"        # "list" | "fill" | "dashboard" | "admin"
+    if "sv_selected_id" not in st.session_state:
+        st.session_state.sv_selected_id = None
+    if "sv_selected_name" not in st.session_state:
+        st.session_state.sv_selected_name = ""
+    if "admin_logged_in" not in st.session_state:
+        st.session_state.admin_logged_in = False
 
-    tab_isi, tab_dash, tab_admin = st.tabs(["📝 Isi Survey", "📊 Dashboard Hasil", "⚙️ Kelola Survey (Admin)"])
+    ADMIN_PASSWORD = "mekari_admin"
 
-    # ─────────────────────────────────────────────────────────────────
-    # SUB-TAB 1: ISI SURVEY (Form Responden)
-    # ─────────────────────────────────────────────────────────────────
-    with tab_isi:
+    # ──────────────────────────────────────────────────────────────
+    # HELPERS — Google Sheets survey
+    # ──────────────────────────────────────────────────────────────
+    @st.cache_data(ttl=60)
+    def load_surveys_master():
         client = get_gspread_client()
-        if client:
-            try:
-                ws_m = client.open_by_key(SHEET_ID).worksheet("surveys_master")
-                all_sv = pd.DataFrame(ws_m.get_all_records())
-                active_sv = all_sv[all_sv["status"] == "Active"]
+        if not client:
+            return pd.DataFrame()
+        try:
+            ws   = client.open_by_key(SHEET_ID).worksheet("surveys_master")
+            data = ws.get_all_records()
+            if not data:
+                return pd.DataFrame(columns=[
+                    "survey_id","survey_name","description","status",
+                    "questions_json","created_date","created_by"
+                ])
+            return pd.DataFrame(data)
+        except Exception:
+            return pd.DataFrame()
 
-                if active_sv.empty:
-                    st.info("📭 Saat ini tidak ada survey aktif yang perlu diisi.")
-                else:
-                    st.markdown("### Form Pengisian Survey")
-                    selected_sv_name = st.selectbox("Pilih Survey", active_sv["survey_name"].tolist())
-                    sv_row = active_sv[active_sv["survey_name"] == selected_sv_name].iloc[0]
-                    questions = json.loads(sv_row["questions_json"])
+    @st.cache_data(ttl=90)
+    def load_survey_responses_for(survey_id: str):
+        client = get_gspread_client()
+        if not client:
+            return _make_demo_responses(survey_id), "demo"
+        try:
+            ws   = client.open_by_key(SHEET_ID).worksheet("survey_responses")
+            data = ws.get_all_records()
+            if not data:
+                return _make_demo_responses(survey_id), "demo"
+            df_r = pd.DataFrame(data)
+            df_r["submitted_date"] = pd.to_datetime(df_r["submitted_date"], errors="coerce")
+            filtered = df_r[df_r["survey_id"] == survey_id].copy()
+            if filtered.empty:
+                return _make_demo_responses(survey_id), "demo"
+            return filtered, "google_sheets"
+        except Exception:
+            return _make_demo_responses(survey_id), "demo"
 
-                    with st.form("form_responden", clear_on_submit=True):
-                        st.caption("Identitas Anda akan di-anonimisasi (Hashed ID)")
-                        emp_id_input = st.text_input("Employee ID Anda (untuk validasi BU/Divisi) *")
-                        
-                        responses = {}
-                        st.divider()
+    def _make_demo_responses(survey_id):
+        import numpy as np
+        rng   = np.random.default_rng(hash(survey_id) % (2**31))
+        bus   = ["Technology", "Finance", "Operations", "Marketing", "HR", "Legal", "Sales", "Product"]
+        divs  = {
+            "Technology": ["Engineering","Infrastructure","QA","Data"],
+            "Finance":    ["Accounting","Treasury","Tax"],
+            "Operations": ["Logistics","Procurement","Facility"],
+            "Marketing":  ["Brand","Digital","Content"],
+            "HR":         ["Recruitment","L&D","Compensation"],
+            "Legal":      ["Compliance","Contract"],
+            "Sales":      ["B2B Sales","B2C Sales","Partnership"],
+            "Product":    ["Product Design","Product Management"],
+        }
+        stages = ["Level 1","Level 2","Level 3","Level 4","Level 5"]
+        months = pd.date_range("2024-01-01", periods=12, freq="MS")
+        rows   = []
+        for _ in range(rng.integers(90, 220)):
+            bu  = rng.choice(bus)
+            div = rng.choice(divs[bu])
+            scores = rng.integers(2, 6, size=8).tolist()
+            submitted = months[rng.integers(0, len(months))] + pd.Timedelta(days=int(rng.integers(0, 28)))
+            rows.append({
+                "response_id":     f"R{rng.integers(10000,99999)}",
+                "survey_id":       survey_id,
+                "survey_name":     "Demo",
+                "respondent_hash": f"EMP{rng.integers(1000,9999)}",
+                "bu":              bu,
+                "division":        div,
+                "submitted_date":  submitted,
+                "career_stage":    rng.choice(stages),
+                **{f"q{i+1}_score": scores[i] for i in range(8)},
+            })
+        df_d = pd.DataFrame(rows)
+        q_cols = [c for c in df_d.columns if c.endswith("_score")]
+        df_d["engagement_score"] = df_d[q_cols].mean(axis=1).round(2)
+        return df_d
 
-                        for i, q in enumerate(questions):
-                            st.markdown(f"**{i+1}. {q['text']}**")
-                            if q["type"] == "Likert 1-5":
-                                responses[f"q{i+1}"] = st.radio(f"Pilih skala untuk P{i+1}", [1, 2, 3, 4, 5], horizontal=True, key=f"resp_{i}", label_visibility="collapsed")
-                            elif q["type"] == "Multiple Choice":
-                                responses[f"q{i+1}"] = st.selectbox(f"Pilih jawaban untuk P{i+1}", q.get("options", ["-"]), key=f"resp_{i}", label_visibility="collapsed")
-                            else:
-                                responses[f"q{i+1}"] = st.text_area(f"Jawaban Anda untuk P{i+1}", key=f"resp_{i}", label_visibility="collapsed", placeholder="Ketik di sini...")
-                            st.markdown("<br>", unsafe_allow_html=True)
+    def save_survey_master(survey_id, name, desc, status, questions_json):
+        client = get_gspread_client()
+        if not client:
+            return False
+        try:
+            ws = client.open_by_key(SHEET_ID).worksheet("surveys_master")
+            ws.append_row([
+                survey_id, name, desc, status,
+                json.dumps(questions_json),
+                datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Admin"
+            ], value_input_option="USER_ENTERED")
+            return True
+        except Exception as e:
+            st.error(f"Gagal simpan: {e}")
+            return False
 
-                        submit_resp = st.form_submit_button("Kirim Jawaban", use_container_width=True)
+    def update_survey_status(survey_id, new_status):
+        client = get_gspread_client()
+        if not client:
+            return False
+        try:
+            ws   = client.open_by_key(SHEET_ID).worksheet("surveys_master")
+            cell = ws.find(survey_id)
+            if not cell:
+                return False
+            ws.update_cell(cell.row, 4, new_status)  # kolom 4 = status
+            return True
+        except Exception as e:
+            st.error(f"Gagal update: {e}")
+            return False
 
-                        if submit_resp:
-                            if not emp_id_input:
-                                st.error("❌ Employee ID wajib diisi untuk keperluan data demografi.")
-                            else:
-                                # Proses Anonimisasi & Cari Data Karyawan
-                                emp_data = df[df["Employee ID"] == emp_id_input.strip()]
-                                if emp_data.empty:
-                                    st.error("❌ Employee ID tidak ditemukan di data karyawan.")
-                                else:
-                                    e_row = emp_data.iloc[0]
-                                    hashed_id = hashlib.sha256(emp_id_input.strip().encode()).hexdigest()[:12]
-                                    
-                                    # Siapkan Baris Data (disesuaikan dengan q1_score..q5_score)
-                                    row_to_save = [
-                                        f"RESP-{int(time.time())}", sv_row["survey_id"], selected_sv_name,
-                                        hashed_id, e_row["Business Unit"], e_row["Division"], e_row["Career Stage"],
-                                        datetime.now().strftime("%Y-%m-%d %H:%M")
-                                    ]
-                                    # Tambahkan jawaban (hanya ambil 5 pertama sesuai kolom sheet)
-                                    for k in range(1, 6):
-                                        row_to_save.append(responses.get(f"q{k}", ""))
+    def save_response(survey_id, survey_name, emp_id, bu, division, career_stage, responses: dict):
+        client = get_gspread_client()
+        if not client:
+            return False
+        try:
+            ws  = client.open_by_key(SHEET_ID).worksheet("survey_responses")
+            h   = hashlib.sha256(emp_id.encode()).hexdigest()[:12]
+            row = [
+                f"RESP-{int(_time.time())}",
+                survey_id, survey_name, h,
+                bu, division, career_stage,
+                datetime.now().strftime("%Y-%m-%d %H:%M"),
+            ]
+            for k in range(1, 11):
+                row.append(responses.get(f"q{k}", ""))
+            ws.append_row([str(x) for x in row], value_input_option="USER_ENTERED")
+            return True
+        except Exception as e:
+            st.error(f"Gagal simpan jawaban: {e}")
+            return False
 
-                                    try:
-                                        ws_r = client.open_by_key(SHEET_ID).worksheet("survey_responses")
-                                        ws_r.append_row([str(x) for x in row_to_save])
-                                        st.success("✅ Terimakasih! Jawaban Anda telah tersimpan secara anonim.")
-                                        st.balloons()
-                                    except Exception as e:
-                                        st.error(f"Gagal simpan: {e}")
-            except Exception:
-                st.warning("⚠️ Worksheet 'surveys_master' tidak ditemukan.")
+    # ── Demo surveys jika sheets belum ada ──
+    DEMO_SURVEYS = pd.DataFrame([
+        {
+            "survey_id":      "EE2024Q1",
+            "survey_name":    "Employee Engagement Q1 2024",
+            "description":    "Survey keterlibatan karyawan kuartal pertama 2024. Mencakup dimensi purpose, growth, recognition, dan kolaborasi.",
+            "status":         "Closed",
+            "questions_json": json.dumps([
+                {"text": "Saya memahami tujuan dan arah perusahaan",             "type": "Likert 1-5"},
+                {"text": "Pekerjaan saya bermakna dan memberikan dampak nyata",   "type": "Likert 1-5"},
+                {"text": "Saya mendapat dukungan yang cukup dari atasan langsung","type": "Likert 1-5"},
+                {"text": "Ada kesempatan bagi saya untuk tumbuh dan berkembang",  "type": "Likert 1-5"},
+                {"text": "Kolaborasi antar tim berjalan dengan baik",             "type": "Likert 1-5"},
+                {"text": "Saya merasa diakui atas kontribusi yang saya berikan", "type": "Likert 1-5"},
+                {"text": "Saya memiliki alat dan sumber daya yang dibutuhkan",   "type": "Likert 1-5"},
+                {"text": "Secara keseluruhan, saya puas bekerja di sini",        "type": "Likert 1-5"},
+            ]),
+            "created_date":   "2024-01-10 09:00",
+            "created_by":     "Admin",
+        },
+        {
+            "survey_id":      "ENPS2024",
+            "survey_name":    "eNPS Mid-Year 2024",
+            "description":    "Employee Net Promoter Score — seberapa besar karyawan merekomendasikan Mekari sebagai tempat bekerja.",
+            "status":         "Active",
+            "questions_json": json.dumps([
+                {"text": "Seberapa besar kemungkinan Anda merekomendasikan Mekari sebagai tempat bekerja? (1=Sangat Tidak, 5=Sangat Ya)", "type": "Likert 1-5"},
+                {"text": "Apa alasan utama penilaian Anda?", "type": "Free Text"},
+                {"text": "Area mana yang paling perlu ditingkatkan?",
+                 "type": "Multiple Choice",
+                 "options": ["Kompensasi","Karir","Budaya Kerja","Leadership","Work-Life Balance"]},
+            ]),
+            "created_date":   "2024-06-01 08:00",
+            "created_by":     "Admin",
+        },
+        {
+            "survey_id":      "OES2026",
+            "survey_name":    "Organization Effectiveness Survey",
+            "description":    "This assessment aims to understand organization effectiveness by taking insight from leadership environment; including workload, team capability, and operational complexity.",
+            "status":         "Closed",
+            "questions_json": json.dumps([
+                {"text": "Workload saya saat ini terasa manageable",                  "type": "Likert 1-5"},
+                {"text": "Tim saya memiliki kapabilitas yang cukup untuk target yang ditetapkan", "type": "Likert 1-5"},
+                {"text": "Leadership memberikan arahan yang jelas",                   "type": "Likert 1-5"},
+                {"text": "Kompleksitas operasional saat ini terasa proporsional",     "type": "Likert 1-5"},
+                {"text": "Proses kerja antar divisi berjalan efisien",               "type": "Likert 1-5"},
+                {"text": "Saya mendapat sumber daya yang cukup untuk bekerja efektif","type": "Likert 1-5"},
+                {"text": "Keputusan diambil dengan cepat dan tepat di organisasi ini","type": "Likert 1-5"},
+                {"text": "Secara keseluruhan, organisasi berjalan efektif",           "type": "Likert 1-5"},
+            ]),
+            "created_date":   "2026-01-15 10:00",
+            "created_by":     "Admin",
+        },
+        {
+            "survey_id":      "MGR2024",
+            "survey_name":    "Manager Effectiveness 2024",
+            "description":    "Survey efektivitas manager — feedback dari bawahan langsung mengenai kepemimpinan dan dukungan yang diberikan.",
+            "status":         "Draft",
+            "questions_json": json.dumps([
+                {"text": "Manager saya memberikan feedback yang konstruktif",         "type": "Likert 1-5"},
+                {"text": "Manager saya mendukung pertumbuhan karir saya",             "type": "Likert 1-5"},
+                {"text": "Manager saya berkomunikasi dengan jelas dan transparan",    "type": "Likert 1-5"},
+                {"text": "Manager saya menghargai kontribusi saya",                   "type": "Likert 1-5"},
+                {"text": "Manager saya efektif dalam mengelola prioritas tim",        "type": "Likert 1-5"},
+                {"text": "Manager saya menciptakan lingkungan kerja yang positif",    "type": "Likert 1-5"},
+                {"text": "Secara keseluruhan, saya puas dengan kepemimpinan manager saya", "type": "Likert 1-5"},
+            ]),
+            "created_date":   "2024-08-01 08:00",
+            "created_by":     "Admin",
+        },
+    ])
 
-    # ─────────────────────────────────────────────────────────────────
-    # SUB-TAB 2: DASHBOARD (Visualisasi)
-    # ─────────────────────────────────────────────────────────────────
-    with tab_dash:
-        survey_df, survey_source = load_survey_responses()
-        if survey_df.empty:
-            st.warning("📭 Belum ada data survey untuk ditampilkan.")
-        else:
-            # (Logika Dashboard Anda yang sebelumnya sudah ada di sini tetap sama)
-            st.info("📊 Data terdeteksi. Gunakan filter di bawah untuk melihat analitik.")
-            # ... [Sisipkan kembali kode dashboard survey Anda di sini] ...
+    # ── Load dari Sheets atau gunakan demo ──
+    sm_df = load_surveys_master()
+    using_demo_master = sm_df.empty
+    if using_demo_master:
+        sm_df = DEMO_SURVEYS.copy()
 
-    # ─────────────────────────────────────────────────────────────────
-    # SUB-TAB 3: KELOLA SURVEY (Admin - ALA GOOGLE FORM)
-    # ─────────────────────────────────────────────────────────────────
-    with tab_admin:
-        ADMIN_PASSWORD = "mekari_admin"
-        if "admin_logged_in" not in st.session_state:
-            st.session_state.admin_logged_in = False
+    # ──────────────────────────────────────────────────────────────
+    # STATUS BADGE HELPER
+    # ──────────────────────────────────────────────────────────────
+    STATUS_STYLE = {
+        "Active":  ("background:#dcfce7;color:#166534;border:1px solid #86efac;", "Active"),
+        "Draft":   ("background:#fef9c3;color:#854d0e;border:1px solid #fde047;", "Draft"),
+        "Closed":  ("background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;", "Closed"),
+    }
+    def status_badge(status):
+        style, label = STATUS_STYLE.get(status, ("background:#f1f5f9;color:#64748b;border:1px solid #cbd5e1;", status))
+        return f'<span style="font-size:12px;font-weight:600;padding:3px 12px;border-radius:999px;{style}">{label}</span>'
 
-        if not st.session_state.admin_logged_in:
-            st.markdown(f"**🔒 Masukkan Password Admin**")
-            pwd_input = st.text_input("Password", type="password")
-            if st.button("Masuk"):
-                if pwd_input == ADMIN_PASSWORD:
-                    st.session_state.admin_logged_in = True
+    # ──────────────────────────────────────────────────────────────
+    # VIEW: FORMS LIST  (tampilan utama mirip screenshot)
+    # ──────────────────────────────────────────────────────────────
+    if st.session_state.sv_view == "list":
+
+        # ── Page header ──
+        hdr_l, hdr_r = st.columns([4, 1])
+        with hdr_l:
+            st.markdown(f"""
+            <div style="margin-bottom:24px;">
+                <div style="font-size:26px;font-weight:800;color:{T['text']};
+                    font-family:'Manrope',sans-serif;letter-spacing:-0.02em;">Forms</div>
+                <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
+                    Kelola dan pantau semua survey internal Mekari
+                    {'&nbsp;&nbsp;<span style="background:#fef9c3;color:#854d0e;font-size:11px;font-weight:600;padding:2px 8px;border-radius:4px;border:1px solid #fde047;">Demo Data</span>' if using_demo_master else ''}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+        with hdr_r:
+            st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+            help_col, admin_col = st.columns(2)
+            with help_col:
+                if st.button("❓ Help", use_container_width=True, key="sv_help"):
+                    st.session_state.sv_view = "admin"
                     st.rerun()
-                else:
-                    st.error("❌ Password salah!")
+            with admin_col:
+                if st.button("⚙️ Admin", use_container_width=True, key="sv_admin_btn"):
+                    st.session_state.sv_view = "admin"
+                    st.rerun()
+
+        # ── Search bar ──
+        _, search_col, _ = st.columns([2, 3, 2])
+        with search_col:
+            sv_search = st.text_input("", placeholder="🔍   Search...", key="sv_search_input",
+                                      label_visibility="collapsed")
+
+        st.markdown(f"<div style='height:8px;'></div>", unsafe_allow_html=True)
+
+        # ── Table header ──
+        st.markdown(f"""
+        <div style="display:grid;grid-template-columns:1fr 160px 180px;
+            background:{T['surface_low']};border-radius:12px 12px 0 0;
+            padding:10px 20px;margin-bottom:2px;
+            box-shadow:0 0 0 1px {T['outline']};">
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;
+                letter-spacing:0.07em;color:{T['text3']};">Form name &nbsp;⇅</div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;
+                letter-spacing:0.07em;color:{T['text3']};">Status</div>
+            <div style="font-size:11px;font-weight:700;text-transform:uppercase;
+                letter-spacing:0.07em;color:{T['text3']};">Actions</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Filter data ──
+        display_df = sm_df.copy()
+        if sv_search.strip():
+            display_df = display_df[
+                display_df["survey_name"].str.contains(sv_search.strip(), case=False, na=False) |
+                display_df["description"].str.contains(sv_search.strip(), case=False, na=False)
+            ]
+
+        if display_df.empty:
+            st.markdown(f"""
+            <div style="background:{T['surface_lowest']};border-radius:0 0 12px 12px;
+                padding:48px 20px;text-align:center;
+                box-shadow:0 0 0 1px {T['outline']};">
+                <div style="font-size:32px;margin-bottom:8px;">📋</div>
+                <div style="font-size:14px;color:{T['text3']};">Tidak ada form yang sesuai pencarian.</div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            if st.button("Logout"):
+            for i, (_, row) in enumerate(display_df.iterrows()):
+                is_last   = (i == len(display_df) - 1)
+                radius    = "0 0 12px 12px" if is_last else "0"
+                status    = str(row.get("status", "Draft"))
+                badge_html = status_badge(status)
+                desc_text  = str(row.get("description", ""))[:140] + ("…" if len(str(row.get("description",""))) > 140 else "")
+
+                # ── Row HTML (left side: name + desc) ──
+                st.markdown(f"""
+                <div style="display:grid;grid-template-columns:1fr 160px 180px;
+                    align-items:center;
+                    background:{T['surface_lowest']};
+                    border-radius:{radius};
+                    padding:16px 20px;margin-bottom:1px;
+                    border-bottom: {'none' if is_last else f'1px solid {T["outline"]}'};
+                    box-shadow:0 0 0 1px {T['outline']}; {'border-radius:0 0 12px 12px;' if is_last else ''}
+                    transition:background 0.15s;">
+                    <div>
+                        <div style="font-size:14px;font-weight:600;color:{T['primary']};
+                            margin-bottom:4px;line-height:1.3;">{row.get('survey_name','')}</div>
+                        <div style="font-size:12px;color:{T['text3']};line-height:1.5;">{desc_text}</div>
+                    </div>
+                    <div>{badge_html}</div>
+                    <div></div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # ── Actions column — Streamlit buttons (di-overlay via columns) ──
+                # Karena kita tidak bisa taruh button dalam st.markdown,
+                # kita pakai negative margin trick dengan expander per baris
+                sv_id   = str(row.get("survey_id",""))
+                sv_name = str(row.get("survey_name",""))
+                sv_qs   = []
+                try:
+                    sv_qs = json.loads(str(row.get("questions_json","[]")))
+                except Exception:
+                    sv_qs = []
+
+                # Render action buttons di kolom terpisah menggunakan st.columns trick
+                _, _, act_col = st.columns([1, 0.18, 0.22])
+                with act_col:
+                    with st.popover("Actions ▾", use_container_width=True):
+                        if status == "Active":
+                            if st.button("✏️  Isi Survey", key=f"fill_{sv_id}", use_container_width=True):
+                                st.session_state.sv_view        = "fill"
+                                st.session_state.sv_selected_id   = sv_id
+                                st.session_state.sv_selected_name = sv_name
+                                st.session_state.sv_questions     = sv_qs
+                                st.rerun()
+                        if st.button("📊  Lihat Dashboard", key=f"dash_{sv_id}", use_container_width=True):
+                            st.session_state.sv_view          = "dashboard"
+                            st.session_state.sv_selected_id   = sv_id
+                            st.session_state.sv_selected_name = sv_name
+                            st.session_state.sv_questions     = sv_qs
+                            st.rerun()
+                        st.divider()
+                        if st.button("⚙️  Edit / Kelola", key=f"edit_{sv_id}", use_container_width=True):
+                            st.session_state.sv_view = "admin"
+                            st.rerun()
+
+                # Spacer antar baris agar button tidak tumpang tindih dengan row HTML
+                st.markdown("<div style='margin-top:-52px;'></div>", unsafe_allow_html=True)
+
+        # ── Summary footer ──
+        active_cnt = len(sm_df[sm_df["status"] == "Active"])
+        draft_cnt  = len(sm_df[sm_df["status"] == "Draft"])
+        closed_cnt = len(sm_df[sm_df["status"] == "Closed"])
+        st.markdown(f"""
+        <div style="margin-top:20px;display:flex;gap:20px;font-size:12px;color:{T['text3']};">
+            <span>📋 Total: <b style="color:{T['text']}">{len(sm_df)}</b></span>
+            <span>🟢 Active: <b style="color:#166534">{active_cnt}</b></span>
+            <span>🟡 Draft: <b style="color:#854d0e">{draft_cnt}</b></span>
+            <span>⬜ Closed: <b style="color:{T['text3']}">{closed_cnt}</b></span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if using_demo_master:
+            st.markdown(f"""
+            <div style="margin-top:16px;background:{T['warn_bg']};border:1px solid {T['warn_bdr']};
+                border-radius:10px;padding:12px 16px;font-size:12px;color:{T['warn_txt']};">
+                <b>⚠️ Mode Demo</b> — Buat worksheet <code>surveys_master</code> di Google Sheet 
+                (kolom: survey_id | survey_name | description | status | questions_json | created_date | created_by)
+                untuk menggunakan data nyata.
+            </div>
+            """, unsafe_allow_html=True)
+
+    # ──────────────────────────────────────────────────────────────
+    # VIEW: ISI SURVEY (Form Responden)
+    # ──────────────────────────────────────────────────────────────
+    elif st.session_state.sv_view == "fill":
+        sv_id   = st.session_state.get("sv_selected_id","")
+        sv_name = st.session_state.get("sv_selected_name","")
+        sv_qs   = st.session_state.get("sv_questions", [])
+
+        # ── Back button ──
+        if st.button("← Kembali ke Forms", key="back_fill"):
+            st.session_state.sv_view = "list"
+            st.rerun()
+
+        st.markdown(f"""
+        <div style="margin:16px 0 24px 0;">
+            <div style="font-size:22px;font-weight:800;color:{T['text']};
+                font-family:'Manrope',sans-serif;letter-spacing:-0.02em;">{sv_name}</div>
+            <div style="font-size:12px;color:{T['text3']};margin-top:4px;">
+                Identitas Anda akan di-anonimisasi (Hashed ID) · Semua jawaban bersifat rahasia
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if not sv_qs:
+            st.warning("⚠️ Survey ini belum memiliki pertanyaan.")
+        else:
+            _, form_col, _ = st.columns([1, 4, 1])
+            with form_col:
+                with st.form("form_responden_fill", clear_on_submit=True):
+                    emp_id_input = st.text_input("Employee ID Anda *",
+                                                  placeholder="Misal: MEKARI001",
+                                                  help="Digunakan hanya untuk validasi BU/Divisi, lalu di-hash.")
+                    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>",
+                                unsafe_allow_html=True)
+
+                    responses = {}
+                    for i, q in enumerate(sv_qs):
+                        q_text = q.get("text","")
+                        q_type = q.get("type","Likert 1-5")
+
+                        st.markdown(f"""
+                        <div style="margin-bottom:4px;">
+                            <span style="font-size:11px;font-weight:700;color:{T['primary']};
+                                text-transform:uppercase;letter-spacing:0.06em;">Pertanyaan {i+1}</span>
+                            <div style="font-size:14px;font-weight:600;color:{T['text']};
+                                margin-top:4px;line-height:1.5;">{q_text}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        if q_type == "Likert 1-5":
+                            scale_labels = {
+                                1: "1 — Sangat Tidak Setuju",
+                                2: "2 — Tidak Setuju",
+                                3: "3 — Netral",
+                                4: "4 — Setuju",
+                                5: "5 — Sangat Setuju",
+                            }
+                            responses[f"q{i+1}"] = st.select_slider(
+                                f"Skala Q{i+1}", options=[1,2,3,4,5],
+                                format_func=lambda x: scale_labels[x],
+                                key=f"resp_fill_{i}", label_visibility="collapsed"
+                            )
+                        elif q_type == "Multiple Choice":
+                            opts = q.get("options", [])
+                            responses[f"q{i+1}"] = st.radio(
+                                f"Pilih Q{i+1}", opts, horizontal=True,
+                                key=f"resp_fill_{i}", label_visibility="collapsed"
+                            ) if opts else ""
+                        else:
+                            responses[f"q{i+1}"] = st.text_area(
+                                f"Jawaban Q{i+1}", placeholder="Ketik jawaban Anda di sini...",
+                                key=f"resp_fill_{i}", label_visibility="collapsed", height=80
+                            )
+
+                        st.markdown("<div style='height:12px;'></div>", unsafe_allow_html=True)
+
+                    submitted_fill = st.form_submit_button("📨  Kirim Jawaban", use_container_width=True)
+
+                if submitted_fill:
+                    if not emp_id_input.strip():
+                        st.error("❌ Employee ID wajib diisi.")
+                    else:
+                        emp_row = df[df["Employee ID"] == emp_id_input.strip()]
+                        if emp_row.empty:
+                            st.error("❌ Employee ID tidak ditemukan di data karyawan.")
+                        else:
+                            e = emp_row.iloc[0]
+                            ok = save_response(
+                                sv_id, sv_name,
+                                emp_id_input.strip(),
+                                str(e.get("Business Unit","")),
+                                str(e.get("Division","")),
+                                str(e.get("Career Stage","")),
+                                responses
+                            )
+                            if ok:
+                                st.success("✅ Terima kasih! Jawaban Anda telah disimpan secara anonim.")
+                                st.balloons()
+                            else:
+                                st.warning("⚠️ Jawaban berhasil divalidasi tetapi belum tersimpan (worksheet belum ada).")
+
+    # ──────────────────────────────────────────────────────────────
+    # VIEW: DASHBOARD ANALITIK
+    # ──────────────────────────────────────────────────────────────
+    elif st.session_state.sv_view == "dashboard":
+        sv_id   = st.session_state.get("sv_selected_id","")
+        sv_name = st.session_state.get("sv_selected_name","")
+        sv_qs   = st.session_state.get("sv_questions", [])
+
+        # ── Back ──
+        if st.button("← Kembali ke Forms", key="back_dash"):
+            st.session_state.sv_view = "list"
+            st.rerun()
+
+        sv_df, sv_src = load_survey_responses_for(sv_id)
+        q_cols  = [c for c in sv_df.columns if c.endswith("_score")]
+        q_labels = [q.get("text","") for q in sv_qs] if sv_qs else [f"Pertanyaan {i+1}" for i in range(len(q_cols))]
+
+        st.markdown(f"""
+        <div style="margin:16px 0 20px 0;display:flex;align-items:center;justify-content:space-between;">
+            <div>
+                <div style="font-size:22px;font-weight:800;color:{T['text']};
+                    font-family:'Manrope',sans-serif;letter-spacing:-0.02em;">{sv_name}</div>
+                <div style="font-size:12px;color:{T['text3']};margin-top:4px;">
+                    Dashboard Analitik Hasil Survey
+                    {'&nbsp;<span style="background:#fef9c3;color:#854d0e;font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid #fde047;">Demo Data</span>' if sv_src=="demo" else ''}
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Filter bar ──
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        with fc1:
+            bu_opts_d = ["Semua BU"] + sorted(sv_df["bu"].dropna().unique().tolist())
+            sel_bu_d  = st.selectbox("🏢 BU", bu_opts_d, key="dash_bu")
+        if sel_bu_d != "Semua BU":
+            sv_df = sv_df[sv_df["bu"] == sel_bu_d]
+        with fc2:
+            div_opts_d = ["Semua Divisi"] + sorted(sv_df["division"].dropna().unique().tolist())
+            sel_div_d  = st.selectbox("📁 Divisi", div_opts_d, key="dash_div")
+        if sel_div_d != "Semua Divisi":
+            sv_df = sv_df[sv_df["division"] == sel_div_d]
+        with fc3:
+            stage_opts_d = ["Semua Level"] + sorted(sv_df["career_stage"].dropna().unique().tolist())
+            sel_stage_d  = st.selectbox("🎯 Career Stage", stage_opts_d, key="dash_stage")
+        if sel_stage_d != "Semua Level":
+            sv_df = sv_df[sv_df["career_stage"] == sel_stage_d]
+        with fc4:
+            sv_df["_m"] = pd.to_datetime(sv_df["submitted_date"]).dt.to_period("M").astype(str)
+            period_opts = ["Semua Periode"] + sorted(sv_df["_m"].dropna().unique().tolist())
+            sel_per_d   = st.selectbox("📅 Periode", period_opts, key="dash_per")
+        if sel_per_d != "Semua Periode":
+            sv_df = sv_df[sv_df["_m"] == sel_per_d]
+
+        if sv_df.empty:
+            st.warning("⚠️ Tidak ada data dengan filter ini.")
+            st.stop()
+
+        sv_df["engagement_score"] = sv_df[q_cols].mean(axis=1)
+        eng   = sv_df["engagement_score"].mean()
+        n_resp = len(sv_df)
+        avg_q  = sv_df[q_cols].mean()
+
+        def slabel(s):
+            if s >= 4.5: return "Sangat Tinggi"
+            if s >= 3.5: return "Tinggi"
+            if s >= 2.5: return "Sedang"
+            return "Rendah"
+        def scolor(s):
+            if s >= 4.0: return "#059669"
+            if s >= 3.0: return "#d97706"
+            return "#dc2626"
+
+        pl = dict(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                  font=dict(family="Plus Jakarta Sans,sans-serif", color=T["text"], size=12),
+                  margin=dict(l=0,r=0,t=30,b=0),
+                  legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0))
+
+        # ── KPI ──
+        k1,k2,k3,k4,k5 = st.columns(5)
+        k1.metric("📊 Engagement Score", f"{eng:.2f} / 5.00", delta=slabel(eng))
+        k2.metric("📝 Total Responden",  f"{n_resp:,}")
+        best_idx = avg_q.idxmax(); worst_idx = avg_q.idxmin()
+        best_num  = best_idx.replace("q","").replace("_score","")
+        worst_num = worst_idx.replace("q","").replace("_score","")
+        k3.metric("⭐ Skor Tertinggi",   f"Q{best_num} — {avg_q.max():.2f}")
+        k4.metric("⚠️ Skor Terendah",   f"Q{worst_num} — {avg_q.min():.2f}")
+        k5.metric("🏢 Jumlah BU",        sv_df["bu"].nunique())
+
+        st.markdown(f"<div style='height:1px;background:{T['outline']};margin:20px 0 12px 0;'></div>",
+                    unsafe_allow_html=True)
+
+        # ── Row 1: Gauge + Likert bar ──
+        r1l, r1r = st.columns([1,2])
+        with r1l:
+            st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;'>Engagement Overview</div>", unsafe_allow_html=True)
+            gcol = scolor(eng)
+            fig_g = go.Figure(go.Indicator(
+                mode="gauge+number+delta",
+                value=round(eng, 2),
+                delta={"reference": 3.5, "valueformat":".2f",
+                       "increasing":{"color":"#059669"},"decreasing":{"color":"#dc2626"}},
+                number={"font":{"size":40,"family":"Manrope","color":T["text"]},"valueformat":".2f"},
+                gauge={
+                    "axis":{"range":[1,5],"tickvals":[1,2,3,4,5],"tickcolor":T["text3"],"tickwidth":1},
+                    "bar":{"color":gcol,"thickness":0.25},
+                    "bgcolor":"rgba(0,0,0,0)","borderwidth":0,
+                    "steps":[
+                        {"range":[1,2.5],"color":"rgba(220,38,38,0.12)"},
+                        {"range":[2.5,3.5],"color":"rgba(217,119,6,0.12)"},
+                        {"range":[3.5,5],"color":"rgba(5,150,105,0.12)"},
+                    ],
+                    "threshold":{"line":{"color":gcol,"width":3},"thickness":0.75,"value":eng},
+                },
+            ))
+            fig_g.update_layout(**pl, height=250)
+            st.plotly_chart(fig_g, use_container_width=True, config={"displayModeBar":False})
+            st.markdown(f"""<div style="text-align:center;margin-top:-6px;">
+                <span style="background:{gcol}22;color:{gcol};font-size:13px;font-weight:700;
+                    padding:4px 16px;border-radius:999px;border:1px solid {gcol}44;">{slabel(eng)}</span>
+                <div style="font-size:11px;color:{T['text3']};margin-top:6px;">Target baseline ≥ 3.5</div>
+            </div>""", unsafe_allow_html=True)
+
+        with r1r:
+            st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;'>Distribusi Jawaban Likert per Pertanyaan</div>", unsafe_allow_html=True)
+            ldata = []
+            for i, col in enumerate(q_cols):
+                short = f"Q{i+1}"
+                for sv in range(1,6):
+                    cnt = (sv_df[col]==sv).sum()
+                    ldata.append({"Q": short, "Skor": str(sv), "Persen": round(cnt/n_resp*100,1), "n": cnt})
+            ldf = pd.DataFrame(ldata)
+            fig_l = px.bar(ldf, x="Persen", y="Q", color="Skor", orientation="h",
+                           color_discrete_sequence=["#dc2626","#f59e0b","#6b7280","#3b82f6","#059669"],
+                           text="Persen", custom_data=["n"])
+            fig_l.update_traces(texttemplate="%{x:.0f}%", textposition="inside", textfont_size=10,
+                                hovertemplate="<b>%{y} — Skor %{marker.color}</b><br>%{x:.1f}% (%{customdata[0]})<extra></extra>")
+            fig_l.update_layout(**pl, height=280, barmode="stack",
+                                xaxis=dict(range=[0,100],gridcolor=T["outline"],title="Persentase (%)"),
+                                yaxis=dict(gridcolor="rgba(0,0,0,0)"))
+            st.plotly_chart(fig_l, use_container_width=True, config={"displayModeBar":False})
+
+        # ── Row 2: Trend + Radar ──
+        st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
+        r2l, r2r = st.columns([3,2])
+
+        with r2l:
+            st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;'>Tren Engagement Score per Bulan</div>", unsafe_allow_html=True)
+            trd = (sv_df.assign(bln=lambda d: pd.to_datetime(d["submitted_date"]).dt.to_period("M").astype(str))
+                   .groupby("bln")["engagement_score"].agg(["mean","count","std"]).reset_index()
+                   .rename(columns={"mean":"avg","count":"n","std":"sd"}).sort_values("bln"))
+            trd["avg"] = trd["avg"].round(2)
+            trd["up"]  = (trd["avg"] + trd["sd"].fillna(0)*0.5).clip(upper=5)
+            trd["lo"]  = (trd["avg"] - trd["sd"].fillna(0)*0.5).clip(lower=1)
+            fig_t = go.Figure()
+            fig_t.add_trace(go.Scatter(x=trd["bln"],y=trd["up"],mode="lines",line=dict(width=0),showlegend=False,hoverinfo="skip"))
+            fig_t.add_trace(go.Scatter(x=trd["bln"],y=trd["lo"],mode="lines",fill="tonexty",
+                                       fillcolor="rgba(66,52,182,0.10)",line=dict(width=0),showlegend=False,hoverinfo="skip"))
+            fig_t.add_trace(go.Scatter(x=trd["bln"],y=trd["avg"],mode="lines+markers",
+                                       name="Avg",line=dict(color="#4234b6",width=2.5),
+                                       marker=dict(size=7,color="#4234b6"),customdata=trd["n"],
+                                       hovertemplate="<b>%{x}</b><br>Score: %{y:.2f}<br>n=%{customdata}<extra></extra>"))
+            fig_t.add_hline(y=3.5,line_dash="dot",line_color="#d97706",
+                            annotation_text="Target 3.5",annotation_position="right")
+            fig_t.update_layout(**pl,height=270,
+                                yaxis=dict(range=[1,5.2],gridcolor=T["outline"],title="Score"),
+                                xaxis=dict(gridcolor="rgba(0,0,0,0)"))
+            st.plotly_chart(fig_t, use_container_width=True, config={"displayModeBar":False})
+
+        with r2r:
+            st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;'>Profil Dimensi</div>", unsafe_allow_html=True)
+            rv   = [round(sv_df[c].mean(),2) for c in q_cols]
+            rlab = [f"Q{i+1}" for i in range(len(q_cols))]
+            fig_r = go.Figure(go.Scatterpolar(
+                r=rv+[rv[0]], theta=rlab+[rlab[0]], fill="toself",
+                fillcolor="rgba(66,52,182,0.15)",line=dict(color="#4234b6",width=2),
+                hovertemplate="<b>%{theta}</b>: %{r:.2f}<extra></extra>",
+            ))
+            fig_r.update_layout(**pl,height=270,polar=dict(
+                bgcolor="rgba(0,0,0,0)",
+                radialaxis=dict(visible=True,range=[1,5],tickfont=dict(size=9,color=T["text3"]),gridcolor=T["outline"]),
+                angularaxis=dict(tickfont=dict(size=10,color=T["text"]),gridcolor=T["outline"]),
+            ))
+            st.plotly_chart(fig_r, use_container_width=True, config={"displayModeBar":False})
+
+        # ── Row 3: Heatmap + Top/Bottom ──
+        st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
+        r3l, r3r = st.columns([3,2])
+
+        with r3l:
+            st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;'>Heatmap BU × Dimensi</div>", unsafe_allow_html=True)
+            hm = sv_df.groupby("bu")[q_cols].mean().round(2)
+            hm.columns = [f"Q{i+1}" for i in range(len(q_cols))]
+            fig_h = go.Figure(go.Heatmap(
+                z=hm.values, x=hm.columns.tolist(), y=hm.index.tolist(),
+                colorscale=[[0,"#dc2626"],[0.25,"#f59e0b"],[0.5,"#fde68a"],[0.75,"#86efac"],[1,"#059669"]],
+                zmin=1, zmax=5, text=hm.values.round(2), texttemplate="%{text}",
+                textfont=dict(size=11), hoverongaps=False,
+                hovertemplate="<b>%{y} — %{x}</b><br>Score: %{z:.2f}<extra></extra>",
+                colorbar=dict(title="Score",tickfont=dict(color=T["text"]),len=0.8),
+            ))
+            fig_h.update_layout(**pl, height=max(220, len(hm)*36+60),
+                                xaxis=dict(side="top"),yaxis=dict(autorange="reversed"))
+            st.plotly_chart(fig_h, use_container_width=True, config={"displayModeBar":False})
+
+        with r3r:
+            st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;'>Top & Bottom Statements</div>", unsafe_allow_html=True)
+            stmts = pd.Series({
+                f"Q{i+1}: {q_labels[i][:38]}{'…' if len(q_labels[i])>38 else ''}": sv_df[c].mean()
+                for i,c in enumerate(q_cols)
+            }).sort_values(ascending=False).round(2)
+            for lbl, sc in stmts.head(3).items():
+                col = scolor(sc)
+                st.markdown(f"""<div style="background:{col}11;border-left:3px solid {col};
+                    border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;">
+                    <div style="font-size:10px;font-weight:700;color:{col};">TOP ▲ &nbsp; {sc:.2f}/5</div>
+                    <div style="font-size:12px;color:{T['text']};line-height:1.4;">{lbl}</div>
+                </div>""", unsafe_allow_html=True)
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+            for lbl, sc in stmts.tail(3).sort_values().items():
+                st.markdown(f"""<div style="background:#dc262611;border-left:3px solid #dc2626;
+                    border-radius:0 8px 8px 0;padding:8px 12px;margin-bottom:6px;">
+                    <div style="font-size:10px;font-weight:700;color:#dc2626;">BOTTOM ▼ &nbsp; {sc:.2f}/5</div>
+                    <div style="font-size:12px;color:{T['text']};line-height:1.4;">{lbl}</div>
+                </div>""", unsafe_allow_html=True)
+
+        # ── Row 4: Pie + Bar per divisi ──
+        st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
+        r4l, r4r = st.columns(2)
+        with r4l:
+            st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;'>Distribusi per Career Stage</div>", unsafe_allow_html=True)
+            sd = sv_df["career_stage"].value_counts().reset_index(); sd.columns=["Stage","n"]
+            fig_p = px.pie(sd,values="n",names="Stage",hole=0.5,
+                           color_discrete_sequence=["#4234b6","#5b4fcf","#7c6fcd","#9b8fef","#c4b5fd","#e4dfff"])
+            fig_p.update_traces(textposition="inside",textinfo="percent+label",
+                                hovertemplate="<b>%{label}</b><br>%{value} responden<extra></extra>")
+            fig_p.update_layout(**pl,height=270)
+            st.plotly_chart(fig_p, use_container_width=True, config={"displayModeBar":False})
+        with r4r:
+            st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;'>Engagement Score per Divisi (Top 10)</div>", unsafe_allow_html=True)
+            dv = (sv_df.groupby("division")["engagement_score"].agg(["mean","count"])
+                  .reset_index().rename(columns={"mean":"avg","count":"n"})
+                  .sort_values("avg").tail(10))
+            dv["avg"] = dv["avg"].round(2)
+            fig_dv = go.Figure(go.Bar(x=dv["avg"],y=dv["division"],orientation="h",
+                                      marker_color=dv["avg"].apply(scolor),
+                                      text=dv["avg"],textposition="outside",customdata=dv["n"],
+                                      hovertemplate="<b>%{y}</b><br>%{x:.2f}<br>n=%{customdata}<extra></extra>"))
+            fig_dv.add_vline(x=3.5,line_dash="dot",line_color="#d97706",opacity=0.7)
+            fig_dv.update_layout(**pl,height=270,
+                                 xaxis=dict(range=[0,5.5],gridcolor=T["outline"]),
+                                 yaxis=dict(gridcolor="rgba(0,0,0,0)"))
+            st.plotly_chart(fig_dv, use_container_width=True, config={"displayModeBar":False})
+
+        # ── Export ──
+        st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
+        ec1, ec2, _ = st.columns([1,1,3])
+        exp_cols = ["survey_name","bu","division","career_stage","submitted_date","engagement_score"] + q_cols
+        exp_cols = [c for c in exp_cols if c in sv_df.columns]
+        with ec1:
+            st.download_button("📄 CSV", sv_df[exp_cols].to_csv(index=False).encode("utf-8"),
+                               "survey_data.csv","text/csv",use_container_width=True)
+        with ec2:
+            st.download_button("📊 Excel", to_excel(sv_df[exp_cols]), "survey_data.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                               use_container_width=True)
+
+    # ──────────────────────────────────────────────────────────────
+    # VIEW: ADMIN — Kelola Survey
+    # ──────────────────────────────────────────────────────────────
+    elif st.session_state.sv_view == "admin":
+
+        if st.button("← Kembali ke Forms", key="back_admin"):
+            st.session_state.sv_view = "list"
+            st.rerun()
+
+        st.markdown(f"""
+        <div style="margin:16px 0 24px 0;">
+            <div style="font-size:22px;font-weight:800;color:{T['text']};
+                font-family:'Manrope',sans-serif;">Kelola Survey</div>
+            <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
+                Buat, edit, dan atur status survey
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Login gate ──
+        if not st.session_state.admin_logged_in:
+            _, lc, _ = st.columns([2,2,2])
+            with lc:
+                st.markdown(f"""
+                <div style="background:{T['surface_lowest']};border-radius:16px;padding:28px 24px;
+                    box-shadow:0 2px 20px {T['metric_shadow']},0 0 0 1px {T['outline']};">
+                    <div style="font-size:16px;font-weight:700;color:{T['text']};
+                        margin-bottom:16px;text-align:center;">🔒 Admin Login</div>
+                </div>
+                """, unsafe_allow_html=True)
+                pwd = st.text_input("Password", type="password", key="admin_pwd")
+                if st.button("Masuk", use_container_width=True, key="admin_login"):
+                    if pwd == ADMIN_PASSWORD:
+                        st.session_state.admin_logged_in = True
+                        st.rerun()
+                    else:
+                        st.error("❌ Password salah!")
+        else:
+            if st.button("🔓 Logout", key="admin_logout"):
                 st.session_state.admin_logged_in = False
                 st.rerun()
 
-            with st.form("form_buat_survey", clear_on_submit=True):
-                st.markdown("**➕ Buat Template Survey Baru**")
-                col_n1, col_n2 = st.columns([3, 1])
-                with col_n1:
-                    new_sv_name = st.text_input("Nama Survey *", placeholder="Misal: Leader Archetype 2026")
-                with col_n2:
-                    new_sv_status = st.selectbox("Status", ["Active", "Draft", "Closed"])
-                
-                st.markdown("**Daftar Pertanyaan:**")
-                questions_data = []
-                for i in range(1, 6):
-                    with st.container():
-                        c1, c2 = st.columns([3, 1])
-                        with c1:
-                            q_text = st.text_input(f"Pertanyaan {i}", key=f"adm_q_{i}")
-                        with c2:
-                            q_type = st.selectbox("Tipe", ["Likert 1-5", "Free Text", "Multiple Choice"], key=f"adm_t_{i}")
-                        
-                        if q_type == "Multiple Choice":
-                            q_opt = st.text_input(f"Opsi P{i} (pisahkan dengan koma)", key=f"adm_o_{i}", placeholder="Opsi A, Opsi B")
-                        else:
-                            q_opt = ""
+            # ── Daftar survey + toggle status ──
+            st.markdown(f"""
+            <div style="font-size:14px;font-weight:700;color:{T['text']};margin:8px 0 12px 0;">
+                Survey yang ada
+            </div>
+            """, unsafe_allow_html=True)
 
-                        if q_text.strip():
-                            questions_data.append({
-                                "text": q_text, "type": q_type, 
-                                "options": [o.strip() for o in q_opt.split(",")] if q_opt else []
-                            })
-                
-                if st.form_submit_button("Simpan Template Survey"):
-                    if new_sv_name and questions_data:
-                        client = get_gspread_client()
-                        if client:
-                            try:
-                                ws_m = client.open_by_key(SHEET_ID).worksheet("surveys_master")
-                                ws_m.append_row([f"SV-{int(time.time())}", new_sv_name, new_sv_status, json.dumps(questions_data), datetime.now().strftime("%Y-%m-%d %H:%M"), "Admin"])
-                                st.success("✅ Survey Berhasil Dibuat!")
-                                st.rerun()
-                            except Exception as e: st.error(f"Error: {e}")
+            for _, row in sm_df.iterrows():
+                sv_id_a = str(row.get("survey_id",""))
+                sv_nm_a = str(row.get("survey_name",""))
+                sv_st_a = str(row.get("status","Draft"))
+                badge   = status_badge(sv_st_a)
+                ac1, ac2, ac3 = st.columns([4,1,1])
+                with ac1:
+                    st.markdown(f"""
+                    <div style="padding:8px 0;">
+                        <div style="font-size:13px;font-weight:600;color:{T['text']}">{sv_nm_a}</div>
+                        <div style="margin-top:4px;">{badge}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with ac2:
+                    new_status_opts = [s for s in ["Active","Draft","Closed"] if s != sv_st_a]
+                    chosen = st.selectbox("Status baru", new_status_opts, key=f"chst_{sv_id_a}",
+                                         label_visibility="collapsed")
+                with ac3:
+                    if st.button("Simpan", key=f"savst_{sv_id_a}", use_container_width=True):
+                        if update_survey_status(sv_id_a, chosen):
+                            st.cache_data.clear()
+                            st.success(f"Status diubah ke {chosen}")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Tidak dapat update (mode demo)")
+                st.markdown(f"<div style='height:1px;background:{T['outline']};margin:4px 0;'></div>",
+                            unsafe_allow_html=True)
+
+            st.markdown("<div style='height:24px;'></div>", unsafe_allow_html=True)
+
+            # ── Form buat survey baru ──
+            st.markdown(f"""
+            <div style="font-size:14px;font-weight:700;color:{T['text']};margin-bottom:12px;">
+                ➕ Buat Survey Baru
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.form("form_buat_survey_new", clear_on_submit=True):
+                col_n1, col_n2 = st.columns([3,1])
+                with col_n1:
+                    new_sv_name = st.text_input("Nama Survey *", placeholder="Misal: Pulse Survey Q2 2026")
+                with col_n2:
+                    new_sv_status = st.selectbox("Status", ["Draft","Active","Closed"])
+                new_sv_desc = st.text_area("Deskripsi", placeholder="Jelaskan tujuan survey ini...",
+                                           height=72)
+                st.markdown(f"<div style='font-size:13px;font-weight:600;color:{T['text']};margin:12px 0 8px 0;'>Pertanyaan (maks. 8)</div>",
+                            unsafe_allow_html=True)
+                qs_new = []
+                for i in range(1, 9):
+                    c1, c2 = st.columns([3,1])
+                    with c1:
+                        qt = st.text_input(f"Pertanyaan {i}", key=f"nq_t_{i}", placeholder=f"Ketik pertanyaan {i}...")
+                    with c2:
+                        qtype = st.selectbox("Tipe", ["Likert 1-5","Free Text","Multiple Choice"],
+                                             key=f"nq_tp_{i}")
+                    q_opts_str = ""
+                    if qtype == "Multiple Choice":
+                        q_opts_str = st.text_input(f"Opsi P{i} (pisahkan koma)", key=f"nq_o_{i}",
+                                                   placeholder="Opsi A, Opsi B, Opsi C")
+                    if qt.strip():
+                        qs_new.append({
+                            "text": qt.strip(), "type": qtype,
+                            "options": [o.strip() for o in q_opts_str.split(",") if o.strip()] if q_opts_str else []
+                        })
+
+                if st.form_submit_button("💾  Simpan Survey Baru", use_container_width=True):
+                    if not new_sv_name.strip():
+                        st.error("❌ Nama survey wajib diisi.")
+                    elif not qs_new:
+                        st.error("❌ Tambahkan minimal 1 pertanyaan.")
+                    else:
+                        new_id = f"SV-{int(_time.time())}"
+                        ok = save_survey_master(new_id, new_sv_name.strip(), new_sv_desc.strip(),
+                                               new_sv_status, qs_new)
+                        if ok:
+                            st.cache_data.clear()
+                            st.success(f"✅ Survey '{new_sv_name}' berhasil dibuat!")
+                            st.rerun()
+                        else:
+                            st.warning("⚠️ Worksheet 'surveys_master' belum ada. Survey tidak tersimpan ke Sheets.")
