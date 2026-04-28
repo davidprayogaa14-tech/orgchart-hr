@@ -1882,24 +1882,29 @@ elif _active == 5:
                 new_sv_name = st.text_input("Nama Survey *", placeholder="Misal: Employee Engagement Q3 2026")
                 new_sv_status = st.selectbox("Status", ["Active", "Draft", "Closed"])
                 
-                st.markdown("**Daftar Pertanyaan (Skala 1-5):**")
-                q1 = st.text_input("Pertanyaan 1 *", placeholder="Saya mendapat dukungan cukup dari atasan")
-                q2 = st.text_input("Pertanyaan 2", placeholder="Saya memahami tujuan perusahaan")
-                q3 = st.text_input("Pertanyaan 3", placeholder="Opsional...")
-                q4 = st.text_input("Pertanyaan 4", placeholder="Opsional...")
-                q5 = st.text_input("Pertanyaan 5", placeholder="Opsional...")
+                st.markdown("**Daftar Pertanyaan & Tipe Jawaban:**")
+                
+                questions_data = []
+                for i in range(1, 6):  # Kita buat 5 slot pertanyaan sebagai contoh
+                    col_q, col_t = st.columns([3, 1])
+                    with col_q:
+                        q_text = st.text_input(f"Pertanyaan {i}", key=f"admin_q_{i}")
+                    with col_t:
+                        q_type = st.selectbox("Tipe", ["Likert 1-5", "Free Text", "Multiple Choice"], key=f"admin_t_{i}")
+                    
+                    if q_text.strip():
+                        questions_data.append({"text": q_text, "type": q_type})
 
                 submitted_sv = st.form_submit_button("Simpan Survey ke Database", use_container_width=True)
 
                 if submitted_sv:
                     if not new_sv_name:
                         st.error("❌ Nama survey harus diisi!")
-                    elif not q1:
-                        st.error("❌ Minimal harus ada 1 pertanyaan (Pertanyaan 1).")
+                    elif len(questions_data) == 0:
+                        st.error("❌ Minimal harus ada 1 pertanyaan.")
                     else:
-                        # Logika untuk menyimpan ke Google Sheets (surveys_master)
-                        questions_list = [q for q in [q1, q2, q3, q4, q5] if q.strip() != ""]
-                        q_json = json.dumps(questions_list)
+                        # Sekarang kita simpan JSON yang berisi TEKS dan TIPE
+                        q_json = json.dumps(questions_data)
                         new_id = f"SV-{int(time.time())}"
                         
                         client = get_gspread_client()
@@ -1910,9 +1915,7 @@ elif _active == 5:
                                     new_id, new_sv_name, new_sv_status, q_json, 
                                     datetime.now().strftime("%Y-%m-%d %H:%M"), "Admin"
                                 ])
-                                st.success(f"✅ Survey '{new_sv_name}' berhasil dibuat dengan {len(questions_list)} pertanyaan!")
+                                st.success(f"✅ Survey '{new_sv_name}' berhasil disimpan dengan tipe jawaban yang sesuai!")
                                 st.balloons()
                             except Exception as e:
-                                st.error(f"❌ Gagal menyimpan ke Google Sheets. Pastikan worksheet 'surveys_master' sudah dibuat. Error: {e}")
-                        else:
-                            st.error("❌ Koneksi Google Sheets gagal.")
+                                st.error(f"❌ Gagal menyimpan. Error: {e}")
