@@ -2539,111 +2539,432 @@ elif _active == 5:
 
         # ── Login gate ──
         if not st.session_state.admin_logged_in:
-            _, lc, _ = st.columns([2,2,2])
+            _, lc, _ = st.columns([2, 2, 2])
             with lc:
                 st.markdown(f"""
-                <div style="background:{T['surface_lowest']};border-radius:16px;padding:28px 24px;
-                    box-shadow:0 2px 20px {T['metric_shadow']},0 0 0 1px {T['outline']};">
-                    <div style="font-size:16px;font-weight:700;color:{T['text']};
-                        margin-bottom:16px;text-align:center;">🔒 Admin Login</div>
+                <div style="background:{T['surface_lowest']};border-radius:16px;padding:32px 28px;
+                    box-shadow:0 4px 32px {T['metric_shadow']},0 0 0 1px {T['outline']};
+                    text-align:center;">
+                    <div style="font-size:32px;margin-bottom:12px;">🔒</div>
+                    <div style="font-size:16px;font-weight:700;color:{T['text']};margin-bottom:6px;">
+                        Admin Login</div>
+                    <div style="font-size:12px;color:{T['text3']};margin-bottom:20px;">
+                        Masukkan password untuk mengelola survey</div>
                 </div>
                 """, unsafe_allow_html=True)
-                pwd = st.text_input("Password", type="password", key="admin_pwd")
+                pwd = st.text_input("Password", type="password", key="admin_pwd",
+                                    placeholder="Masukkan password admin...")
                 if st.button("Masuk", use_container_width=True, key="admin_login"):
                     if pwd == ADMIN_PASSWORD:
                         st.session_state.admin_logged_in = True
                         st.rerun()
                     else:
                         st.error("❌ Password salah!")
+
         else:
-            if st.button("🔓 Logout", key="admin_logout"):
-                st.session_state.admin_logged_in = False
-                st.rerun()
+            # ════════════════════════════════════════════════════
+            # ADMIN — 2 kolom: kiri = daftar survey, kanan = form builder
+            # ════════════════════════════════════════════════════
 
-            # ── Daftar survey + toggle status ──
-            st.markdown(f"""
-            <div style="font-size:14px;font-weight:700;color:{T['text']};margin:8px 0 12px 0;">
-                Survey yang ada
-            </div>
-            """, unsafe_allow_html=True)
+            # ── Init session state untuk form builder ──
+            if "fb_questions" not in st.session_state:
+                st.session_state.fb_questions = [{"text": "", "type": "Likert 1-5", "options": []}]
+            if "fb_mode" not in st.session_state:
+                st.session_state.fb_mode = "new"   # "new" | "edit"
+            if "fb_edit_id" not in st.session_state:
+                st.session_state.fb_edit_id = None
 
-            for _, row in sm_df.iterrows():
-                sv_id_a = str(row.get("survey_id",""))
-                sv_nm_a = str(row.get("survey_name",""))
-                sv_st_a = str(row.get("status","Draft"))
-                badge   = status_badge(sv_st_a)
-                ac1, ac2, ac3 = st.columns([4,1,1])
-                with ac1:
+            col_list, col_builder = st.columns([2, 3], gap="large")
+
+            # ──────────────────────────────────────────────────
+            # KOLOM KIRI — Daftar survey yang ada
+            # ──────────────────────────────────────────────────
+            with col_list:
+                list_hdr, logout_col = st.columns([3, 1])
+                with list_hdr:
                     st.markdown(f"""
-                    <div style="padding:8px 0;">
-                        <div style="font-size:13px;font-weight:600;color:{T['text']}">{sv_nm_a}</div>
-                        <div style="margin-top:4px;">{badge}</div>
+                    <div style="font-size:14px;font-weight:700;color:{T['text']};margin-bottom:14px;">
+                        📋 Survey yang Ada
                     </div>
                     """, unsafe_allow_html=True)
-                with ac2:
-                    new_status_opts = [s for s in ["Active","Draft","Closed"] if s != sv_st_a]
-                    chosen = st.selectbox("Status baru", new_status_opts, key=f"chst_{sv_id_a}",
-                                         label_visibility="collapsed")
-                with ac3:
-                    if st.button("Simpan", key=f"savst_{sv_id_a}", use_container_width=True):
-                        if update_survey_status(sv_id_a, chosen):
-                            st.cache_data.clear()
-                            st.success(f"Status diubah ke {chosen}")
+                with logout_col:
+                    if st.button("🔓", key="admin_logout", help="Logout",
+                                 use_container_width=True):
+                        st.session_state.admin_logged_in = False
+                        st.rerun()
+
+                for _, row in sm_df.iterrows():
+                    sv_id_a = str(row.get("survey_id", ""))
+                    sv_nm_a = str(row.get("survey_name", ""))
+                    sv_st_a = str(row.get("status", "Draft"))
+                    sv_qs_a = []
+                    try:
+                        sv_qs_a = json.loads(str(row.get("questions_json", "[]")))
+                    except Exception:
+                        sv_qs_a = []
+
+                    badge = status_badge(sv_st_a)
+                    q_count = len(sv_qs_a)
+
+                    st.markdown(f"""
+                    <div style="background:{T['surface_lowest']};border-radius:12px;
+                        padding:14px 16px;margin-bottom:8px;
+                        box-shadow:0 1px 8px {T['metric_shadow']},0 0 0 1px {T['outline']};">
+                        <div style="font-size:13px;font-weight:600;color:{T['text']};
+                            margin-bottom:6px;line-height:1.4;">{sv_nm_a}</div>
+                        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                            {badge}
+                            <span style="font-size:11px;color:{T['text3']};">
+                                {q_count} pertanyaan
+                            </span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # Status toggle + Edit buttons
+                    sa1, sa2, sa3 = st.columns([2, 1, 1])
+                    with sa1:
+                        new_status_opts = [s for s in ["Active","Draft","Closed"] if s != sv_st_a]
+                        chosen_st = st.selectbox(
+                            "Status", new_status_opts,
+                            key=f"chst_{sv_id_a}",
+                            label_visibility="collapsed"
+                        )
+                    with sa2:
+                        if st.button("💾 Set", key=f"savst_{sv_id_a}", use_container_width=True):
+                            if update_survey_status(sv_id_a, chosen_st):
+                                st.cache_data.clear()
+                                st.success(f"→ {chosen_st}")
+                                st.rerun()
+                            else:
+                                st.warning("Mode demo")
+                    with sa3:
+                        if st.button("✏️ Edit", key=f"edit_{sv_id_a}", use_container_width=True):
+                            # Load survey ke form builder
+                            st.session_state.fb_mode      = "edit"
+                            st.session_state.fb_edit_id   = sv_id_a
+                            st.session_state.fb_edit_name = sv_nm_a
+                            st.session_state.fb_edit_desc = str(row.get("description",""))
+                            st.session_state.fb_edit_status = sv_st_a
+                            st.session_state.fb_questions = sv_qs_a if sv_qs_a else [
+                                {"text":"","type":"Likert 1-5","options":[]}
+                            ]
                             st.rerun()
-                        else:
-                            st.warning("⚠️ Tidak dapat update (mode demo)")
-                st.markdown(f"<div style='height:1px;background:{T['outline']};margin:4px 0;'></div>",
-                            unsafe_allow_html=True)
 
-            st.markdown("<div style='height:24px;'></div>", unsafe_allow_html=True)
+                    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
 
-            # ── Form buat survey baru ──
-            st.markdown(f"""
-            <div style="font-size:14px;font-weight:700;color:{T['text']};margin-bottom:12px;">
-                ➕ Buat Survey Baru
-            </div>
-            """, unsafe_allow_html=True)
+                # ── Tombol mulai buat baru ──
+                st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+                if st.button("➕  Buat Survey Baru", use_container_width=True, key="btn_new_survey"):
+                    st.session_state.fb_mode      = "new"
+                    st.session_state.fb_edit_id   = None
+                    st.session_state.fb_questions = [{"text":"","type":"Likert 1-5","options":[]}]
+                    st.rerun()
 
-            with st.form("form_buat_survey_new", clear_on_submit=True):
-                col_n1, col_n2 = st.columns([3,1])
-                with col_n1:
-                    new_sv_name = st.text_input("Nama Survey *", placeholder="Misal: Pulse Survey Q2 2026")
-                with col_n2:
-                    new_sv_status = st.selectbox("Status", ["Draft","Active","Closed"])
-                new_sv_desc = st.text_area("Deskripsi", placeholder="Jelaskan tujuan survey ini...",
-                                           height=72)
-                st.markdown(f"<div style='font-size:13px;font-weight:600;color:{T['text']};margin:12px 0 8px 0;'>Pertanyaan (maks. 8)</div>",
-                            unsafe_allow_html=True)
-                qs_new = []
-                for i in range(1, 9):
-                    c1, c2 = st.columns([3,1])
-                    with c1:
-                        qt = st.text_input(f"Pertanyaan {i}", key=f"nq_t_{i}", placeholder=f"Ketik pertanyaan {i}...")
-                    with c2:
-                        qtype = st.selectbox("Tipe", ["Likert 1-5","Free Text","Multiple Choice"],
-                                             key=f"nq_tp_{i}")
-                    q_opts_str = ""
-                    if qtype == "Multiple Choice":
-                        q_opts_str = st.text_input(f"Opsi P{i} (pisahkan koma)", key=f"nq_o_{i}",
-                                                   placeholder="Opsi A, Opsi B, Opsi C")
-                    if qt.strip():
-                        qs_new.append({
-                            "text": qt.strip(), "type": qtype,
-                            "options": [o.strip() for o in q_opts_str.split(",") if o.strip()] if q_opts_str else []
-                        })
+            # ──────────────────────────────────────────────────
+            # KOLOM KANAN — Form Builder (Google Form style)
+            # ──────────────────────────────────────────────────
+            with col_builder:
+                is_edit = (st.session_state.fb_mode == "edit")
+                builder_title = f"✏️ Edit Survey" if is_edit else "➕ Buat Survey Baru"
 
-                if st.form_submit_button("💾  Simpan Survey Baru", use_container_width=True):
-                    if not new_sv_name.strip():
-                        st.error("❌ Nama survey wajib diisi.")
-                    elif not qs_new:
-                        st.error("❌ Tambahkan minimal 1 pertanyaan.")
-                    else:
-                        new_id = f"SV-{int(_time.time())}"
-                        ok = save_survey_master(new_id, new_sv_name.strip(), new_sv_desc.strip(),
-                                               new_sv_status, qs_new)
-                        if ok:
-                            st.cache_data.clear()
-                            st.success(f"✅ Survey '{new_sv_name}' berhasil dibuat!")
+                st.markdown(f"""
+                <div style="font-size:14px;font-weight:700;color:{T['text']};margin-bottom:16px;">
+                    {builder_title}
+                </div>
+                """, unsafe_allow_html=True)
+
+                # ── Header form (nama, deskripsi, status) ──
+                with st.container():
+                    st.markdown(f"""
+                    <div style="background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
+                        border-radius:16px 16px 0 0;height:6px;margin-bottom:0;"></div>
+                    """, unsafe_allow_html=True)
+
+                    default_name   = st.session_state.get("fb_edit_name","") if is_edit else ""
+                    default_desc   = st.session_state.get("fb_edit_desc","") if is_edit else ""
+                    default_status = st.session_state.get("fb_edit_status","Draft") if is_edit else "Draft"
+
+                    fb_name = st.text_input(
+                        "Nama Survey *",
+                        value=default_name,
+                        placeholder="Untitled form",
+                        key="fb_name",
+                        label_visibility="collapsed",
+                    )
+                    st.markdown(f"""
+                    <style>
+                    [data-testid="stTextInput"]:has(input[data-testid="fb_name"]) input {{
+                        font-size: 22px !important;
+                        font-weight: 700 !important;
+                        font-family: 'Manrope', sans-serif !important;
+                        border: none !important;
+                        border-bottom: 2px solid {T['primary']} !important;
+                        border-radius: 0 !important;
+                        background: transparent !important;
+                        padding: 6px 0 !important;
+                        box-shadow: none !important;
+                    }}
+                    </style>
+                    """, unsafe_allow_html=True)
+
+                    fb_desc = st.text_input(
+                        "Deskripsi",
+                        value=default_desc,
+                        placeholder="Form description",
+                        key="fb_desc",
+                        label_visibility="collapsed",
+                    )
+                    fb_status_col, _ = st.columns([1, 2])
+                    with fb_status_col:
+                        status_idx = ["Draft","Active","Closed"].index(default_status) if default_status in ["Draft","Active","Closed"] else 0
+                        fb_status = st.selectbox("Status", ["Draft","Active","Closed"],
+                                                 index=status_idx, key="fb_status")
+
+                st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
+
+                # ════════════════════════════════════
+                # QUESTION CARDS  (dynamic, like GForms)
+                # ════════════════════════════════════
+                qs = st.session_state.fb_questions
+                q_to_delete = None   # track which index to remove this run
+
+                TYPE_ICONS = {
+                    "Likert 1-5":      "🔢",
+                    "Free Text":       "📝",
+                    "Multiple Choice": "⚪",
+                    "Checkboxes":      "☑️",
+                    "Dropdown":        "🔽",
+                    "Short Answer":    "➖",
+                    "Paragraph":       "≡",
+                }
+                ALL_TYPES = list(TYPE_ICONS.keys())
+
+                for idx, q in enumerate(qs):
+                    q_num = idx + 1
+                    icon  = TYPE_ICONS.get(q.get("type","Likert 1-5"), "🔢")
+
+                    st.markdown(f"""
+                    <div style="background:{T['surface_lowest']};border-radius:12px;
+                        border-left:4px solid {T['primary']};
+                        padding:16px 18px 12px 18px;margin-bottom:10px;
+                        box-shadow:0 2px 12px {T['metric_shadow']},0 0 0 1px {T['outline']};">
+                        <div style="font-size:10px;font-weight:700;color:{T['primary']};
+                            text-transform:uppercase;letter-spacing:0.07em;margin-bottom:8px;">
+                            Pertanyaan {q_num}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    # ── Question text + type selector ──
+                    qc1, qc2 = st.columns([3, 1])
+                    with qc1:
+                        new_text = st.text_input(
+                            f"Teks pertanyaan {q_num}",
+                            value=q.get("text",""),
+                            placeholder=f"Untitled Question",
+                            key=f"q_txt_{idx}",
+                            label_visibility="collapsed",
+                        )
+                        qs[idx]["text"] = new_text
+
+                    with qc2:
+                        cur_type  = q.get("type","Likert 1-5")
+                        type_idx  = ALL_TYPES.index(cur_type) if cur_type in ALL_TYPES else 0
+                        new_type  = st.selectbox(
+                            "Tipe",
+                            options=ALL_TYPES,
+                            index=type_idx,
+                            key=f"q_type_{idx}",
+                            label_visibility="collapsed",
+                            format_func=lambda t: f"{TYPE_ICONS.get(t,'')} {t}",
+                        )
+                        qs[idx]["type"] = new_type
+
+                    # ── Preview area berdasarkan tipe ──
+                    if new_type == "Likert 1-5":
+                        st.markdown(f"""
+                        <div style="display:flex;gap:8px;padding:8px 0 4px 0;">
+                            {''.join(f'<div style="background:{T["surface_low"]};border:1.5px solid {T["outline"]};border-radius:8px;padding:6px 14px;font-size:12px;color:{T["text3"]};">{i}</div>' for i in range(1,6))}
+                            <div style="font-size:11px;color:{T['text3']};align-self:center;padding-left:4px;">
+                                Sangat Tidak Setuju → Sangat Setuju
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    elif new_type in ("Multiple Choice","Checkboxes","Dropdown"):
+                        # Dynamic options
+                        opts = qs[idx].get("options", []) or [""]
+                        if not opts:
+                            opts = [""]
+                        qs[idx]["options"] = opts
+
+                        new_opts = []
+                        for oi, opt in enumerate(opts):
+                            oc1, oc2 = st.columns([8, 1])
+                            with oc1:
+                                prefix = "○" if new_type == "Multiple Choice" else ("☐" if new_type == "Checkboxes" else "▾")
+                                new_opt_val = st.text_input(
+                                    f"Opsi {oi+1}",
+                                    value=opt,
+                                    placeholder=f"Option {oi+1}",
+                                    key=f"q_opt_{idx}_{oi}",
+                                    label_visibility="collapsed",
+                                )
+                                new_opts.append(new_opt_val)
+                            with oc2:
+                                if len(opts) > 1:
+                                    if st.button("✕", key=f"del_opt_{idx}_{oi}",
+                                                 help="Hapus opsi ini"):
+                                        new_opts.pop(oi)
+                                        qs[idx]["options"] = new_opts
+                                        st.rerun()
+
+                        qs[idx]["options"] = new_opts
+
+                        add_c1, add_c2 = st.columns([1, 4])
+                        with add_c1:
+                            if st.button("＋ Opsi", key=f"add_opt_{idx}",
+                                         use_container_width=True):
+                                qs[idx]["options"].append("")
+                                st.rerun()
+
+                    elif new_type in ("Short Answer","Free Text"):
+                        st.markdown(f"""
+                        <div style="border-bottom:1.5px solid {T['outline']};
+                            padding:6px 0;color:{T['text3']};font-size:12px;
+                            margin-bottom:4px;">
+                            Jawaban singkat
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    elif new_type == "Paragraph":
+                        st.markdown(f"""
+                        <div style="border-bottom:1.5px solid {T['outline']};
+                            padding:14px 0 6px 0;color:{T['text3']};font-size:12px;
+                            margin-bottom:4px;">
+                            Jawaban panjang
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                    # ── Footer kartu: required toggle + hapus + duplikat ──
+                    st.markdown(f"""
+                    <div style="height:1px;background:{T['outline']};margin:10px 0 8px 0;"></div>
+                    """, unsafe_allow_html=True)
+
+                    foot1, foot2, foot3, foot4 = st.columns([1, 1, 1, 4])
+                    with foot1:
+                        if st.button("🗑️", key=f"del_q_{idx}",
+                                     help="Hapus pertanyaan ini",
+                                     use_container_width=True):
+                            if len(qs) > 1:
+                                q_to_delete = idx
+                            else:
+                                st.warning("Minimal 1 pertanyaan harus ada.")
+                    with foot2:
+                        if st.button("⎘", key=f"dup_q_{idx}",
+                                     help="Duplikat pertanyaan",
+                                     use_container_width=True):
+                            import copy
+                            qs.insert(idx + 1, copy.deepcopy(qs[idx]))
+                            st.session_state.fb_questions = qs
                             st.rerun()
+                    with foot3:
+                        req_val = q.get("required", False)
+                        new_req = st.checkbox("Wajib", value=req_val, key=f"q_req_{idx}")
+                        qs[idx]["required"] = new_req
+
+                    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+
+                # ── Proses hapus pertanyaan ──
+                if q_to_delete is not None:
+                    qs.pop(q_to_delete)
+                    st.session_state.fb_questions = qs
+                    st.rerun()
+
+                # ── Tombol tambah pertanyaan baru ──
+                st.markdown(f"""
+                <div style="height:1px;background:{T['outline']};margin:8px 0 14px 0;"></div>
+                """, unsafe_allow_html=True)
+
+                add_q_col, _, save_col = st.columns([1, 1, 2])
+                with add_q_col:
+                    if st.button("➕  Tambah Pertanyaan",
+                                 key="fb_add_q",
+                                 use_container_width=True):
+                        qs.append({"text":"","type":"Likert 1-5","options":[],"required":False})
+                        st.session_state.fb_questions = qs
+                        st.rerun()
+
+                with save_col:
+                    save_label = "💾  Simpan Perubahan" if is_edit else "💾  Simpan Survey"
+                    if st.button(save_label, key="fb_save", use_container_width=True,
+                                 type="primary"):
+                        # Kumpulkan state terkini
+                        final_qs = []
+                        for i2, q2 in enumerate(qs):
+                            txt = st.session_state.get(f"q_txt_{i2}", q2.get("text","")).strip()
+                            typ = st.session_state.get(f"q_type_{i2}", q2.get("type","Likert 1-5"))
+                            opts_raw = q2.get("options", [])
+                            opts = [o for o in opts_raw if str(o).strip()]
+                            req  = st.session_state.get(f"q_req_{i2}", q2.get("required", False))
+                            if txt:
+                                final_qs.append({"text": txt, "type": typ,
+                                                 "options": opts, "required": req})
+
+                        name_val = st.session_state.get("fb_name","").strip()
+                        desc_val = st.session_state.get("fb_desc","").strip()
+                        stat_val = st.session_state.get("fb_status","Draft")
+
+                        if not name_val:
+                            st.error("❌ Nama survey wajib diisi.")
+                        elif not final_qs:
+                            st.error("❌ Tambahkan minimal 1 pertanyaan dengan teks.")
+                        elif is_edit:
+                            # Update: hapus baris lama & append baris baru
+                            client_up = get_gspread_client()
+                            if client_up:
+                                try:
+                                    ws_m = client_up.open_by_key(SHEET_ID).worksheet("surveys_master")
+                                    cell = ws_m.find(st.session_state.fb_edit_id)
+                                    if cell:
+                                        ws_m.update(
+                                            f"A{cell.row}:G{cell.row}",
+                                            [[
+                                                st.session_state.fb_edit_id,
+                                                name_val, desc_val, stat_val,
+                                                json.dumps(final_qs),
+                                                datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                                "Admin",
+                                            ]]
+                                        )
+                                        st.cache_data.clear()
+                                        st.success(f"✅ Survey '{name_val}' berhasil diupdate!")
+                                        st.session_state.fb_mode = "new"
+                                        st.session_state.fb_questions = [{"text":"","type":"Likert 1-5","options":[]}]
+                                        st.rerun()
+                                    else:
+                                        st.error("Survey tidak ditemukan di sheet.")
+                                except Exception as ex:
+                                    st.error(f"Gagal update: {ex}")
+                            else:
+                                st.warning("⚠️ Tidak dapat terhubung ke Google Sheets.")
                         else:
-                            st.warning("⚠️ Worksheet 'surveys_master' belum ada. Survey tidak tersimpan ke Sheets.")
+                            new_id = f"SV-{int(_time.time())}"
+                            ok = save_survey_master(new_id, name_val, desc_val,
+                                                    stat_val, final_qs)
+                            if ok:
+                                st.cache_data.clear()
+                                st.success(f"✅ Survey '{name_val}' berhasil dibuat!")
+                                st.session_state.fb_questions = [{"text":"","type":"Likert 1-5","options":[]}]
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Tidak dapat tersimpan ke Sheets.")
+
+                # ── Preview count ──
+                valid_count = sum(1 for q3 in qs if st.session_state.get(f"q_txt_{qs.index(q3)}","") or q3.get("text",""))
+                st.markdown(f"""
+                <div style="font-size:11px;color:{T['text3']};margin-top:8px;text-align:right;">
+                    {len(qs)} pertanyaan ditambahkan
+                </div>
+                """, unsafe_allow_html=True)
