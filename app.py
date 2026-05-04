@@ -207,12 +207,126 @@ def to_excel(dataframe: pd.DataFrame) -> bytes:
 
 
 # ══════════════════════════════════════════════════════════════════
-# PDF GENERATORS 
+# PDF GENERATORS
 # ══════════════════════════════════════════════════════════════════
-def generate_pdf(tree_nodes, title_text):
+
+# ── Palette PDF (light/print-friendly) ─────────────────────────
+PDF_BG          = colors.HexColor("#FFFFFF")
+PDF_PAGE_BG     = colors.HexColor("#F8F7FF")
+PDF_PRIMARY     = colors.HexColor("#4234b6")
+PDF_PRIMARY_LT  = colors.HexColor("#EDE9FE")
+PDF_PRIMARY_MID = colors.HexColor("#C4B5FD")
+PDF_TEXT_DARK   = colors.HexColor("#1a1b21")
+PDF_TEXT_MID    = colors.HexColor("#46464f")
+PDF_TEXT_MUTED  = colors.HexColor("#76767f")
+PDF_OUT_BG      = colors.HexColor("#F4F3FB")
+PDF_OUT_BDR     = colors.HexColor("#C4B5FD")
+PDF_OUT_TXT     = colors.HexColor("#46464f")
+PDF_CONNECTOR   = colors.HexColor("#C4B5FD")
+PDF_ACCENT_BAR  = colors.HexColor("#4234b6")
+
+
+def _draw_pdf_header(c, page_w, page_h, title_text, subtitle, total_nodes, downloaded_at, div_name, bu_name):
+    """
+    Header profesional:
+    - Bar ungu di atas
+    - Logo placeholder "mekari" teks
+    - Judul chart (nama divisi)
+    - Metadata: BU, Divisi, Tanggal unduh, Total karyawan
+    """
+    HEADER_H = 80
+
+    # Bar aksen atas
+    c.setFillColor(PDF_PRIMARY)
+    c.rect(0, page_h - 6, page_w, 6, fill=1, stroke=0)
+
+    # Header background putih
+    c.setFillColor(PDF_BG)
+    c.rect(0, page_h - HEADER_H - 6, page_w, HEADER_H, fill=1, stroke=0)
+
+    # Garis bawah header
+    c.setStrokeColor(PDF_PRIMARY_MID)
+    c.setLineWidth(0.5)
+    c.line(0, page_h - HEADER_H - 6, page_w, page_h - HEADER_H - 6)
+
+    # Logo "mekari" teks + bintang
+    logo_x, logo_y = 36, page_h - 36
+    c.setFillColor(PDF_PRIMARY)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(logo_x + 16, logo_y - 12, "mekari")
+    # bintang sederhana: lingkaran kecil
+    c.circle(logo_x + 5, logo_y - 8, 5, fill=1, stroke=0)
+
+    # Judul utama (nama chart)
+    c.setFillColor(PDF_TEXT_DARK)
+    c.setFont("Helvetica-Bold", 14)
+    # Potong jika terlalu panjang
+    t = title_text if len(title_text) <= 90 else title_text[:87] + "..."
+    c.drawString(logo_x, logo_y - 28, t)
+
+    # Metadata baris: Divisi · BU · Tanggal · Total
+    meta_parts = []
+    if div_name:  meta_parts.append(f"Divisi: {div_name}")
+    if bu_name:   meta_parts.append(f"BU: {bu_name}")
+    meta_parts.append(f"Diunduh: {downloaded_at}")
+    meta_parts.append(f"Total ditampilkan: {total_nodes} karyawan")
+
+    c.setFillColor(PDF_TEXT_MUTED)
+    c.setFont("Helvetica", 8)
+    meta_str = "   ·   ".join(meta_parts)
+    c.drawString(logo_x, logo_y - 44, meta_str)
+
+    if subtitle:
+        c.setFont("Helvetica", 8)
+        c.setFillColor(PDF_TEXT_MUTED)
+        c.drawString(logo_x, logo_y - 56, subtitle)
+
+
+def _draw_pdf_footer(c, page_w, downloaded_at):
+    """Footer tipis dengan timestamp dan konfidensialitas."""
+    c.setStrokeColor(PDF_PRIMARY_MID)
+    c.setLineWidth(0.5)
+    c.line(36, 28, page_w - 36, 28)
+    c.setFillColor(PDF_TEXT_MUTED)
+    c.setFont("Helvetica", 7)
+    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Analytics")
+    c.drawRightString(page_w - 36, 18, "HR Org Chart Dashboard")
+
+
+def _wrap_text(text: str, max_chars: int) -> list:
+    """Potong teks menjadi baris-baris maks max_chars karakter, tidak potong kata."""
+    if len(text) <= max_chars:
+        return [text]
+    words = text.split()
+    lines, cur = [], ""
+    for w in words:
+        if len(cur) + len(w) + 1 <= max_chars:
+            cur = (cur + " " + w).strip()
+        else:
+            if cur:
+                lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines if lines else [text[:max_chars]]
+
+
+def generate_pdf(tree_nodes, title_text, div_name="", bu_name=""):
+    """
+    PDF Full — semua level, node lebih besar, nama+posisi+SBU lengkap,
+    header profesional dengan metadata waktu & divisi.
+    """
     if not REPORTLAB_OK:
         raise ImportError("ReportLab tidak tersedia")
-    NODE_W, NODE_H, H_GAP, V_GAP = 150, 60, 30, 50
+
+    # Node dimensions — lebih besar untuk muat 4 baris teks
+    NODE_W, NODE_H = 180, 76
+    H_GAP, V_GAP   = 20, 52
+    HEADER_H        = 90   # ruang header di atas
+    FOOTER_H        = 44   # ruang footer di bawah
+
+    downloaded_at = datetime.now().strftime("%d %B %Y, %H:%M")
+
     positions, draw_order = {}, []
 
     def calc_subtree_width(node):
@@ -233,20 +347,22 @@ def generate_pdf(tree_nodes, title_text):
             assign_positions(child, x_start + cw / 2, y - (NODE_H + V_GAP))
             x_start += cw + H_GAP
 
-    total_w  = sum(calc_subtree_width(r) for r in tree_nodes) + H_GAP * (len(tree_nodes) - 1)
+    total_w   = sum(calc_subtree_width(r) for r in tree_nodes) + H_GAP * (len(tree_nodes) - 1)
     max_depth = [0]
+
     def get_depth(node, d=0):
         max_depth[0] = max(max_depth[0], d)
-        for c in node["children"]:
-            get_depth(c, d + 1)
+        for ch in node["children"]:
+            get_depth(ch, d + 1)
     for r in tree_nodes:
         get_depth(r)
-    total_h = (max_depth[0] + 1) * (NODE_H + V_GAP) + 120
-    page_w  = max(total_w + 100, landscape(A3)[0])
-    page_h  = max(total_h + 100, landscape(A3)[1])
+
+    total_h = (max_depth[0] + 1) * (NODE_H + V_GAP) + HEADER_H + FOOTER_H + 40
+    page_w  = max(total_w + 120, landscape(A3)[0])
+    page_h  = max(total_h, landscape(A3)[1])
 
     x_start = page_w / 2 - total_w / 2
-    y_top   = page_h - 80
+    y_top   = page_h - HEADER_H - 20
     for root in tree_nodes:
         rw = calc_subtree_width(root)
         assign_positions(root, x_start + rw / 2, y_top)
@@ -254,13 +370,22 @@ def generate_pdf(tree_nodes, title_text):
 
     buffer = BytesIO()
     c = rl_canvas.Canvas(buffer, pagesize=(page_w, page_h))
-    c.setFillColor(colors.HexColor("#0f1117"))
+
+    # Background halaman
+    c.setFillColor(PDF_PAGE_BG)
     c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
-    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 18)
-    c.drawCentredString(page_w / 2, page_h - 45, title_text)
-    c.setFont("Helvetica", 10); c.setFillColor(colors.HexColor("#6b7280"))
-    c.drawCentredString(page_w / 2, page_h - 62, f"Total: {len(draw_order)} karyawan ditampilkan")
-    c.setStrokeColor(colors.HexColor("#3d4160")); c.setLineWidth(1.5)
+
+    # Header & Footer
+    _draw_pdf_header(c, page_w, page_h, title_text,
+                     subtitle=f"Organization Chart — Full Structure",
+                     total_nodes=len(draw_order),
+                     downloaded_at=downloaded_at,
+                     div_name=div_name, bu_name=bu_name)
+    _draw_pdf_footer(c, page_w, downloaded_at)
+
+    # Konektor antar node
+    c.setStrokeColor(PDF_CONNECTOR)
+    c.setLineWidth(1.2)
     for node in draw_order:
         if node["id"] not in positions:
             continue
@@ -268,47 +393,117 @@ def generate_pdf(tree_nodes, title_text):
         for child in node["children"]:
             if child["id"] not in positions:
                 continue
-            cx, cy = positions[child["id"]]
-            mid_y = (ny - NODE_H / 2 + cy + NODE_H / 2) / 2
-            c.line(nx, ny - NODE_H/2, nx, mid_y)
+            cx, cy  = positions[child["id"]]
+            mid_y   = (ny - NODE_H / 2 + cy + NODE_H / 2) / 2
+            c.line(nx, ny - NODE_H / 2, nx, mid_y)
             c.line(nx, mid_y, cx, mid_y)
-            c.line(cx, mid_y, cx, cy + NODE_H/2)
+            c.line(cx, mid_y, cx, cy + NODE_H / 2)
+
+    # Node cards
     for node in draw_order:
         if node["id"] not in positions:
             continue
-        nx, ny = positions[node["id"]]
-        x_left, y_bottom = nx - NODE_W / 2, ny - NODE_H / 2
-        if node.get("in_div", True):
-            fill_c, txt_c, bdr_c = colors.HexColor("#CCCCFF"), colors.HexColor("#1a1a2e"), colors.HexColor("#9999ee")
+        nx, ny    = positions[node["id"]]
+        x_left    = nx - NODE_W / 2
+        y_bottom  = ny - NODE_H / 2
+        in_div    = node.get("in_div", True)
+        emp_id    = node.get("id", "")
+        name      = node.get("name", "")
+        position  = node.get("position", "")
+        sbu       = node.get("sbu", "")
+        division  = node.get("division", "")
+
+        if in_div:
+            fill_c = PDF_PRIMARY_LT
+            txt_c  = PDF_TEXT_DARK
+            bdr_c  = PDF_PRIMARY_MID
+            bar_c  = PDF_PRIMARY
         else:
-            fill_c, txt_c, bdr_c = colors.HexColor("#2a2d3e"), colors.HexColor("#a0a8c0"), colors.HexColor("#3d4160")
-        c.setFillColor(fill_c); c.setStrokeColor(bdr_c); c.setLineWidth(1.5)
-        c.roundRect(x_left, y_bottom, NODE_W, NODE_H, 8, fill=1, stroke=1)
-        c.setFillColor(txt_c); c.setFont("Helvetica-Bold", 8)
-        name = node["name"][:21] + "…" if len(node["name"]) > 22 else node["name"]
-        c.drawCentredString(nx, y_bottom + NODE_H - 16, name)
+            fill_c = PDF_OUT_BG
+            txt_c  = PDF_OUT_TXT
+            bdr_c  = PDF_OUT_BDR
+            bar_c  = PDF_OUT_BDR
+
+        # Card background
+        c.setFillColor(fill_c)
+        c.setStrokeColor(bdr_c)
+        c.setLineWidth(0.8)
+        c.roundRect(x_left, y_bottom, NODE_W, NODE_H, 6, fill=1, stroke=1)
+
+        # Accent bar kiri
+        c.setFillColor(bar_c)
+        c.roundRect(x_left, y_bottom, 3, NODE_H, 3, fill=1, stroke=0)
+
+        # Teks dalam card — y dari atas ke bawah
+        text_x  = nx          # center
+        text_lx = x_left + 8  # kiri dengan padding
+
+        # Baris 1: Nama (bold, bisa 2 baris jika panjang)
+        name_lines = _wrap_text(name, 24)
+        c.setFillColor(txt_c)
+        c.setFont("Helvetica-Bold", 8)
+        if len(name_lines) >= 2:
+            c.drawCentredString(text_x, y_bottom + NODE_H - 14, name_lines[0])
+            c.drawCentredString(text_x, y_bottom + NODE_H - 23, name_lines[1])
+            pos_y = y_bottom + NODE_H - 34
+        else:
+            c.drawCentredString(text_x, y_bottom + NODE_H - 17, name_lines[0])
+            pos_y = y_bottom + NODE_H - 28
+
+        # Baris 2: Posisi (wrap 2 baris maks)
+        pos_lines = _wrap_text(position, 26)
         c.setFont("Helvetica", 7)
-        pos_text = node["position"][:25] + "…" if len(node["position"]) > 26 else node["position"]
-        c.drawCentredString(nx, y_bottom + NODE_H - 28, pos_text)
-    legend_y, legend_x = 30, 40
-    c.setFillColor(colors.HexColor("#CCCCFF")); c.setStrokeColor(colors.HexColor("#9999ee"))
-    c.roundRect(legend_x, legend_y, 14, 14, 3, fill=1, stroke=1)
-    c.setFillColor(colors.white); c.setFont("Helvetica", 8)
-    c.drawString(legend_x + 18, legend_y + 3, "Karyawan divisi ini")
-    c.setFillColor(colors.HexColor("#2a2d3e")); c.setStrokeColor(colors.HexColor("#3d4160"))
-    c.roundRect(legend_x + 140, legend_y, 14, 14, 3, fill=1, stroke=1)
-    c.setFillColor(colors.HexColor("#a0a8c0"))
-    c.drawString(legend_x + 158, legend_y + 3, "Atasan dari divisi lain")
-    c.save(); buffer.seek(0)
+        c.setFillColor(PDF_TEXT_MID if in_div else PDF_TEXT_MUTED)
+        for li, pl in enumerate(pos_lines[:2]):
+            c.drawCentredString(text_x, pos_y - li * 9, pl)
+        sbu_y = pos_y - len(pos_lines[:2]) * 9 - 4
+
+        # Baris 3: SBU/Tribe (jika ada)
+        sbu_clean = sbu.strip() if sbu and sbu.strip() not in ("", "nan") else ""
+        if sbu_clean and sbu_y > y_bottom + 6:
+            c.setFont("Helvetica-Oblique", 6.5)
+            c.setFillColor(PDF_PRIMARY if in_div else PDF_OUT_BDR)
+            sbu_disp = sbu_clean[:30] + "…" if len(sbu_clean) > 30 else sbu_clean
+            c.drawCentredString(text_x, sbu_y, sbu_disp)
+
+        # Employee ID kecil di pojok kanan bawah
+        c.setFont("Helvetica", 5.5)
+        c.setFillColor(PDF_TEXT_MUTED)
+        c.drawRightString(x_left + NODE_W - 5, y_bottom + 4, emp_id)
+
+    # Legend
+    leg_x, leg_y = 36, FOOTER_H + 8
+    items = [
+        (PDF_PRIMARY_LT, PDF_PRIMARY_MID, "Karyawan divisi ini"),
+        (PDF_OUT_BG,     PDF_OUT_BDR,     "Atasan dari divisi lain"),
+    ]
+    for li, (f, b, lbl) in enumerate(items):
+        ox = leg_x + li * 170
+        c.setFillColor(f); c.setStrokeColor(b); c.setLineWidth(0.7)
+        c.roundRect(ox, leg_y, 12, 9, 2, fill=1, stroke=1)
+        c.setFillColor(PDF_TEXT_MUTED); c.setFont("Helvetica", 7)
+        c.drawString(ox + 16, leg_y + 1, lbl)
+
+    c.save()
+    buffer.seek(0)
     return buffer.getvalue()
 
 
-def generate_pdf_summary(tree_nodes, title_text):
+def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
+    """
+    PDF Summary — tampilkan hingga Level 2, node lebih informatif,
+    header profesional, nama + posisi + SBU lengkap.
+    """
     if not REPORTLAB_OK:
         raise ImportError("ReportLab tidak tersedia")
-    NODE_W_FULL, NODE_H_FULL = 170, 68
-    NODE_W_DIV,  NODE_H_DIV  = 130, 32
-    H_GAP, V_GAP = 28, 45
+
+    NODE_W_FULL, NODE_H_FULL = 190, 82
+    NODE_W_L2,   NODE_H_L2   = 160, 72
+    H_GAP, V_GAP = 18, 48
+    HEADER_H     = 90
+    FOOTER_H     = 44
+
+    downloaded_at = datetime.now().strftime("%d %B %Y, %H:%M")
 
     def trim_tree(node, depth=0):
         if depth > 2:
@@ -316,19 +511,22 @@ def generate_pdf_summary(tree_nodes, title_text):
         trimmed = dict(node)
         trimmed["_depth"]   = depth
         trimmed["children"] = [] if depth == 2 else [
-            c for c in [trim_tree(ch, depth + 1) for ch in node.get("children", [])] if c
+            ch2 for ch2 in [trim_tree(ch, depth + 1) for ch in node.get("children", [])] if ch2
         ]
         return trimmed
 
     trimmed_roots = [t for t in [trim_tree(r) for r in tree_nodes] if t]
 
-    def node_w(n): return NODE_W_FULL if n["_depth"] < 2 else NODE_W_DIV
-    def node_h(n): return NODE_H_FULL if n["_depth"] < 2 else NODE_H_DIV
+    def node_w(n): return NODE_W_FULL if n["_depth"] < 2 else NODE_W_L2
+    def node_h(n): return NODE_H_FULL if n["_depth"] < 2 else NODE_H_L2
 
     def subtree_width(n):
         if not n["children"]:
             return node_w(n)
-        return max(sum(subtree_width(c) for c in n["children"]) + H_GAP * (len(n["children"]) - 1), node_w(n))
+        return max(
+            sum(subtree_width(ch) for ch in n["children"]) + H_GAP * (len(n["children"]) - 1),
+            node_w(n)
+        )
 
     positions, draw_list = {}, []
 
@@ -337,9 +535,9 @@ def generate_pdf_summary(tree_nodes, title_text):
         draw_list.append(node)
         if not node["children"]:
             return
-        total_w = sum(subtree_width(c) for c in node["children"]) + H_GAP * (len(node["children"]) - 1)
+        total_w = sum(subtree_width(ch) for ch in node["children"]) + H_GAP * (len(node["children"]) - 1)
         x_start = x_center - total_w / 2
-        child_y = y - node_h(node) / 2 - V_GAP - (NODE_H_DIV / 2 if node["_depth"] == 1 else NODE_H_FULL / 2)
+        child_y = y - node_h(node) / 2 - V_GAP - node_h(node) / 2
         for child in node["children"]:
             cw = subtree_width(child)
             assign_pos(child, x_start + cw / 2, child_y)
@@ -348,16 +546,16 @@ def generate_pdf_summary(tree_nodes, title_text):
     def max_depth_tree(node):
         if not node["children"]:
             return node["_depth"]
-        return max(max_depth_tree(c) for c in node["children"])
+        return max(max_depth_tree(ch) for ch in node["children"])
 
     actual_max = max((max_depth_tree(r) for r in trimmed_roots), default=0)
     total_w    = sum(subtree_width(r) for r in trimmed_roots) + H_GAP * (len(trimmed_roots) - 1)
-    h_levels   = [NODE_H_FULL, NODE_H_FULL, NODE_H_DIV]
-    total_h    = sum(h_levels[:actual_max + 1]) + V_GAP * actual_max + 130
+    total_h    = (actual_max + 1) * (NODE_H_FULL + V_GAP) + HEADER_H + FOOTER_H + 40
     page_w = max(total_w + 120, landscape(A3)[0])
-    page_h = max(total_h + 80,  landscape(A3)[1])
+    page_h = max(total_h, landscape(A3)[1])
+
     x_start = page_w / 2 - total_w / 2
-    y_top   = page_h - 90
+    y_top   = page_h - HEADER_H - 20
     for root in trimmed_roots:
         rw = subtree_width(root)
         assign_pos(root, x_start + rw / 2, y_top)
@@ -365,54 +563,136 @@ def generate_pdf_summary(tree_nodes, title_text):
 
     buffer = BytesIO()
     c = rl_canvas.Canvas(buffer, pagesize=(page_w, page_h))
-    c.setFillColor(colors.HexColor("#0f1117")); c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
-    c.setFillColor(colors.white); c.setFont("Helvetica-Bold", 16)
-    c.drawCentredString(page_w / 2, page_h - 40, title_text)
-    c.setFont("Helvetica", 9); c.setFillColor(colors.HexColor("#6b7280"))
-    c.drawCentredString(page_w / 2, page_h - 56, f"Ditampilkan hingga Level 2 · {len(draw_list)} node")
+
+    # Background
+    c.setFillColor(PDF_PAGE_BG)
+    c.rect(0, 0, page_w, page_h, fill=1, stroke=0)
+
+    # Header & Footer
+    _draw_pdf_header(c, page_w, page_h, title_text,
+                     subtitle=f"Organization Chart — Summary (s/d Level 2)",
+                     total_nodes=len(draw_list),
+                     downloaded_at=downloaded_at,
+                     div_name=div_name, bu_name=bu_name)
+    _draw_pdf_footer(c, page_w, downloaded_at)
+
+    # Level labels di sisi kiri
     y_seen = {}
     for node in draw_list:
-        nx, ny, depth = positions[node["id"]]
+        _, ny, depth = positions[node["id"]]
         if depth not in y_seen:
             y_seen[depth] = ny
-    for depth, label in {0: "Top Level", 1: "Level 1", 2: "Level 2"}.items():
+    for depth, lbl in {0: "Top Level", 1: "Level 1", 2: "Level 2"}.items():
         if depth in y_seen:
-            c.setFillColor(colors.HexColor("#4b5563")); c.setFont("Helvetica-Bold", 8)
-            c.drawString(12, y_seen[depth] - 4, label)
-    c.setStrokeColor(colors.HexColor("#3d4160")); c.setLineWidth(1.2)
+            c.setFillColor(PDF_TEXT_MUTED)
+            c.setFont("Helvetica-Bold", 7)
+            c.drawString(8, y_seen[depth] - 4, lbl)
+
+    # Konektor
+    c.setStrokeColor(PDF_CONNECTOR)
+    c.setLineWidth(1.2)
     for node in draw_list:
-        nx, ny, depth = positions[node["id"]]
+        nx, ny, _ = positions[node["id"]]
         nh = node_h(node)
         for child in node["children"]:
             if child["id"] not in positions:
                 continue
             cx, cy, _ = positions[child["id"]]
-            ch  = node_h(child)
-            mid = (ny - nh / 2 + cy + ch / 2) / 2
-            c.line(nx, ny - nh/2, nx, mid); c.line(nx, mid, cx, mid); c.line(cx, mid, cx, cy + ch/2)
+            ch2 = node_h(child)
+            mid = (ny - nh / 2 + cy + ch2 / 2) / 2
+            c.line(nx, ny - nh / 2, nx, mid)
+            c.line(nx, mid, cx, mid)
+            c.line(cx, mid, cx, cy + ch2 / 2)
+
+    # Node cards
     for node in draw_list:
         nx, ny, depth = positions[node["id"]]
-        nw, nh = node_w(node), node_h(node)
-        x_left, y_bottom = nx - nw / 2, ny - nh / 2
-        if depth < 2:
-            if node.get("in_div", True):
-                fill, txt, bdr = colors.HexColor("#CCCCFF"), colors.HexColor("#1a1a2e"), colors.HexColor("#9999ee")
-            else:
-                fill, txt, bdr = colors.HexColor("#2a2d3e"), colors.HexColor("#c0c8e0"), colors.HexColor("#3d4160")
-            c.setFillColor(fill); c.setStrokeColor(bdr); c.setLineWidth(1.5)
-            c.roundRect(x_left, y_bottom, nw, nh, 7, fill=1, stroke=1)
-            c.setFillColor(txt); c.setFont("Helvetica-Bold", 8)
-            c.drawCentredString(nx, y_bottom + nh - 15, node["name"][:24] + "…" if len(node["name"]) > 24 else node["name"])
-            c.setFont("Helvetica", 7)
-            c.drawCentredString(nx, y_bottom + nh - 27, node["position"][:28] + "…" if len(node["position"]) > 28 else node["position"])
-            c.setFont("Helvetica", 6.5)
-            c.drawCentredString(nx, y_bottom + nh - 39, node["division"][:30] + "…" if len(node["division"]) > 30 else node["division"])
+        nw, nh  = node_w(node), node_h(node)
+        x_left  = nx - nw / 2
+        y_bot   = ny - nh / 2
+        in_div  = node.get("in_div", True)
+        emp_id  = node.get("id", "")
+        name    = node.get("name", "")
+        position = node.get("position", "")
+        sbu     = node.get("sbu", "")
+        division = node.get("division", "")
+
+        if in_div:
+            fill_c, bdr_c, bar_c = PDF_PRIMARY_LT, PDF_PRIMARY_MID, PDF_PRIMARY
+            name_c = PDF_TEXT_DARK
+            pos_c  = PDF_TEXT_MID
         else:
-            c.setFillColor(colors.HexColor("#1e2433")); c.setStrokeColor(colors.HexColor("#3d4160")); c.setLineWidth(1)
-            c.roundRect(x_left, y_bottom, nw, nh, 5, fill=1, stroke=1)
-            c.setFillColor(colors.HexColor("#94a3b8")); c.setFont("Helvetica", 7)
-            c.drawCentredString(nx, y_bottom + nh / 2 - 4, node["division"][:22] + "…" if len(node["division"]) > 22 else node["division"])
-    c.save(); buffer.seek(0)
+            fill_c, bdr_c, bar_c = PDF_OUT_BG, PDF_OUT_BDR, PDF_OUT_BDR
+            name_c = PDF_TEXT_MID
+            pos_c  = PDF_TEXT_MUTED
+
+        # Card
+        c.setFillColor(fill_c)
+        c.setStrokeColor(bdr_c)
+        c.setLineWidth(0.8)
+        c.roundRect(x_left, y_bot, nw, nh, 6, fill=1, stroke=1)
+
+        # Accent bar kiri
+        c.setFillColor(bar_c)
+        c.roundRect(x_left, y_bot, 3, nh, 3, fill=1, stroke=0)
+
+        # Nama (bold, wrap)
+        name_lines = _wrap_text(name, 26 if depth < 2 else 22)
+        c.setFillColor(name_c)
+        font_size_name = 8.5 if depth < 2 else 8
+        c.setFont("Helvetica-Bold", font_size_name)
+        line_h_name = 10
+        if len(name_lines) >= 2:
+            c.drawCentredString(nx, y_bot + nh - 15, name_lines[0])
+            c.drawCentredString(nx, y_bot + nh - 15 - line_h_name, name_lines[1])
+            pos_y = y_bot + nh - 15 - line_h_name - 11
+        else:
+            c.drawCentredString(nx, y_bot + nh - 17, name_lines[0])
+            pos_y = y_bot + nh - 17 - 11
+
+        # Posisi (italic, wrap)
+        pos_lines = _wrap_text(position, 28 if depth < 2 else 24)
+        c.setFillColor(pos_c)
+        c.setFont("Helvetica", 7 if depth < 2 else 6.5)
+        for li, pl in enumerate(pos_lines[:2]):
+            c.drawCentredString(nx, pos_y - li * 9, pl)
+        sbu_y = pos_y - len(pos_lines[:2]) * 9 - 5
+
+        # Divisi (jika out-of-div, tampilkan divisi aslinya)
+        if not in_div and division and sbu_y > y_bot + 16:
+            div_short = division[:24] + "…" if len(division) > 24 else division
+            c.setFont("Helvetica", 6)
+            c.setFillColor(PDF_TEXT_MUTED)
+            c.drawCentredString(nx, sbu_y, div_short)
+            sbu_y -= 9
+
+        # SBU
+        sbu_clean = sbu.strip() if sbu and sbu.strip() not in ("", "nan") else ""
+        if sbu_clean and sbu_y > y_bot + 7:
+            c.setFont("Helvetica-Oblique", 6.5)
+            c.setFillColor(PDF_PRIMARY if in_div else PDF_OUT_BDR)
+            sbu_disp = sbu_clean[:26] + "…" if len(sbu_clean) > 26 else sbu_clean
+            c.drawCentredString(nx, sbu_y, sbu_disp)
+
+        # Employee ID
+        c.setFont("Helvetica", 5.5)
+        c.setFillColor(PDF_TEXT_MUTED)
+        c.drawRightString(x_left + nw - 5, y_bot + 4, emp_id)
+
+    # Legend
+    leg_x, leg_y = 36, FOOTER_H + 8
+    for li, (f, b, lbl) in enumerate([
+        (PDF_PRIMARY_LT, PDF_PRIMARY_MID, "Karyawan divisi ini"),
+        (PDF_OUT_BG,     PDF_OUT_BDR,     "Atasan dari divisi lain"),
+    ]):
+        ox = leg_x + li * 170
+        c.setFillColor(f); c.setStrokeColor(b); c.setLineWidth(0.7)
+        c.roundRect(ox, leg_y, 12, 9, 2, fill=1, stroke=1)
+        c.setFillColor(PDF_TEXT_MUTED); c.setFont("Helvetica", 7)
+        c.drawString(ox + 16, leg_y + 1, lbl)
+
+    c.save()
+    buffer.seek(0)
     return buffer.getvalue()
 
 
@@ -872,44 +1152,6 @@ hr {{ border: none !important; border-top: 1px solid {T["outline"]} !important; 
 [data-testid="stCheckbox"] label {{
     font-size: 13.5px !important; color: {T["text_variant"]} !important; font-weight: 500 !important;
 }}
-
-/* ── Form widget labels — fix visibility di light mode ── */
-[data-testid="stSelectbox"] label,
-[data-testid="stTextInput"] label,
-[data-testid="stTextArea"] label,
-[data-testid="stNumberInput"] label,
-[data-testid="stDateInput"] label,
-[data-testid="stTimeInput"] label,
-[data-testid="stMultiSelect"] label,
-[data-testid="stSlider"] label,
-[data-testid="stFileUploader"] label {{
-    color: {T["text"]} !important;
-    font-size: 13px !important;
-    font-weight: 600 !important;
-    font-family: 'Plus Jakarta Sans', sans-serif !important;
-}}
-[data-testid="stSelectbox"] p,
-[data-testid="stTextInput"] p,
-[data-testid="stTextArea"] p,
-[data-testid="stNumberInput"] p,
-[data-testid="stDateInput"] p,
-[data-testid="stMultiSelect"] p,
-[data-testid="stFileUploader"] p,
-[data-testid="stSlider"] p {{
-    color: {T["text"]} !important;
-}}
-[data-testid="stRadio"] > label,
-[data-testid="stCheckbox"] > label {{
-    color: {T["text"]} !important;
-    font-weight: 600 !important;
-}}
-[data-testid="stMarkdownContainer"] p {{
-    color: {T["text"]} !important;
-}}
-[data-testid="stCaptionContainer"] p {{
-    color: {T["text_variant"]} !important;
-    font-size: 12px !important;
-}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1127,13 +1369,15 @@ if _active == 0:
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col_dl3:
             try:
-                pdf_data = generate_pdf(tree_data, f"Org Chart — {selected_div} ({selected_bu})")
+                pdf_data = generate_pdf(tree_data, f"Org Chart — {selected_div} ({selected_bu})",
+                                        div_name=selected_div, bu_name=selected_bu)
                 st.download_button("📑 PDF (Full)", pdf_data, f"{selected_div}_full.pdf", "application/pdf", use_container_width=True)
             except Exception:
                 st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
         with col_dl4:
             try:
-                pdf_sum = generate_pdf_summary(tree_data, f"Org Chart Summary — {selected_div} ({selected_bu})")
+                pdf_sum = generate_pdf_summary(tree_data, f"Org Chart Summary — {selected_div} ({selected_bu})",
+                                              div_name=selected_div, bu_name=selected_bu)
                 st.download_button("📑 PDF (Summary)", pdf_sum, f"{selected_div}_summary.pdf", "application/pdf", use_container_width=True)
             except Exception:
                 st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
@@ -1162,13 +1406,15 @@ if _active == 0:
                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
         with col_dl6:
             try:
-                pdf2 = generate_pdf(tree_data2, "Org Chart — Seluruh Perusahaan")
+                pdf2 = generate_pdf(tree_data2, "Org Chart — Seluruh Perusahaan",
+                                    div_name="Semua Divisi", bu_name="Seluruh BU")
                 st.download_button("📑 PDF (Full)", pdf2, "orgchart_perusahaan_full.pdf", "application/pdf", use_container_width=True)
             except Exception:
                 st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
         with col_dl7:
             try:
-                pdf_sum2 = generate_pdf_summary(tree_data2, "Org Chart Summary — Seluruh Perusahaan")
+                pdf_sum2 = generate_pdf_summary(tree_data2, "Org Chart Summary — Seluruh Perusahaan",
+                                               div_name="Semua Divisi", bu_name="Seluruh BU")
                 st.download_button("📑 PDF (Summary)", pdf_sum2, "orgchart_perusahaan_summary.pdf", "application/pdf", use_container_width=True)
             except Exception:
                 st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
@@ -1181,7 +1427,7 @@ elif _active == 1:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Data Karyawan</div>
-        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
+        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1226,7 +1472,7 @@ elif _active == 2:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Manager ID Hilang</div>
-        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
+        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
             Karyawan yang Manager ID-nya kosong atau tidak terdaftar — perlu diperbaiki di backend
         </div>
     </div>
@@ -1280,7 +1526,7 @@ elif _active == 3:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Daftar Manager</div>
-        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control</div>
+        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1312,29 +1558,18 @@ elif _active == 3:
     mgr_df = mgr_df.merge(sub_count, on="Employee ID", how="left")
     mgr_df["Bawahan Langsung"] = mgr_df["Bawahan Langsung"].fillna(0).astype(int)
     
-    # [FIX-2] BFS global satu kali — O(n) vs O(n²) sebelumnya
     children_map = df[df["Manager ID"] != ""].groupby("Manager ID")["Employee ID"].apply(list).to_dict()
+    
+    def get_total_span(mgr_id):
+        total = 0
+        to_visit = children_map.get(mgr_id, [])[:]
+        while to_visit:
+            curr = to_visit.pop(0)
+            total += 1
+            to_visit.extend(children_map.get(curr, [])) 
+        return total
 
-    def _compute_all_spans(cmap: dict) -> dict:
-        span: dict = {}
-        all_nodes = set(cmap.keys()) | {c for ch in cmap.values() for c in ch}
-        for node in all_nodes:
-            if node in span:
-                continue
-            stack = [(node, False)]
-            while stack:
-                cur, processed = stack.pop()
-                if processed:
-                    span[cur] = sum(1 + span.get(ch, 0) for ch in cmap.get(cur, []))
-                else:
-                    stack.append((cur, True))
-                    for ch in cmap.get(cur, []):
-                        if ch not in span:
-                            stack.append((ch, False))
-        return span
-
-    _all_spans = _compute_all_spans(children_map)
-    mgr_df["Total Span (Semua Bawahan)"] = mgr_df["Employee ID"].map(_all_spans).fillna(0).astype(int)
+    mgr_df["Total Span (Semua Bawahan)"] = mgr_df["Employee ID"].apply(get_total_span)
 
     mgr_df["Level Hierarki"] = mgr_df["Employee ID"].apply(
         lambda eid: {0: "Chief", 1: "C-1", 2: "C-2"}.get(hierarchy_levels.get(eid), "-")
@@ -1413,7 +1648,7 @@ elif _active == 4:
     st.markdown(f"""
     <div style="margin-bottom:24px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Structure Change Request</div>
-        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
+        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
             Kelola permintaan perubahan struktur organisasi — Reporting Line & Divisi
         </div>
     </div>
@@ -1553,11 +1788,9 @@ elif _active == 4:
                             for e in errors_upload: st.error(f"❌ {e}")
                         else:
                             if st.button("📨  Kirim Semua Request dari File", use_container_width=True, key="submit_upload"):
-                                rows_from_file = [
-                                    (str(r.get("Employee ID","")).strip(), str(r.get("Employee Name","")).strip(),
-                                     str(r.get(old_col,"")).strip(), str(r.get(new_col,"")).strip())
-                                    for r in upload_df[required_cols].to_dict("records")
-                                ]
+                                rows_from_file = [(str(r.get("Employee ID","")).strip(), str(r.get("Employee Name","")).strip(),
+                                                   str(r.get(old_col,"")).strip(), str(r.get(new_col,"")).strip())
+                                                  for _, r in upload_df.iterrows()]
                                 _, _, success_count = process_and_save(rows_from_file, req_name_shared, req_email_shared,
                                                                        change_type_shared, alasan_shared, eff_date_shared)
                                 if success_count > 0:
@@ -1606,8 +1839,7 @@ elif _active == 4:
                 st.markdown(f"""<div style="font-size:14px;font-weight:700;color:{T['text']};margin-bottom:12px;">
                     🟡 Pending — Perlu Direview ({len(pending_df)} request)</div>""", unsafe_allow_html=True)
 
-                for row_t in pending_df.itertuples(index=False):
-                    row = row_t._asdict()
+                for _, row in pending_df.iterrows():
                     try:
                         submitted  = datetime.strptime(str(row.get("submitted_date",""))[:16], "%Y-%m-%d %H:%M")
                         age_days   = (datetime.now() - submitted).days
