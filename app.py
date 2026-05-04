@@ -1143,7 +1143,7 @@ elif _active == 1:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Data Karyawan</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1188,7 +1188,7 @@ elif _active == 2:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Manager ID Hilang</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
             Karyawan yang Manager ID-nya kosong atau tidak terdaftar — perlu diperbaiki di backend
         </div>
     </div>
@@ -1242,7 +1242,7 @@ elif _active == 3:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Daftar Manager</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1274,18 +1274,35 @@ elif _active == 3:
     mgr_df = mgr_df.merge(sub_count, on="Employee ID", how="left")
     mgr_df["Bawahan Langsung"] = mgr_df["Bawahan Langsung"].fillna(0).astype(int)
     
+    # [FIX-2] BFS global satu kali — hitung total span semua manager sekaligus
+    # Sebelumnya: .apply(get_total_span) = BFS per-manager = O(n²) untuk 1,600 karyawan
+    # Sekarang: satu BFS dari tiap root, hasilnya di-map → O(n) total
     children_map = df[df["Manager ID"] != ""].groupby("Manager ID")["Employee ID"].apply(list).to_dict()
-    
-    def get_total_span(mgr_id):
-        total = 0
-        to_visit = children_map.get(mgr_id, [])[:]
-        while to_visit:
-            curr = to_visit.pop(0)
-            total += 1
-            to_visit.extend(children_map.get(curr, [])) 
-        return total
 
-    mgr_df["Total Span (Semua Bawahan)"] = mgr_df["Employee ID"].apply(get_total_span)
+    def _compute_all_spans(children_map: dict) -> dict:
+        """Hitung total descendant count untuk setiap node dalam satu traversal."""
+        span: dict = {}
+        # Post-order BFS: hitung dari leaf ke atas
+        # Gunakan iterative DFS dengan visited set
+        all_nodes = set(children_map.keys()) | {c for ch in children_map.values() for c in ch}
+        for node in all_nodes:
+            if node in span:
+                continue
+            # DFS iteratif
+            stack = [(node, False)]
+            while stack:
+                cur, processed = stack.pop()
+                if processed:
+                    span[cur] = sum(1 + span.get(ch, 0) for ch in children_map.get(cur, []))
+                else:
+                    stack.append((cur, True))
+                    for ch in children_map.get(cur, []):
+                        if ch not in span:
+                            stack.append((ch, False))
+        return span
+
+    _all_spans = _compute_all_spans(children_map)
+    mgr_df["Total Span (Semua Bawahan)"] = mgr_df["Employee ID"].map(_all_spans).fillna(0).astype(int)
 
     mgr_df["Level Hierarki"] = mgr_df["Employee ID"].apply(
         lambda eid: {0: "Chief", 1: "C-1", 2: "C-2"}.get(hierarchy_levels.get(eid), "-")
@@ -1364,7 +1381,7 @@ elif _active == 4:
     st.markdown(f"""
     <div style="margin-bottom:24px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Structure Change Request</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
             Kelola permintaan perubahan struktur organisasi — Reporting Line & Divisi
         </div>
     </div>
@@ -1504,9 +1521,16 @@ elif _active == 4:
                             for e in errors_upload: st.error(f"❌ {e}")
                         else:
                             if st.button("📨  Kirim Semua Request dari File", use_container_width=True, key="submit_upload"):
-                                rows_from_file = [(str(r.get("Employee ID","")).strip(), str(r.get("Employee Name","")).strip(),
-                                                   str(r.get(old_col,"")).strip(), str(r.get(new_col,"")).strip())
-                                                  for _, r in upload_df.iterrows()]
+                                # [FIX-3a] Ganti iterrows() dengan to_dict('records') — lebih cepat untuk file besar
+                                rows_from_file = [
+                                    (
+                                        str(r.get("Employee ID","")).strip(),
+                                        str(r.get("Employee Name","")).strip(),
+                                        str(r.get(old_col,"")).strip(),
+                                        str(r.get(new_col,"")).strip()
+                                    )
+                                    for r in upload_df[required_cols].to_dict("records")
+                                ]
                                 _, _, success_count = process_and_save(rows_from_file, req_name_shared, req_email_shared,
                                                                        change_type_shared, alasan_shared, eff_date_shared)
                                 if success_count > 0:
@@ -1555,7 +1579,10 @@ elif _active == 4:
                 st.markdown(f"""<div style="font-size:14px;font-weight:700;color:{T['text']};margin-bottom:12px;">
                     🟡 Pending — Perlu Direview ({len(pending_df)} request)</div>""", unsafe_allow_html=True)
 
-                for _, row in pending_df.iterrows():
+                # [FIX-3b] Ganti iterrows() dengan itertuples() — lebih cepat,
+                # lalu akses via row._asdict() agar tetap bisa .get() seperti sebelumnya
+                for row_t in pending_df.itertuples(index=False):
+                    row = row_t._asdict()
                     try:
                         submitted  = datetime.strptime(str(row.get("submitted_date",""))[:16], "%Y-%m-%d %H:%M")
                         age_days   = (datetime.now() - submitted).days
