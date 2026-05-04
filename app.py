@@ -872,6 +872,44 @@ hr {{ border: none !important; border-top: 1px solid {T["outline"]} !important; 
 [data-testid="stCheckbox"] label {{
     font-size: 13.5px !important; color: {T["text_variant"]} !important; font-weight: 500 !important;
 }}
+
+/* ── Form widget labels — fix visibility di light mode ── */
+[data-testid="stSelectbox"] label,
+[data-testid="stTextInput"] label,
+[data-testid="stTextArea"] label,
+[data-testid="stNumberInput"] label,
+[data-testid="stDateInput"] label,
+[data-testid="stTimeInput"] label,
+[data-testid="stMultiSelect"] label,
+[data-testid="stSlider"] label,
+[data-testid="stFileUploader"] label {{
+    color: {T["text"]} !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+}}
+[data-testid="stSelectbox"] p,
+[data-testid="stTextInput"] p,
+[data-testid="stTextArea"] p,
+[data-testid="stNumberInput"] p,
+[data-testid="stDateInput"] p,
+[data-testid="stMultiSelect"] p,
+[data-testid="stFileUploader"] p,
+[data-testid="stSlider"] p {{
+    color: {T["text"]} !important;
+}}
+[data-testid="stRadio"] > label,
+[data-testid="stCheckbox"] > label {{
+    color: {T["text"]} !important;
+    font-weight: 600 !important;
+}}
+[data-testid="stMarkdownContainer"] p {{
+    color: {T["text"]} !important;
+}}
+[data-testid="stCaptionContainer"] p {{
+    color: {T["text_variant"]} !important;
+    font-size: 12px !important;
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1274,29 +1312,23 @@ elif _active == 3:
     mgr_df = mgr_df.merge(sub_count, on="Employee ID", how="left")
     mgr_df["Bawahan Langsung"] = mgr_df["Bawahan Langsung"].fillna(0).astype(int)
     
-    # [FIX-2] BFS global satu kali — hitung total span semua manager sekaligus
-    # Sebelumnya: .apply(get_total_span) = BFS per-manager = O(n²) untuk 1,600 karyawan
-    # Sekarang: satu BFS dari tiap root, hasilnya di-map → O(n) total
+    # [FIX-2] BFS global satu kali — O(n) vs O(n²) sebelumnya
     children_map = df[df["Manager ID"] != ""].groupby("Manager ID")["Employee ID"].apply(list).to_dict()
 
-    def _compute_all_spans(children_map: dict) -> dict:
-        """Hitung total descendant count untuk setiap node dalam satu traversal."""
+    def _compute_all_spans(cmap: dict) -> dict:
         span: dict = {}
-        # Post-order BFS: hitung dari leaf ke atas
-        # Gunakan iterative DFS dengan visited set
-        all_nodes = set(children_map.keys()) | {c for ch in children_map.values() for c in ch}
+        all_nodes = set(cmap.keys()) | {c for ch in cmap.values() for c in ch}
         for node in all_nodes:
             if node in span:
                 continue
-            # DFS iteratif
             stack = [(node, False)]
             while stack:
                 cur, processed = stack.pop()
                 if processed:
-                    span[cur] = sum(1 + span.get(ch, 0) for ch in children_map.get(cur, []))
+                    span[cur] = sum(1 + span.get(ch, 0) for ch in cmap.get(cur, []))
                 else:
                     stack.append((cur, True))
-                    for ch in children_map.get(cur, []):
+                    for ch in cmap.get(cur, []):
                         if ch not in span:
                             stack.append((ch, False))
         return span
@@ -1521,14 +1553,9 @@ elif _active == 4:
                             for e in errors_upload: st.error(f"❌ {e}")
                         else:
                             if st.button("📨  Kirim Semua Request dari File", use_container_width=True, key="submit_upload"):
-                                # [FIX-3a] Ganti iterrows() dengan to_dict('records') — lebih cepat untuk file besar
                                 rows_from_file = [
-                                    (
-                                        str(r.get("Employee ID","")).strip(),
-                                        str(r.get("Employee Name","")).strip(),
-                                        str(r.get(old_col,"")).strip(),
-                                        str(r.get(new_col,"")).strip()
-                                    )
+                                    (str(r.get("Employee ID","")).strip(), str(r.get("Employee Name","")).strip(),
+                                     str(r.get(old_col,"")).strip(), str(r.get(new_col,"")).strip())
                                     for r in upload_df[required_cols].to_dict("records")
                                 ]
                                 _, _, success_count = process_and_save(rows_from_file, req_name_shared, req_email_shared,
@@ -1579,8 +1606,6 @@ elif _active == 4:
                 st.markdown(f"""<div style="font-size:14px;font-weight:700;color:{T['text']};margin-bottom:12px;">
                     🟡 Pending — Perlu Direview ({len(pending_df)} request)</div>""", unsafe_allow_html=True)
 
-                # [FIX-3b] Ganti iterrows() dengan itertuples() — lebih cepat,
-                # lalu akses via row._asdict() agar tetap bisa .get() seperti sebelumnya
                 for row_t in pending_df.itertuples(index=False):
                     row = row_t._asdict()
                     try:
