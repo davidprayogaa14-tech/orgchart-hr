@@ -212,17 +212,17 @@ def to_excel(dataframe: pd.DataFrame) -> bytes:
 
 # ── Palette PDF (light/print-friendly) ─────────────────────────
 PDF_BG          = colors.HexColor("#FFFFFF")
-PDF_PAGE_BG     = colors.HexColor("#F8F7FF")
+PDF_PAGE_BG     = colors.HexColor("#F5F4FF")
 PDF_PRIMARY     = colors.HexColor("#4234b6")
 PDF_PRIMARY_LT  = colors.HexColor("#EDE9FE")
-PDF_PRIMARY_MID = colors.HexColor("#C4B5FD")
+PDF_PRIMARY_MID = colors.HexColor("#7C6FCD")
 PDF_TEXT_DARK   = colors.HexColor("#1a1b21")
-PDF_TEXT_MID    = colors.HexColor("#46464f")
-PDF_TEXT_MUTED  = colors.HexColor("#76767f")
-PDF_OUT_BG      = colors.HexColor("#F4F3FB")
-PDF_OUT_BDR     = colors.HexColor("#C4B5FD")
-PDF_OUT_TXT     = colors.HexColor("#46464f")
-PDF_CONNECTOR   = colors.HexColor("#C4B5FD")
+PDF_TEXT_MID    = colors.HexColor("#3a3a4a")
+PDF_TEXT_MUTED  = colors.HexColor("#6b6b80")
+PDF_OUT_BG      = colors.HexColor("#E8EAF0")
+PDF_OUT_BDR     = colors.HexColor("#9098B8")
+PDF_OUT_TXT     = colors.HexColor("#2a2d40")
+PDF_CONNECTOR   = colors.HexColor("#A89FE0")
 PDF_ACCENT_BAR  = colors.HexColor("#4234b6")
 
 
@@ -357,12 +357,12 @@ def generate_pdf(tree_nodes, title_text, div_name="", bu_name=""):
     for r in tree_nodes:
         get_depth(r)
 
-    total_h = (max_depth[0] + 1) * (NODE_H + V_GAP) + HEADER_H + FOOTER_H + 40
+    total_h = (max_depth[0] + 1) * (NODE_H + V_GAP) + HEADER_H + FOOTER_H + 60
     page_w  = max(total_w + 120, landscape(A3)[0])
     page_h  = max(total_h, landscape(A3)[1])
 
     x_start = page_w / 2 - total_w / 2
-    y_top   = page_h - HEADER_H - 20
+    y_top   = page_h - HEADER_H - NODE_H / 2 - 28
     for root in tree_nodes:
         rw = calc_subtree_width(root)
         assign_positions(root, x_start + rw / 2, y_top)
@@ -436,27 +436,26 @@ def generate_pdf(tree_nodes, title_text, div_name="", bu_name=""):
 
         # Teks dalam card — y dari atas ke bawah
         text_x  = nx          # center
-        text_lx = x_left + 8  # kiri dengan padding
 
         # Baris 1: Nama (bold, bisa 2 baris jika panjang)
-        name_lines = _wrap_text(name, 24)
+        name_lines = _wrap_text(name, 22)
         c.setFillColor(txt_c)
-        c.setFont("Helvetica-Bold", 8)
+        c.setFont("Helvetica-Bold", 9)
         if len(name_lines) >= 2:
-            c.drawCentredString(text_x, y_bottom + NODE_H - 14, name_lines[0])
-            c.drawCentredString(text_x, y_bottom + NODE_H - 23, name_lines[1])
-            pos_y = y_bottom + NODE_H - 34
+            c.drawCentredString(text_x, y_bottom + NODE_H - 16, name_lines[0])
+            c.drawCentredString(text_x, y_bottom + NODE_H - 27, name_lines[1])
+            pos_y = y_bottom + NODE_H - 40
         else:
-            c.drawCentredString(text_x, y_bottom + NODE_H - 17, name_lines[0])
-            pos_y = y_bottom + NODE_H - 28
+            c.drawCentredString(text_x, y_bottom + NODE_H - 20, name_lines[0])
+            pos_y = y_bottom + NODE_H - 33
 
         # Baris 2: Posisi (wrap 2 baris maks)
-        pos_lines = _wrap_text(position, 26)
-        c.setFont("Helvetica", 7)
+        pos_lines = _wrap_text(position, 24)
+        c.setFont("Helvetica", 7.5)
         c.setFillColor(PDF_TEXT_MID if in_div else PDF_TEXT_MUTED)
         for li, pl in enumerate(pos_lines[:2]):
-            c.drawCentredString(text_x, pos_y - li * 9, pl)
-        sbu_y = pos_y - len(pos_lines[:2]) * 9 - 4
+            c.drawCentredString(text_x, pos_y - li * 10, pl)
+        sbu_y = pos_y - len(pos_lines[:2]) * 10 - 5
 
         # Baris 3: SBU/Tribe (jika ada)
         sbu_clean = sbu.strip() if sbu and sbu.strip() not in ("", "nan") else ""
@@ -469,7 +468,7 @@ def generate_pdf(tree_nodes, title_text, div_name="", bu_name=""):
         # Employee ID kecil di pojok kanan bawah
         c.setFont("Helvetica", 5.5)
         c.setFillColor(PDF_TEXT_MUTED)
-        c.drawRightString(x_left + NODE_W - 5, y_bottom + 4, emp_id)
+        c.drawRightString(x_left + NODE_W - 6, y_bottom + 5, emp_id)
 
     # Legend
     leg_x, leg_y = 36, FOOTER_H + 8
@@ -550,12 +549,12 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
 
     actual_max = max((max_depth_tree(r) for r in trimmed_roots), default=0)
     total_w    = sum(subtree_width(r) for r in trimmed_roots) + H_GAP * (len(trimmed_roots) - 1)
-    total_h    = (actual_max + 1) * (NODE_H_FULL + V_GAP) + HEADER_H + FOOTER_H + 40
+    total_h    = (actual_max + 1) * (NODE_H_FULL + V_GAP) + HEADER_H + FOOTER_H + 60
     page_w = max(total_w + 120, landscape(A3)[0])
     page_h = max(total_h, landscape(A3)[1])
 
     x_start = page_w / 2 - total_w / 2
-    y_top   = page_h - HEADER_H - 20
+    y_top   = page_h - HEADER_H - NODE_H_FULL / 2 - 28
     for root in trimmed_roots:
         rw = subtree_width(root)
         assign_pos(root, x_start + rw / 2, y_top)
@@ -623,7 +622,7 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
             pos_c  = PDF_TEXT_MID
         else:
             fill_c, bdr_c, bar_c = PDF_OUT_BG, PDF_OUT_BDR, PDF_OUT_BDR
-            name_c = PDF_TEXT_MID
+            name_c = PDF_OUT_TXT
             pos_c  = PDF_TEXT_MUTED
 
         # Card
@@ -637,26 +636,26 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
         c.roundRect(x_left, y_bot, 3, nh, 3, fill=1, stroke=0)
 
         # Nama (bold, wrap)
-        name_lines = _wrap_text(name, 26 if depth < 2 else 22)
+        name_lines = _wrap_text(name, 24 if depth < 2 else 20)
         c.setFillColor(name_c)
-        font_size_name = 8.5 if depth < 2 else 8
+        font_size_name = 9.5 if depth < 2 else 9
         c.setFont("Helvetica-Bold", font_size_name)
-        line_h_name = 10
+        line_h_name = 11
         if len(name_lines) >= 2:
-            c.drawCentredString(nx, y_bot + nh - 15, name_lines[0])
-            c.drawCentredString(nx, y_bot + nh - 15 - line_h_name, name_lines[1])
-            pos_y = y_bot + nh - 15 - line_h_name - 11
-        else:
             c.drawCentredString(nx, y_bot + nh - 17, name_lines[0])
-            pos_y = y_bot + nh - 17 - 11
+            c.drawCentredString(nx, y_bot + nh - 17 - line_h_name, name_lines[1])
+            pos_y = y_bot + nh - 17 - line_h_name - 13
+        else:
+            c.drawCentredString(nx, y_bot + nh - 20, name_lines[0])
+            pos_y = y_bot + nh - 20 - 13
 
         # Posisi (italic, wrap)
-        pos_lines = _wrap_text(position, 28 if depth < 2 else 24)
+        pos_lines = _wrap_text(position, 26 if depth < 2 else 22)
         c.setFillColor(pos_c)
-        c.setFont("Helvetica", 7 if depth < 2 else 6.5)
+        c.setFont("Helvetica", 7.5 if depth < 2 else 7)
         for li, pl in enumerate(pos_lines[:2]):
-            c.drawCentredString(nx, pos_y - li * 9, pl)
-        sbu_y = pos_y - len(pos_lines[:2]) * 9 - 5
+            c.drawCentredString(nx, pos_y - li * 10, pl)
+        sbu_y = pos_y - len(pos_lines[:2]) * 10 - 6
 
         # Divisi (jika out-of-div, tampilkan divisi aslinya)
         if not in_div and division and sbu_y > y_bot + 16:
@@ -747,7 +746,7 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
   .single-child::before {{ display: none !important; }}
   .child-col {{ display: flex; flex-direction: column; align-items: center; padding: 0 10px; }}
   .collapsed-hint {{ font-size: 10px; color: {hint_color}; margin-top: 4px; text-align: center; font-weight: 500; }}
-  .legend {{ position: fixed; bottom: 16px; left: 16px; display: flex; gap: 16px; font-size: 11px; color: #a0a8c0; background: rgba(15,17,23,0.9); padding: 8px 14px; border-radius: 10px; border: 1px solid #2d3448; }}
+  .legend {{ position: fixed; bottom: 16px; left: 16px; display: flex; gap: 16px; font-size: 11px; color: {hint_color}; background: {tb_bg}; padding: 8px 14px; border-radius: 10px; border: 1px solid {tb_border}; box-shadow: 0 2px 12px rgba(66,52,182,0.10); }}
   .legend-item {{ display: flex; align-items: center; gap: 6px; }}
   .legend-dot {{ width: 12px; height: 12px; border-radius: 3px; }}
 </style></head><body>
@@ -760,10 +759,10 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
 </div>
 <div id="canvas"><div id="tree-root"></div></div>
 <div class="legend">
-  <div class="legend-item"><div class="legend-dot" style="background:#CCCCFF;border:1px solid #9999ee"></div><span>Divisi ini</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#2a2d3e;border:1px solid #3d4160"></div><span>Atasan luar divisi</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:{node_in_bdr};border:1px solid {node_in_bdr}"></div><span>Divisi ini</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:{node_out_bdr};border:1px solid {node_out_bdr}"></div><span>Atasan luar divisi</span></div>
   <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;border-radius:999px"></div><span>Jml subordinate</span></div>
-  <div class="legend-item" style="color:#5a6080">💡 Klik node · Scroll zoom · Drag geser</div>
+  <div class="legend-item" style="color:{hint_color}">💡 Klik node · Scroll zoom · Drag geser</div>
 </div>
 <script>
 const treeData = {tree_json_str};
