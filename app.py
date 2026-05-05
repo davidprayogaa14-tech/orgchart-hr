@@ -714,7 +714,7 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
     tb_bg       = th.get("tb_bg",       "#ffffff")
     tb_color    = th.get("tb_color",    "#7c6fcd")
     tb_border   = th.get("tb_border",   "#ede9fe")
-    hint_color  = th.get("text3",       "#9e9ec0")
+    hint_color  = th.get("text_variant",  "#9e9ec0")
 
     return f"""
 <!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -859,8 +859,8 @@ T = {
     "primary_fixed":   "#1e1a3a"   if dm else "#e4dfff",
     "on_primary":      "#ffffff"   if dm else "#ffffff",
     "text":            "#e8e6ff"   if dm else "#1a1b21",
-    "text_variant":    "#9e9ec8"   if dm else "#46464f",
-    "text3":           "#6b6b9e"   if dm else "#76767f",
+    "text_variant":    "#9e9ec8"   if dm else "#36364a",
+    "text3":           "#6b6b9e"   if dm else "#5a5a6a",
     "outline":         "rgba(200,196,214,0.20)" if dm else "rgba(200,196,214,0.35)",
     "outline_hover":   "rgba(200,196,214,0.60)" if dm else "rgba(66,52,182,0.40)",
     "sidebar_bg":      "#13151f"   if dm else "#CCCCFF",
@@ -898,10 +898,10 @@ T = {
     "dl_btn_color":    "#9b8fef"   if dm else "#4234b6",
     "input_bg":        "#1a1d2e"   if dm else "#ffffff",
     "tab_active":      "#9b8fef"   if dm else "#4234b6",
-    "tab_inactive":    "#4a4a7a"   if dm else "#76767f",
+    "tab_inactive":    "#4a4a7a"   if dm else "#4a4a60",
     "divider":         "rgba(200,196,214,0.20)" if dm else "rgba(200,196,214,0.30)",
-    "radio_txt":       "#c4b5fd"   if dm else "#46464f",
-    "label_txt":       "#6b6b9e"   if dm else "#76767f",
+    "radio_txt":       "#c4b5fd"   if dm else "#1a1b21",
+    "label_txt":       "#6b6b9e"   if dm else "#36364a",
 }
 
 CHART_COLORS = {
@@ -1142,18 +1142,60 @@ div[data-baseweb="popover"] {{ background: transparent !important; }}
     background: {T["surface_lowest"]} !important; border: none !important;
     box-shadow: 0 0 0 1px {T["outline"]} !important;
 }}
-[data-testid="stCaptionContainer"] p {{ color: {T["text3"]} !important; font-size: 12px !important; }}
-small {{ color: {T["text3"]} !important; }}
+[data-testid="stAlert"] p {{ color: {T["text"]} !important; }}
+[data-testid="stCaptionContainer"] p {{ color: {T["text_variant"]} !important; font-size: 12px !important; }}
+small {{ color: {T["text_variant"]} !important; }}
+
+/* WIDGET LABELS — selectbox, text_input, radio, semua */
+[data-testid="stWidgetLabel"] {{
+    color: {T["text"]} !important; font-size: 13px !important; font-weight: 600 !important;
+}}
+[data-testid="stWidgetLabel"] p {{
+    color: {T["text"]} !important; font-size: 13px !important; font-weight: 600 !important;
+}}
+label, .stSelectbox label, .stTextInput label, .stTextArea label,
+.stNumberInput label, .stDateInput label, .stSlider label {{
+    color: {T["text"]} !important; font-weight: 600 !important; font-size: 13px !important;
+}}
+
+/* MARKDOWN TEXT */
+[data-testid="stMarkdownContainer"] p {{
+    color: {T["text"]} !important;
+}}
+[data-testid="stMarkdownContainer"] li {{
+    color: {T["text"]} !important;
+}}
+
+/* RADIO */
 [data-testid="stRadio"] label {{
     font-size: 13.5px !important; font-weight: 600 !important; color: {T["text"]} !important;
 }}
 [data-testid="stRadio"] div[role="radiogroup"] label p {{
     color: {T["text"]} !important; font-weight: 600 !important;
 }}
-hr {{ border: none !important; border-top: 1px solid {T["outline"]} !important; }}
-[data-testid="stCheckbox"] label {{
-    font-size: 13.5px !important; color: {T["text_variant"]} !important; font-weight: 500 !important;
+[data-testid="stRadio"] > label {{
+    color: {T["text"]} !important;
 }}
+
+/* CHECKBOX */
+[data-testid="stCheckbox"] label {{
+    font-size: 13.5px !important; color: {T["text"]} !important; font-weight: 500 !important;
+}}
+[data-testid="stCheckbox"] label p {{
+    color: {T["text"]} !important;
+}}
+
+/* SELECT OPTIONS in dropdown */
+[data-baseweb="select"] span {{
+    color: {T["text"]} !important;
+}}
+
+/* HELP TOOLTIP ICON */
+[data-testid="stTooltipIcon"] {{
+    color: {T["text_variant"]} !important;
+}}
+
+hr {{ border: none !important; border-top: 1px solid {T["outline"]} !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1467,7 +1509,7 @@ elif _active == 1:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Data Karyawan</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1512,7 +1554,7 @@ elif _active == 2:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Manager ID Hilang</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
             Karyawan yang Manager ID-nya kosong atau tidak terdaftar — perlu diperbaiki di backend
         </div>
     </div>
@@ -1566,7 +1608,7 @@ elif _active == 3:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Daftar Manager</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1688,7 +1730,7 @@ elif _active == 4:
     st.markdown(f"""
     <div style="margin-bottom:24px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Structure Change Request</div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
             Kelola permintaan perubahan struktur organisasi — Reporting Line & Divisi
         </div>
     </div>
@@ -1759,10 +1801,10 @@ elif _active == 4:
             with st.form("cr_form_manual", clear_on_submit=True):
                 num_rows = st.number_input("Jumlah karyawan", min_value=1, max_value=5, value=1, step=1)
                 h1c, h2c, h3c, h4c = st.columns([1.5, 2, 2.5, 2.5])
-                h1c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text3']};'>Employee ID</div>", unsafe_allow_html=True)
-                h2c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text3']};'>Nama Karyawan</div>", unsafe_allow_html=True)
-                h3c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text3']};'>{'Previous Manager' if change_type_shared=='Reporting Line' else 'Divisi Lama'}</div>", unsafe_allow_html=True)
-                h4c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text3']};'>{'New Manager' if change_type_shared=='Reporting Line' else 'Divisi Baru'}</div>", unsafe_allow_html=True)
+                h1c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text_variant']};'>Employee ID</div>", unsafe_allow_html=True)
+                h2c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text_variant']};'>Nama Karyawan</div>", unsafe_allow_html=True)
+                h3c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text_variant']};'>{'Previous Manager' if change_type_shared=='Reporting Line' else 'Divisi Lama'}</div>", unsafe_allow_html=True)
+                h4c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text_variant']};'>{'New Manager' if change_type_shared=='Reporting Line' else 'Divisi Baru'}</div>", unsafe_allow_html=True)
                 rows_data_manual = []
                 for i in range(int(num_rows)):
                     c1, c2, c3, c4 = st.columns([1.5, 2, 2.5, 2.5])
@@ -1896,25 +1938,25 @@ elif _active == 4:
                             st.markdown(f"""
                             <div style="background:{T['bg3']};border-radius:12px;padding:16px;border:1px solid {T['border']};">
                                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                                    <div><div style="font-size:10px;color:{T['text3']};text-transform:uppercase;letter-spacing:0.06em;">Request ID</div>
+                                    <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Request ID</div>
                                         <div style="font-size:13px;font-weight:600;color:{T['text']};">{row.get('request_id','-')}</div></div>
-                                    <div><div style="font-size:10px;color:{T['text3']};text-transform:uppercase;letter-spacing:0.06em;">Masuk</div>
+                                    <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Masuk</div>
                                         <div style="font-size:13px;color:{age_color};font-weight:600;">{age_label}</div></div>
-                                    <div><div style="font-size:10px;color:{T['text3']};text-transform:uppercase;letter-spacing:0.06em;">Karyawan</div>
+                                    <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Karyawan</div>
                                         <div style="font-size:13px;font-weight:600;color:{T['text']};">{row.get('employee_name','-')} ({row.get('employee_id','-')})</div></div>
-                                    <div><div style="font-size:10px;color:{T['text3']};text-transform:uppercase;letter-spacing:0.06em;">Jenis</div>
+                                    <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Jenis</div>
                                         <div style="font-size:13px;font-weight:600;color:{T['accent']};">{row.get('change_type','-')}</div></div>
                                 </div>
                                 <div style="margin-top:12px;padding-top:12px;border-top:1px solid {T['border']};">
                                     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                                        <div><div style="font-size:10px;color:{T['text3']};text-transform:uppercase;letter-spacing:0.06em;">Sebelum</div>
+                                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Sebelum</div>
                                             <div style="font-size:13px;color:#ef4444;font-weight:500;">❌ {row.get('data_lama','-')}</div></div>
-                                        <div><div style="font-size:10px;color:{T['text3']};text-transform:uppercase;letter-spacing:0.06em;">Sesudah</div>
+                                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Sesudah</div>
                                             <div style="font-size:13px;color:#22c55e;font-weight:500;">✅ {row.get('data_baru','-')}</div></div>
                                     </div>
                                 </div>
                                 <div style="margin-top:12px;padding-top:12px;border-top:1px solid {T['border']};">
-                                    <div style="font-size:10px;color:{T['text3']};text-transform:uppercase;letter-spacing:0.06em;">Alasan</div>
+                                    <div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Alasan</div>
                                     <div style="font-size:13px;color:{T['text_variant']};">{row.get('alasan','-')}</div>
                                 </div>
                             </div>
