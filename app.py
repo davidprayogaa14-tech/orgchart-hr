@@ -1145,7 +1145,10 @@ div[data-baseweb="popover"] {{ background: transparent !important; }}
 [data-testid="stCaptionContainer"] p {{ color: {T["text3"]} !important; font-size: 12px !important; }}
 small {{ color: {T["text3"]} !important; }}
 [data-testid="stRadio"] label {{
-    font-size: 13.5px !important; font-weight: 500 !important; color: {T["text_variant"]} !important;
+    font-size: 13.5px !important; font-weight: 600 !important; color: {T["text"]} !important;
+}}
+[data-testid="stRadio"] div[role="radiogroup"] label p {{
+    color: {T["text"]} !important; font-weight: 600 !important;
 }}
 hr {{ border: none !important; border-top: 1px solid {T["outline"]} !important; }}
 [data-testid="stCheckbox"] label {{
@@ -1299,6 +1302,36 @@ if _active == 0:
     """, unsafe_allow_html=True)
     view_mode = st.radio("", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True, label_visibility="collapsed")
 
+    # ── Search Name — berlaku di semua mode ──────────────────────
+    st.markdown(f"""
+    <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
+        letter-spacing:0.06em;margin:16px 0 8px 0;">Cari Karyawan</div>
+    """, unsafe_allow_html=True)
+    col_search, col_search_info = st.columns([3, 5])
+    with col_search:
+        name_search = st.text_input("🔍 Search Name", placeholder="Ketik nama karyawan...",
+                                    key="org_name_search", label_visibility="collapsed")
+    with col_search_info:
+        if name_search.strip():
+            matched = df[df["Employee Name"].str.contains(name_search.strip(), case=False, na=False)]
+            if len(matched) > 0:
+                names_found = ", ".join(matched["Employee Name"].tolist()[:5])
+                suffix = f" ... +{len(matched)-5} lainnya" if len(matched) > 5 else ""
+                st.caption(f"✅ Ditemukan **{len(matched)}** karyawan: {names_found}{suffix}")
+            else:
+                st.caption("❌ Tidak ada karyawan yang cocok.")
+
+    def filter_df_by_name(source_df, query):
+        """Jika ada query nama, kembalikan subset yang relevan: karyawan cocok + seluruh rantai manajernya."""
+        if not query.strip():
+            return source_df
+        matched_ids = source_df[source_df["Employee Name"].str.contains(query.strip(), case=False, na=False)]["Employee ID"].tolist()
+        if not matched_ids:
+            return source_df.iloc[0:0]  # DataFrame kosong
+        # Sertakan semua manager di atasnya
+        all_relevant = get_all_managers(matched_ids, source_df)
+        return source_df[source_df["Employee ID"].isin(all_relevant)].copy()
+
     if view_mode == "Per Divisi":
         st.markdown(f"""
         <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
@@ -1345,6 +1378,9 @@ if _active == 0:
         with col_info:
             st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan di divisi ini")
 
+        # Terapkan name search setelah semua filter dropdown
+        filtered = filter_df_by_name(filtered, name_search)
+
         selected_level  = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt]
         all_ids_needed  = get_all_managers(filtered["Employee ID"].tolist(), df)
         full_data       = df[df["Employee ID"].isin(all_ids_needed)].copy()
@@ -1390,8 +1426,13 @@ if _active == 0:
             st.caption(f"📊 Menampilkan **{len(df)}** karyawan")
 
         selected_level2 = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt2]
-        root_ids2   = df[(df["Manager ID"] == "") | (df["Manager ID"].isna())]["Employee ID"].tolist()
-        tree_data2  = build_tree_json(df, "", root_ids2, mode="company")
+        df_company = filter_df_by_name(df, name_search)
+        root_ids2   = df_company[(df_company["Manager ID"] == "") | (df_company["Manager ID"].isna())]["Employee ID"].tolist()
+        if not root_ids2:
+            # Jika search menghasilkan subgraph tanpa root absolut, cari root relatif
+            mgr_set = set(df_company["Manager ID"].tolist())
+            root_ids2 = df_company[~df_company["Employee ID"].isin(mgr_set)]["Employee ID"].tolist()
+        tree_data2  = build_tree_json(df_company, "", root_ids2, mode="company")
         chart_html2 = render_org_chart(json.dumps(tree_data2), chart_height=750, initial_level=selected_level2, theme=T)
         st.components.v1.html(chart_html2, height=750, scrolling=False)
 
