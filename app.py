@@ -31,6 +31,150 @@ SCOPES     = [
 ]
 CHIEF_ROOT = "SLKR001"
 
+# ══════════════════════════════════════════════════════════════════
+# AUTHENTICATION — Tim OD Internal
+# ══════════════════════════════════════════════════════════════════
+# Credentials disimpan di Streamlit Secrets.
+# Struktur secrets.toml:
+#   [auth.users.username]
+#   password = "..."
+#   name     = "Nama Lengkap"
+#   role     = "admin"   # atau "viewer"
+#
+# Untuk development lokal, fallback ke _AUTH_FALLBACK di bawah.
+# ──────────────────────────────────────────────────────────────────
+_AUTH_FALLBACK = {
+    "od_admin": {"password": "mekari_od_2026",  "name": "OD Admin",   "role": "admin"},
+    "od_team":  {"password": "od_team_2026",     "name": "Tim OD",     "role": "viewer"},
+}
+
+def _get_users() -> dict:
+    try:
+        if "auth" in st.secrets and "users" in st.secrets["auth"]:
+            return {
+                uname: {
+                    "password": str(udata.get("password", "")),
+                    "name":     str(udata.get("name", uname)),
+                    "role":     str(udata.get("role", "viewer")),
+                }
+                for uname, udata in st.secrets["auth"]["users"].items()
+            }
+    except Exception:
+        pass
+    return _AUTH_FALLBACK
+
+def _check_login(username: str, password: str):
+    users = _get_users()
+    user  = users.get(username.strip().lower())
+    if user and user["password"] == password:
+        return user
+    return None
+
+def _render_login_page():
+    dm_l  = st.session_state.get("dark_mode", False)
+    bg    = "#0f1117" if dm_l else "#faf8ff"
+    card  = "#1a1d2e" if dm_l else "#ffffff"
+    text  = "#e8e6ff" if dm_l else "#1a1b21"
+    text3 = "#9e9ec8" if dm_l else "#76767f"
+    pri   = "#7c6fcd" if dm_l else "#4234b6"
+    pric  = "#9b8fef" if dm_l else "#5b4fcf"
+    outl  = "rgba(200,196,214,0.25)" if dm_l else "rgba(200,196,214,0.40)"
+    shad  = "rgba(66,52,182,0.18)"   if dm_l else "rgba(66,52,182,0.08)"
+
+    st.markdown(f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
+    html, body, [class*="css"] {{ font-family: 'Plus Jakarta Sans', sans-serif !important; background: {bg} !important; }}
+    .stApp {{ background: {bg} !important; }}
+    #MainMenu, footer, header, [data-testid="stToolbar"] {{ visibility: hidden !important; display: none !important; }}
+    .block-container {{ padding: 0 !important; max-width: 100% !important; background: {bg} !important; }}
+    [data-testid="stTextInput"] input {{
+        background: {card} !important; border: 1.5px solid {outl} !important;
+        border-radius: 12px !important; color: {text} !important;
+        font-size: 14px !important; padding: 12px 16px !important;
+        transition: border-color 0.2s, box-shadow 0.2s !important;
+    }}
+    [data-testid="stTextInput"] input:focus {{
+        border-color: {pri} !important; box-shadow: 0 0 0 3px rgba(66,52,182,0.15) !important; outline: none !important;
+    }}
+    [data-testid="stTextInput"] input::placeholder {{ color: {text3} !important; }}
+    [data-testid="stTextInput"] label {{ color: {text} !important; font-weight: 600 !important; font-size: 13px !important; }}
+    [data-testid="stButton"] button {{
+        background: linear-gradient(135deg, {pri}, {pric}) !important;
+        color: white !important; border: none !important; border-radius: 9999px !important;
+        font-weight: 700 !important; font-size: 14px !important; padding: 12px 0 !important;
+        width: 100% !important; transition: all 0.2s !important;
+        box-shadow: 0 4px 20px {shad} !important; letter-spacing: 0.01em !important;
+    }}
+    [data-testid="stButton"] button:hover {{
+        transform: scale(1.02) !important; filter: brightness(1.08) !important;
+        box-shadow: 0 8px 32px {shad} !important;
+    }}
+    [data-testid="stAlert"] {{ border-radius: 12px !important; font-size: 13px !important; }}
+    </style>
+    """, unsafe_allow_html=True)
+
+    _, mid, _ = st.columns([1, 1.1, 1])
+    with mid:
+        st.markdown("<div style='height:8vh;'></div>", unsafe_allow_html=True)
+
+        st.markdown(f"""
+        <div style="background:{card};border-radius:24px;padding:44px 40px 8px 40px;
+            box-shadow:0 8px 48px {shad},0 0 0 1px {outl};">
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:32px;">
+                <div style="width:50px;height:50px;border-radius:16px;
+                    background:linear-gradient(135deg,{pri},{pric});
+                    display:flex;align-items:center;justify-content:center;
+                    font-size:24px;box-shadow:0 4px 20px {shad};flex-shrink:0;">🏢</div>
+                <div>
+                    <div style="font-size:19px;font-weight:800;color:{text};
+                        font-family:'Manrope',sans-serif;letter-spacing:-0.02em;line-height:1.2;">OrgChart HR</div>
+                    <div style="font-size:11px;color:{text3};font-weight:500;
+                        letter-spacing:0.05em;text-transform:uppercase;margin-top:2px;">Mekari · People Analytics</div>
+                </div>
+            </div>
+            <div style="font-size:21px;font-weight:800;color:{text};
+                font-family:'Manrope',sans-serif;letter-spacing:-0.02em;margin-bottom:4px;">Selamat datang 👋</div>
+            <div style="font-size:13px;color:{text3};margin-bottom:24px;line-height:1.6;">
+                Masuk dengan akun tim OD untuk mengakses dashboard.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.container():
+            st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
+            username = st.text_input("Username", placeholder="Masukkan username...", key="login_username")
+            password = st.text_input("Password", placeholder="Masukkan password...",
+                                     type="password", key="login_password")
+            st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+
+            # Enter key support: cek jika password field disubmit
+            if st.button("Masuk →", key="login_submit", use_container_width=True):
+                if not username.strip() or not password:
+                    st.error("❌ Username dan password harus diisi.")
+                else:
+                    user = _check_login(username, password)
+                    if user:
+                        st.session_state.authenticated  = True
+                        st.session_state.auth_user      = user
+                        st.session_state.auth_username  = username.strip().lower()
+                        st.rerun()
+                    else:
+                        st.error("❌ Username atau password salah.")
+
+        st.markdown(f"""
+        <div style="margin-top:20px;padding:16px 0;text-align:center;
+            font-size:11px;color:{text3};line-height:1.8;
+            border-top:1px solid {outl};">
+            Akses terbatas untuk Tim OD Mekari<br>
+            Butuh akses? Hubungi
+            <span style="color:{pri};font-weight:600;">People Analytics</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("<div style='height:4vh;'></div>", unsafe_allow_html=True)
+
+
+
 
 # ══════════════════════════════════════════════════════════════════
 # DATA HELPERS
@@ -833,11 +977,25 @@ treeData.forEach(n => applyInitialCollapse(n, 0)); rerenderTree(); setTimeout(fi
 # ══════════════════════════════════════════════════════════════════
 st.set_page_config(page_title="HRIS", layout="wide", page_icon="🏢", initial_sidebar_state="expanded")
 
+# ── Session state defaults ────────────────────────────────────────
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 if "nav_filter" not in st.session_state:
     st.session_state.nav_filter = {}
 
+# ══════════════════════════════════════════════════════════════════
+# AUTHENTICATION GATE — harus lolos sebelum app dimuat
+# ══════════════════════════════════════════════════════════════════
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = {}
+
+if not st.session_state.authenticated:
+    _render_login_page()
+    st.stop()
+
+# ── Di sini: user sudah login ────────────────────────────────────
 df, data_source = load_data()
 
 if df is None:
@@ -1297,8 +1455,41 @@ with st.sidebar:
         if st.button(f"{toggle_icon} Mode", use_container_width=True, key="toggle_btn"):
             st.session_state.dark_mode = not st.session_state.dark_mode; st.rerun()
 
+    # ── User info + Logout ────────────────────────────────────────
+    _auth_user  = st.session_state.get("auth_user", {})
+    _user_name  = _auth_user.get("name", "User")
+    _user_role  = _auth_user.get("role", "viewer")
+    _role_label = "Admin" if _user_role == "admin" else "Viewer"
+    _role_color = "#9b8fef" if dm else "#4234b6"
+
     st.markdown(f"""
-    <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
+    <div style="margin:10px 16px 0 16px;background:rgba(255,255,255,0.10);
+        border-radius:14px;padding:12px 14px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:32px;height:32px;border-radius:50%;
+                background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
+                display:flex;align-items:center;justify-content:center;
+                font-size:13px;font-weight:700;color:white;flex-shrink:0;">
+                {_user_name[0].upper()}</div>
+            <div style="min-width:0;">
+                <div style="font-size:13px;font-weight:700;color:{T['sidebar_active']};
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{_user_name}</div>
+                <div style="font-size:10px;font-weight:600;color:{_role_color};
+                    text-transform:uppercase;letter-spacing:0.05em;margin-top:1px;">{_role_label}</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+    if st.button("🚪  Keluar", use_container_width=True, key="logout_btn"):
+        for _k in ["authenticated", "auth_user", "auth_username"]:
+            st.session_state.pop(_k, None)
+        st.rerun()
+
+    st.markdown(f"""
+    <div style="padding:10px 20px 14px 20px;font-size:10px;color:{T['sidebar_text2']};
+        text-align:center;letter-spacing:0.03em;">
         Auto-refresh setiap 5 menit
     </div>
     """, unsafe_allow_html=True)
