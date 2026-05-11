@@ -31,179 +31,6 @@ SCOPES     = [
 ]
 CHIEF_ROOT = "SLKR001"
 
-# ══════════════════════════════════════════════════════════════════
-# AUTHENTICATION & RBAC — Tim OD Internal
-# ══════════════════════════════════════════════════════════════════
-# Schema user:
-#   username  → string
-#   password  → string
-#   name      → string
-#   role      → "admin" | "hr" | "clevel" | "bu_viewer"
-#   allowed_bus → "*" (semua) atau "Technology,Finance" (comma-sep BU names)
-#
-# Role behaviour:
-#   admin / hr / clevel → akses semua BU & divisi tanpa batasan
-#   bu_viewer           → hanya BU yang ada di allowed_bus
-#
-# Simpan di Streamlit Secrets:
-#   [auth.users.username]
-#   password    = "..."
-#   name        = "Nama"
-#   role        = "bu_viewer"
-#   allowed_bus = "Technology,Product"
-# ──────────────────────────────────────────────────────────────────
-_AUTH_FALLBACK = {
-    "od_admin":  {"password": "mekari_od_2026",  "name": "OD Admin",      "role": "admin",     "allowed_bus": "*"},
-    "hr_team":   {"password": "hr_team_2026",     "name": "Tim HR",        "role": "hr",        "allowed_bus": "*"},
-    "tech_lead": {"password": "tech_lead_2026",   "name": "Tech Leader",   "role": "bu_viewer", "allowed_bus": "Technology"},
-    "fin_lead":  {"password": "fin_lead_2026",    "name": "Finance Leader","role": "bu_viewer", "allowed_bus": "Corporate & Finance Management"},
-}
-
-# Role yang punya akses penuh ke semua BU
-_FULL_ACCESS_ROLES = {"admin", "hr", "clevel"}
-
-def _get_users() -> dict:
-    try:
-        if "auth" in st.secrets and "users" in st.secrets["auth"]:
-            return {
-                uname: {
-                    "password":    str(udata.get("password", "")),
-                    "name":        str(udata.get("name", uname)),
-                    "role":        str(udata.get("role", "bu_viewer")),
-                    "allowed_bus": str(udata.get("allowed_bus", "*")),
-                }
-                for uname, udata in st.secrets["auth"]["users"].items()
-            }
-    except Exception:
-        pass
-    return _AUTH_FALLBACK
-
-
-def _check_login(username: str, password: str):
-    users = _get_users()
-    user  = users.get(username.strip().lower())
-    if user and user["password"] == password:
-        return user
-    return None
-
-
-def _get_allowed_bus(auth_user: dict) -> list | None:
-    """
-    Return list BU yang boleh diakses.
-    None  = akses semua (admin/hr/clevel atau allowed_bus="*")
-    [..] = hanya BU tertentu
-    """
-    role = auth_user.get("role", "bu_viewer")
-    if role in _FULL_ACCESS_ROLES:
-        return None
-    raw = auth_user.get("allowed_bus", "*").strip()
-    if raw == "*":
-        return None
-    return [b.strip() for b in raw.split(",") if b.strip()]
-
-
-def _filter_df_by_access(dataframe, auth_user: dict):
-    """Filter DataFrame agar hanya tampilkan BU yang diizinkan."""
-    allowed = _get_allowed_bus(auth_user)
-    if allowed is None:
-        return dataframe
-    return dataframe[dataframe["Business Unit"].isin(allowed)].copy()
-
-
-def _render_login_page():
-    dm_l  = st.session_state.get("dark_mode", False)
-    bg    = "#0f1117" if dm_l else "#faf8ff"
-    card  = "#1a1d2e" if dm_l else "#ffffff"
-    text  = "#e8e6ff" if dm_l else "#1a1b21"
-    text3 = "#9e9ec8" if dm_l else "#76767f"
-    pri   = "#7c6fcd" if dm_l else "#4234b6"
-    pric  = "#9b8fef" if dm_l else "#5b4fcf"
-    outl  = "rgba(200,196,214,0.25)" if dm_l else "rgba(200,196,214,0.40)"
-    shad  = "rgba(66,52,182,0.18)"   if dm_l else "rgba(66,52,182,0.08)"
-
-    st.markdown(f"""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
-    html, body, [class*="css"] {{ font-family: 'Plus Jakarta Sans', sans-serif !important; background: {bg} !important; }}
-    .stApp {{ background: {bg} !important; }}
-    #MainMenu, footer, header, [data-testid="stToolbar"] {{ visibility: hidden !important; display: none !important; }}
-    .block-container {{ padding: 0 !important; max-width: 100% !important; background: {bg} !important; }}
-    [data-testid="stTextInput"] input {{
-        background: {card} !important; border: 1.5px solid {outl} !important;
-        border-radius: 12px !important; color: {text} !important;
-        font-size: 14px !important; padding: 12px 16px !important;
-    }}
-    [data-testid="stTextInput"] input:focus {{
-        border-color: {pri} !important; box-shadow: 0 0 0 3px rgba(66,52,182,0.15) !important; outline: none !important;
-    }}
-    [data-testid="stTextInput"] input::placeholder {{ color: {text3} !important; }}
-    [data-testid="stTextInput"] label {{ color: {text} !important; font-weight: 600 !important; font-size: 13px !important; }}
-    [data-testid="stButton"] button {{
-        background: linear-gradient(135deg, {pri}, {pric}) !important;
-        color: white !important; border: none !important; border-radius: 9999px !important;
-        font-weight: 700 !important; font-size: 14px !important; padding: 12px 0 !important;
-        width: 100% !important; transition: all 0.2s !important;
-        box-shadow: 0 4px 20px {shad} !important;
-    }}
-    [data-testid="stButton"] button:hover {{ transform: scale(1.02) !important; filter: brightness(1.08) !important; }}
-    [data-testid="stAlert"] {{ border-radius: 12px !important; font-size: 13px !important; }}
-    </style>
-    """, unsafe_allow_html=True)
-
-    _, mid, _ = st.columns([1, 1.1, 1])
-    with mid:
-        st.markdown("<div style='height:8vh;'></div>", unsafe_allow_html=True)
-        st.markdown(f"""
-        <div style="background:{card};border-radius:24px;padding:44px 40px 8px 40px;
-            box-shadow:0 8px 48px {shad},0 0 0 1px {outl};">
-            <div style="display:flex;align-items:center;gap:14px;margin-bottom:32px;">
-                <div style="width:50px;height:50px;border-radius:16px;
-                    background:linear-gradient(135deg,{pri},{pric});
-                    display:flex;align-items:center;justify-content:center;
-                    font-size:24px;box-shadow:0 4px 20px {shad};flex-shrink:0;">🏢</div>
-                <div>
-                    <div style="font-size:19px;font-weight:800;color:{text};
-                        font-family:'Manrope',sans-serif;letter-spacing:-0.02em;">OrgChart HR</div>
-                    <div style="font-size:11px;color:{text3};font-weight:500;
-                        text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Mekari · People Analytics</div>
-                </div>
-            </div>
-            <div style="font-size:21px;font-weight:800;color:{text};
-                font-family:'Manrope',sans-serif;letter-spacing:-0.02em;margin-bottom:4px;">Selamat datang 👋</div>
-            <div style="font-size:13px;color:{text3};margin-bottom:24px;line-height:1.6;">
-                Masuk dengan akun tim OD untuk mengakses dashboard.</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown("<div style='height:16px;'></div>", unsafe_allow_html=True)
-        username = st.text_input("Username", placeholder="Masukkan username...", key="login_username")
-        password = st.text_input("Password", placeholder="Masukkan password...",
-                                 type="password", key="login_password")
-        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-        if st.button("Masuk →", key="login_submit", use_container_width=True):
-            if not username.strip() or not password:
-                st.error("❌ Username dan password harus diisi.")
-            else:
-                user = _check_login(username, password)
-                if user:
-                    st.session_state.authenticated = True
-                    st.session_state.auth_user      = user
-                    st.session_state.auth_username  = username.strip().lower()
-                    st.rerun()
-                else:
-                    st.error("❌ Username atau password salah.")
-
-        st.markdown(f"""
-        <div style="margin-top:20px;padding:16px 0;text-align:center;
-            font-size:11px;color:{text3};line-height:1.8;border-top:1px solid {outl};">
-            Akses terbatas untuk Tim OD Mekari<br>
-            Butuh akses? Hubungi <span style="color:{pri};font-weight:600;">People Analytics</span>
-        </div>
-        """, unsafe_allow_html=True)
-        st.markdown("<div style='height:4vh;'></div>", unsafe_allow_html=True)
-
-
-
 
 # ══════════════════════════════════════════════════════════════════
 # DATA HELPERS
@@ -462,8 +289,8 @@ def _draw_pdf_footer(c, page_w, downloaded_at):
     c.line(36, 28, page_w - 36, 28)
     c.setFillColor(PDF_TEXT_MUTED)
     c.setFont("Helvetica", 7)
-    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Analytics")
-    c.drawRightString(page_w - 36, 18, "HR Org Chart Dashboard")
+    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Dashboard")
+    c.drawRightString(page_w - 36, 18, "HR Organization Dashboard")
 
 
 def _wrap_text(text: str, max_chars: int) -> list:
@@ -871,7 +698,9 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
 # ══════════════════════════════════════════════════════════════════
 # ORG CHART HTML RENDERER
 # ══════════════════════════════════════════════════════════════════
-def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme=None):
+def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme=None, highlight_id=None):
+    # Convert highlight_id ke JS literal
+    highlight_id_js = f'"{highlight_id}"' if highlight_id else 'null'
     level_map = {"all": "999", "top": "0", "level1": "1"}
     init_depth = level_map.get(initial_level, "999")
     th          = theme or {}
@@ -908,6 +737,24 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
   .node-box.in-div {{ background: {node_in_bg}; border-color: {node_in_bdr}; color: {node_in_txt}; }}
   .node-box.out-div {{ background: {node_out_bg}; border-color: {node_out_bdr}; color: {node_out_txt}; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }}
   .node-box.company-mode {{ background: linear-gradient(135deg,#5b4fcf,#7c6fcd); border-color: #4a3fb8; color: white; box-shadow: 0 4px 20px rgba(91,79,207,0.3); }}
+  .node-box.highlighted {{
+    background: linear-gradient(135deg,#fbbf24,#f59e0b) !important;
+    border-color: #d97706 !important;
+    color: #1a1a00 !important;
+    box-shadow: 0 0 0 3px #fde68a, 0 8px 32px rgba(245,158,11,0.5) !important;
+    animation: pulse-highlight 1.6s ease-in-out infinite !important;
+    z-index: 10;
+    position: relative;
+  }}
+  .node-box.highlighted .node-name {{ color: #1a1a00 !important; font-weight: 800 !important; }}
+  .node-box.highlighted .node-pos,
+  .node-box.highlighted .node-div,
+  .node-box.highlighted .node-sbu {{ color: #3a2800 !important; opacity: 0.85 !important; }}
+  @keyframes pulse-highlight {{
+    0%   {{ box-shadow: 0 0 0 3px #fde68a, 0 8px 32px rgba(245,158,11,0.5); transform: scale(1); }}
+    50%  {{ box-shadow: 0 0 0 8px rgba(253,230,138,0.3), 0 12px 40px rgba(245,158,11,0.7); transform: scale(1.04); }}
+    100% {{ box-shadow: 0 0 0 3px #fde68a, 0 8px 32px rgba(245,158,11,0.5); transform: scale(1); }}
+  }}
   .badge {{ position: absolute; top: -8px; right: -8px; background: {badge_bg}; color: white; border-radius: 999px; font-size: 9px; font-weight: 700; padding: 2px 7px; min-width: 20px; border: 2px solid #f8f7ff; box-shadow: 0 2px 8px rgba(91,79,207,0.3); }}
   .node-name {{ font-weight: 700; font-size: 12px; line-height: 1.3; margin-bottom: 3px; }}
   .node-pos {{ font-size: 10px; opacity: 0.8; line-height: 1.3; margin-bottom: 3px; }}
@@ -935,12 +782,17 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
   <div class="legend-item"><div class="legend-dot" style="background:{node_in_bdr};border:1px solid {node_in_bdr}"></div><span>Divisi ini</span></div>
   <div class="legend-item"><div class="legend-dot" style="background:{node_out_bdr};border:1px solid {node_out_bdr}"></div><span>Atasan luar divisi</span></div>
   <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;border-radius:999px"></div><span>Jml subordinate</span></div>
+  <div class="legend-item" id="legend-highlight" style="display:none;">
+    <div class="legend-dot" style="background:#f59e0b;border:2px solid #d97706;border-radius:3px;"></div>
+    <span style="color:{hint_color}">Karyawan dicari</span>
+  </div>
   <div class="legend-item" style="color:{hint_color}">💡 Klik node · Scroll zoom · Drag geser</div>
 </div>
 <script>
 const treeData = {tree_json_str};
 const collapsed = {{}};
 let initDepth = {init_depth};
+const highlightId = {highlight_id_js};  // null or "EMP_ID" 
 let scale = 1, translateX = 0, translateY = 0;
 let isDragging = false, dragStartX = 0, dragStartY = 0, dragStartTX = 0, dragStartTY = 0;
 const canvas = document.getElementById('canvas');
@@ -969,9 +821,12 @@ function renderNode(node) {{
   const isCollapsed = collapsed[node.id] || false;
   const hasChildren = node.children && node.children.length > 0;
   const descCount   = countDescendants(node);
+  const isHighlight = highlightId && node.id === highlightId;
   const wrapper = document.createElement('div'); wrapper.className = 'node-wrapper';
   const box     = document.createElement('div');
-  box.className = `node-box ${{node.company_mode ? 'company-mode' : node.in_div ? 'in-div' : 'out-div'}}`;
+  const baseClass = node.company_mode ? 'company-mode' : node.in_div ? 'in-div' : 'out-div';
+  box.className = `node-box ${{baseClass}}${{isHighlight ? ' highlighted' : ''}}`;
+  if (isHighlight) {{ box.id = 'highlighted-node'; }}
   if (hasChildren && descCount > 0) {{
     const badge = document.createElement('div'); badge.className = 'badge';
     badge.textContent = isCollapsed ? descCount : node.children.length; box.appendChild(badge);
@@ -996,8 +851,39 @@ function renderNode(node) {{
   }}
   return wrapper;
 }}
-function rerenderTree() {{ const r = document.getElementById('tree-root'); r.innerHTML = ''; treeData.forEach(n => r.appendChild(renderNode(n))); }}
-treeData.forEach(n => applyInitialCollapse(n, 0)); rerenderTree(); setTimeout(fitView, 300);
+function scrollToHighlighted() {{
+  const el = document.getElementById('highlighted-node');
+  if (!el) return;
+  // Tunggu layout selesai
+  setTimeout(() => {{
+    const canvasRect = canvas.getBoundingClientRect();
+    const elRect     = el.getBoundingClientRect();
+    // Hitung posisi relatif terhadap tree-root
+    const elCenterX  = elRect.left + elRect.width  / 2 - canvasRect.left;
+    const elCenterY  = elRect.top  + elRect.height / 2 - canvasRect.top;
+    const targetX    = canvasRect.width  / 2 - elCenterX;
+    const targetY    = canvasRect.height / 2 - elCenterY;
+    // Smooth transition
+    treeRoot.style.transition = 'transform 0.6s cubic-bezier(0.4,0,0.2,1)';
+    scale = 1.2;
+    translateX = targetX;
+    translateY = targetY - 60;
+    applyTransform();
+    setTimeout(() => {{ treeRoot.style.transition = ''; }}, 700);
+    // Show legend item
+    const legEl = document.getElementById('legend-highlight');
+    if (legEl) legEl.style.display = 'flex';
+  }}, 350);
+}}
+function rerenderTree() {{
+  const r = document.getElementById('tree-root');
+  r.innerHTML = '';
+  treeData.forEach(n => r.appendChild(renderNode(n)));
+  if (highlightId) {{ scrollToHighlighted(); }}
+}}
+treeData.forEach(n => applyInitialCollapse(n, 0));
+rerenderTree();
+if (!highlightId) {{ setTimeout(fitView, 300); }}
 </script></body></html>"""
 
 
@@ -1006,25 +892,11 @@ treeData.forEach(n => applyInitialCollapse(n, 0)); rerenderTree(); setTimeout(fi
 # ══════════════════════════════════════════════════════════════════
 st.set_page_config(page_title="HRIS", layout="wide", page_icon="🏢", initial_sidebar_state="expanded")
 
-# ── Session state defaults ────────────────────────────────────────
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 if "nav_filter" not in st.session_state:
     st.session_state.nav_filter = {}
 
-# ══════════════════════════════════════════════════════════════════
-# AUTHENTICATION GATE
-# ══════════════════════════════════════════════════════════════════
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
-if "auth_user" not in st.session_state:
-    st.session_state.auth_user = {}
-
-if not st.session_state.authenticated:
-    _render_login_page()
-    st.stop()
-
-# ── Sudah login — lanjut load app ────────────────────────────────
 df, data_source = load_data()
 
 if df is None:
@@ -1410,7 +1282,7 @@ with st.sidebar:
                 <div style="font-size:16px;font-weight:800;color:{T['sidebar_active']};
                     font-family:'Manrope',sans-serif;line-height:1.2;letter-spacing:-0.02em;">HRIS</div>
                 <div style="font-size:11px;color:{T['sidebar_text2']};font-weight:500;
-                    letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">People Analytics</div>
+                    letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">People Dashboard</div>
             </div>
         </div>
         <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:7px 12px;
@@ -1463,7 +1335,6 @@ with st.sidebar:
         ("⚠️", "Manager ID Hilang",  2),
         ("👔", "Daftar Manager",     3),
         ("📝", "Change Request",     4),
-        ("📐", "Span of Control",    5),
     ]
     active_idx = st.session_state.active_tab
     for icon_nav, label_nav, tab_idx in nav_items:
@@ -1485,45 +1356,8 @@ with st.sidebar:
         if st.button(f"{toggle_icon} Mode", use_container_width=True, key="toggle_btn"):
             st.session_state.dark_mode = not st.session_state.dark_mode; st.rerun()
 
-    # ── User info + Logout ────────────────────────────────────────
-    _auth_user  = st.session_state.get("auth_user", {})
-    _user_name  = _auth_user.get("name", "User")
-    _user_role  = _auth_user.get("role", "viewer")
-    _role_label = {"admin": "Admin", "hr": "HR", "clevel": "C-Level"}.get(_user_role, "Viewer")
-    _role_color = "#9b8fef" if dm else "#4234b6"
-
     st.markdown(f"""
-    <div style="margin:10px 16px 0 16px;background:rgba(255,255,255,0.12);
-        border-radius:14px;padding:12px 14px;">
-        <div style="display:flex;align-items:center;gap:10px;">
-            <div style="width:34px;height:34px;border-radius:50%;
-                background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
-                display:flex;align-items:center;justify-content:center;
-                font-size:14px;font-weight:700;color:white;flex-shrink:0;">
-                {_user_name[0].upper() if _user_name else "U"}
-            </div>
-            <div style="min-width:0;flex:1;">
-                <div style="font-size:13px;font-weight:700;color:{T['sidebar_active']};
-                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                    {_user_name}</div>
-                <div style="font-size:10px;font-weight:600;color:{_role_color};
-                    text-transform:uppercase;letter-spacing:0.05em;margin-top:1px;">
-                    {_role_label}</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-
-    if st.button("🚪  Keluar", use_container_width=True, key="logout_btn"):
-        for _k in ["authenticated", "auth_user", "auth_username"]:
-            st.session_state.pop(_k, None)
-        st.rerun()
-
-    st.markdown(f"""
-    <div style="padding:10px 20px 14px 20px;font-size:10px;color:{T['sidebar_text2']};
-        text-align:center;letter-spacing:0.03em;">
+    <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
         Auto-refresh setiap 5 menit
     </div>
     """, unsafe_allow_html=True)
@@ -1537,11 +1371,11 @@ st.markdown(f"""
     display:flex;align-items:flex-end;justify-content:space-between;">
     <div>
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">HR · People Analytics</div>
+            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">HR · People Dashboard</div>
         <div style="font-size:32px;font-weight:800;color:{T['text']};
-            font-family:'Manrope',sans-serif;line-height:1.1;letter-spacing:-0.03em;">Org Chart Dashboard</div>
+            font-family:'Manrope',sans-serif;line-height:1.1;letter-spacing:-0.03em;">Organization Dashboard</div>
         <div style="font-size:14px;color:{T['text_variant']};margin-top:6px;font-weight:400;line-height:1.6;">
-            Visualisasi & analitik struktur organisasi real-time
+            Dashboard Visualisasi Data Organisasi
         </div>
     </div>
     <div style="background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
@@ -1569,36 +1403,79 @@ if _active == 0:
     """, unsafe_allow_html=True)
     view_mode = st.radio("", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True, label_visibility="collapsed")
 
-    # ── Search Name — berlaku di semua mode ──────────────────────
+    # ── Search Name ──────────────────────────────────────────────
+    # [FIX] Search sekarang cari di seluruh df, auto-set filter BU/Divisi
     st.markdown(f"""
     <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
         letter-spacing:0.06em;margin:16px 0 8px 0;">Cari Karyawan</div>
     """, unsafe_allow_html=True)
+
     col_search, col_search_info = st.columns([3, 5])
     with col_search:
-        name_search = st.text_input("🔍 Search Name", placeholder="Ketik nama karyawan...",
-                                    key="org_name_search", label_visibility="collapsed")
+        name_search = st.text_input(
+            "🔍 Search Name", placeholder="Ketik nama karyawan...",
+            key="org_name_search", label_visibility="collapsed"
+        )
+
+    # Cari di SELURUH df — bukan hanya divisi aktif
+    matched_global = pd.DataFrame()
+    if name_search.strip():
+        matched_global = df[
+            df["Employee Name"].str.contains(name_search.strip(), case=False, na=False)
+        ].copy()
+
     with col_search_info:
         if name_search.strip():
-            matched = df[df["Employee Name"].str.contains(name_search.strip(), case=False, na=False)]
-            if len(matched) > 0:
-                names_found = ", ".join(matched["Employee Name"].tolist()[:5])
-                suffix = f" ... +{len(matched)-5} lainnya" if len(matched) > 5 else ""
-                st.caption(f"✅ Ditemukan **{len(matched)}** karyawan: {names_found}{suffix}")
+            if len(matched_global) == 0:
+                st.markdown(f"""<div style="padding:8px 12px;background:#fee2e2;border-radius:8px;
+                    font-size:12px;color:#991b1b;margin-top:4px;">
+                    ❌ Tidak ada karyawan bernama "<b>{name_search}</b>"</div>""",
+                    unsafe_allow_html=True)
+            elif len(matched_global) == 1:
+                emp = matched_global.iloc[0]
+                st.markdown(f"""<div style="padding:8px 12px;background:#dcfce7;border-radius:8px;
+                    font-size:12px;color:#166534;margin-top:4px;">
+                    ✅ Ditemukan: <b>{emp['Employee Name']}</b> — {emp.get('Job Position','')},
+                    <b>{emp.get('Division','')}</b> ({emp.get('Business Unit','')})</div>""",
+                    unsafe_allow_html=True)
             else:
-                st.caption("❌ Tidak ada karyawan yang cocok.")
+                names_list = ", ".join(matched_global["Employee Name"].tolist()[:4])
+                suffix = f" +{len(matched_global)-4} lainnya" if len(matched_global) > 4 else ""
+                st.markdown(f"""<div style="padding:8px 12px;background:#fef9c3;border-radius:8px;
+                    font-size:12px;color:#854d0e;margin-top:4px;">
+                    ⚠️ Ditemukan <b>{len(matched_global)}</b> karyawan: {names_list}{suffix}.
+                    Pilih salah satu di bawah.</div>""", unsafe_allow_html=True)
 
-    def filter_df_by_name(source_df, query):
-        """Jika ada query nama, kembalikan subset yang relevan: karyawan cocok + seluruh rantai manajernya."""
-        if not query.strip():
-            return source_df
-        matched_ids = source_df[source_df["Employee Name"].str.contains(query.strip(), case=False, na=False)]["Employee ID"].tolist()
-        if not matched_ids:
-            return source_df.iloc[0:0]  # DataFrame kosong
-        # Sertakan semua manager di atasnya
-        all_relevant = get_all_managers(matched_ids, source_df)
-        return source_df[source_df["Employee ID"].isin(all_relevant)].copy()
+    # Jika >1 hasil → selectbox pilih karyawan spesifik
+    selected_emp_row = None
+    if len(matched_global) > 1:
+        emp_choices = ["— Pilih karyawan —"] + [
+            f"{r['Employee Name']}  ·  {r.get('Division','')}  ·  {r.get('Business Unit','')}"
+            for _, r in matched_global.iterrows()
+        ]
+        chosen_emp = st.selectbox("Pilih karyawan:", emp_choices,
+                                  key="search_emp_choice", label_visibility="collapsed")
+        if chosen_emp != "— Pilih karyawan —":
+            idx_c = emp_choices.index(chosen_emp) - 1
+            selected_emp_row = matched_global.iloc[idx_c]
+    elif len(matched_global) == 1:
+        selected_emp_row = matched_global.iloc[0]
 
+    # AUTO-SET filter BU & Divisi berdasarkan karyawan yang ditemukan/dipilih
+    if selected_emp_row is not None:
+        _tbu  = str(selected_emp_row.get("Business Unit", ""))
+        _tdiv = str(selected_emp_row.get("Division", ""))
+        _bu_list_all = sorted(df["Business Unit"].dropna().unique().tolist())
+        if _tbu in _bu_list_all:
+            st.session_state["sel_bu"] = _tbu
+        _div_list_for = sorted(df[df["Business Unit"] == _tbu]["Division"].dropna().unique().tolist())
+        if _tdiv in _div_list_for:
+            st.session_state["sel_div"] = _tdiv
+        st.session_state["sel_sbu"]    = "Semua SBU"
+        st.session_state["sel_leader"] = "Semua (divisi penuh)"
+
+    # ID karyawan target untuk highlight di tree
+    search_highlight_id = str(selected_emp_row.get("Employee ID", "")) if selected_emp_row is not None else None
     if view_mode == "Per Divisi":
         st.markdown(f"""
         <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
@@ -1643,10 +1520,11 @@ if _active == 0:
             level_opt = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"],
                                      help="Atur berapa level yang ditampilkan secara default")
         with col_info:
-            st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan di divisi ini")
-
-        # Terapkan name search setelah semua filter dropdown
-        filtered = filter_df_by_name(filtered, name_search)
+            if search_highlight_id and search_highlight_id in filtered["Employee ID"].values:
+                _emp_name_hl = selected_emp_row["Employee Name"]
+                st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan — 🎯 **{_emp_name_hl}** ada di divisi ini")
+            else:
+                st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan di divisi ini")
 
         selected_level  = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt]
         all_ids_needed  = get_all_managers(filtered["Employee ID"].tolist(), df)
@@ -1658,7 +1536,7 @@ if _active == 0:
         ]["Employee ID"].astype(str).tolist()
 
         tree_data  = build_tree_json(full_data, selected_div, root_ids, mode="division")
-        chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T)
+        chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T, highlight_id=search_highlight_id)
         st.components.v1.html(chart_html, height=680, scrolling=False)
 
         st.markdown("**⬇️ Download Data**")
@@ -1693,13 +1571,9 @@ if _active == 0:
             st.caption(f"📊 Menampilkan **{len(df)}** karyawan")
 
         selected_level2 = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt2]
-        df_company = filter_df_by_name(df, name_search)
-        root_ids2   = df_company[(df_company["Manager ID"] == "") | (df_company["Manager ID"].isna())]["Employee ID"].tolist()
-        if not root_ids2:
-            # Jika search menghasilkan subgraph tanpa root absolut, cari root relatif
-            mgr_set = set(df_company["Manager ID"].tolist())
-            root_ids2 = df_company[~df_company["Employee ID"].isin(mgr_set)]["Employee ID"].tolist()
-        tree_data2  = build_tree_json(df_company, "", root_ids2, mode="company")
+        # Mode perusahaan: tampilkan seluruh tree (search sudah auto-switch ke Per Divisi)
+        root_ids2  = df[(df["Manager ID"] == "") | (df["Manager ID"].isna())]["Employee ID"].tolist()
+        tree_data2 = build_tree_json(df, "", root_ids2, mode="company")
         chart_html2 = render_org_chart(json.dumps(tree_data2), chart_height=750, initial_level=selected_level2, theme=T)
         st.components.v1.html(chart_html2, height=750, scrolling=False)
 
@@ -2248,489 +2122,3 @@ elif _active == 4:
                 with col_hd2:
                     st.download_button("📊 Excel", to_excel(view_hist), "cr_history.xlsx",
                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-
-
-# ══════════════════════════════════════════════════════════════════
-# TAB 6 — SPAN OF CONTROL ANALYSIS
-# ══════════════════════════════════════════════════════════════════
-elif _active == 5:
-    import plotly.express as px
-    import plotly.graph_objects as go
-
-    # ── Role guard: hanya admin & hr ──────────────────────────────
-    _cur_role = st.session_state.get("auth_user", {}).get("role", "viewer")
-    if _cur_role not in {"admin", "hr"}:
-        st.markdown(f"""
-        <div style="margin-top:60px;text-align:center;">
-            <div style="font-size:48px;margin-bottom:16px;">🔒</div>
-            <div style="font-size:20px;font-weight:700;color:{T['text']};">Akses Terbatas</div>
-            <div style="font-size:14px;color:{T['text3']};margin-top:8px;">
-                Tab ini hanya dapat diakses oleh Admin dan HR.</div>
-        </div>""", unsafe_allow_html=True)
-        st.stop()
-
-    # ══════════════════════════════════════════════════════════════
-    # CONSTANTS — McKinsey SoC Framework (Mekari-adjusted)
-    # Ubah nilai di sini untuk menyesuaikan threshold organisasi
-    # ══════════════════════════════════════════════════════════════
-    SOC_NARROW_MAX  = 2   # ≤ ini → Too Narrow
-    SOC_OK_MAX      = 9   # ≤ ini → OK  |  > ini → Too Wide
-    DEPTH_FLAT_MAX  = 3   # ≤ ini → Flat (1–3 layers)
-    DEPTH_MED_MAX   = 5   # ≤ ini → Medium (4–5 layers) | > ini → Deep
-
-    # ── Scoring matrix: (soc_cond, depth_cond) → (status, label, color, action) ──
-    SOC_MATRIX = {
-        ("OK",     "Flat"):   ("Healthy",  "Lean and agile structure",               "#059669", "Maintain current structure. Keep within healthy range."),
-        ("OK",     "Medium"): ("Healthy",  "Healthy operating model",                "#059669", "Standard benchmark. Maintain accountability. Document best practices."),
-        ("OK",     "Deep"):   ("Monitor",  "Stable but slow structure",              "#3b82f6", "Slow decision-making. Reduce bottlenecks. Target: reduce depth to ≤5 layers."),
-        ("Narrow", "Flat"):   ("Monitor",  "Underutilized leadership, IC-heavy",     "#3b82f6", "Underutilized leaders. Consolidate teams. Target: min +10% direct reports."),
-        ("Narrow", "Medium"): ("Monitor",  "Early layering, micro-management risk",  "#3b82f6", "Early layering. Merge small reporting groups. Review & remove duplicate roles."),
-        ("Narrow", "Deep"):   ("Improve",  "Structural inefficiency, artificial layers", "#d97706", "Too many layers. Remove artificial layers. Target: reduce depth & increase SoC."),
-        ("Wide",   "Flat"):   ("Improve",  "Leader overload, informal bottlenecks",  "#d97706", "Leader bottlenecks. Add delegation. Target: min -10% direct reports."),
-        ("Wide",   "Medium"): ("Monitor",  "Coordination-heavy leadership",          "#3b82f6", "Overloaded leaders. Create team clusters. Target: -10% direct reports."),
-        ("Wide",   "Deep"):   ("Critical", "Dual inefficiency (layers + overload)",  "#dc2626", "Critical: Dual inefficiency. Simplify hierarchy. Target: reduce SoC and depth."),
-    }
-
-    STATUS_COLOR = {
-        "Healthy": "#059669", "Monitor": "#3b82f6",
-        "Improve": "#d97706", "Critical": "#dc2626",
-    }
-    STATUS_BG = {
-        "Healthy": "#f0fdf4", "Monitor": "#eff6ff",
-        "Improve": "#fffbeb", "Critical": "#fef2f2",
-    }
-
-    # ══════════════════════════════════════════════════════════════
-    # DATA COMPUTATION
-    # ══════════════════════════════════════════════════════════════
-
-    @st.cache_data(ttl=300)
-    def compute_soc_analysis(_df):
-        """
-        Hitung SoC metrics per divisi:
-        - direct_reports_per_manager: list angka direct reports tiap manager di divisi
-        - avg_soc, min_soc, max_soc
-        - depth: jumlah layer dari root ke leaf dalam divisi
-        - total_managers, total_ic (individual contributor = bukan manager)
-        - soc_condition: Narrow / OK / Wide (berdasarkan avg_soc)
-        - depth_condition: Flat / Medium / Deep
-        - status, label, color, action dari SOC_MATRIX
-        """
-        child_map = _df[_df["Manager ID"] != ""].groupby("Manager ID")["Employee ID"].apply(list).to_dict()
-        mgr_set   = set(_df[_df["Employee ID"].isin(_df["Manager ID"])]["Employee ID"])
-
-        results = []
-        for div in sorted(_df["Division"].dropna().unique()):
-            div_df  = _df[_df["Division"] == div]
-            div_ids = set(div_df["Employee ID"].tolist())
-            bu      = div_df["Business Unit"].iloc[0] if len(div_df) > 0 else ""
-
-            # Direct reports per manager (hitung dari seluruh df, bukan hanya divisi)
-            div_mgrs  = [e for e in div_ids if e in mgr_set]
-            soc_vals  = [len(child_map.get(m, [])) for m in div_mgrs]
-
-            total_emp  = len(div_df)
-            total_mgr  = len(div_mgrs)
-            total_ic   = total_emp - total_mgr
-            avg_soc    = round(sum(soc_vals) / len(soc_vals), 1) if soc_vals else 0
-            min_soc    = min(soc_vals) if soc_vals else 0
-            max_soc    = max(soc_vals) if soc_vals else 0
-
-            # Hitung depth divisi: BFS dari manager paling atas di divisi ini
-            # Cari root manager divisi ini (manager yang bukan bawahan sesama divisi)
-            div_mgr_set = set(div_mgrs)
-            mgr_ids_in_div = set(div_df["Manager ID"].dropna().tolist()) - {"", "nan"}
-            # Root = manager divisi yang manager-nya bukan dari divisi ini
-            roots = [m for m in div_mgrs if div_df[div_df["Employee ID"] == m]["Manager ID"].values[0] not in div_mgr_set] if div_mgrs else []
-            if not roots and div_mgrs:
-                roots = [div_mgrs[0]]
-
-            depth = 0
-            if roots:
-                visited = set()
-                queue   = [(roots[0], 0)]
-                while queue:
-                    node, d = queue.pop(0)
-                    if node in visited:
-                        continue
-                    visited.add(node)
-                    depth = max(depth, d)
-                    for ch in child_map.get(node, []):
-                        if ch not in visited:
-                            queue.append((ch, d + 1))
-            depth += 1  # layer count = depth + 1
-
-            # Classify
-            if avg_soc <= SOC_NARROW_MAX:
-                soc_cond = "Narrow"
-            elif avg_soc <= SOC_OK_MAX:
-                soc_cond = "OK"
-            else:
-                soc_cond = "Wide"
-
-            if depth <= DEPTH_FLAT_MAX:
-                depth_cond = "Flat"
-            elif depth <= DEPTH_MED_MAX:
-                depth_cond = "Medium"
-            else:
-                depth_cond = "Deep"
-
-            status, label, color, action = SOC_MATRIX.get(
-                (soc_cond, depth_cond),
-                ("Monitor", "Belum terklasifikasi", "#6b7280", "-")
-            )
-
-            results.append({
-                "Division":       div,
-                "Business Unit":  bu,
-                "Total Karyawan": total_emp,
-                "Total Manager":  total_mgr,
-                "Total IC":       total_ic,
-                "Avg SoC":        avg_soc,
-                "Min SoC":        min_soc,
-                "Max SoC":        max_soc,
-                "Depth (Layers)": depth,
-                "SoC Condition":  soc_cond,
-                "Depth Condition":depth_cond,
-                "Status":         status,
-                "Label":          label,
-                "Color":          color,
-                "Action":         action,
-            })
-
-        return pd.DataFrame(results)
-
-    soc_df = compute_soc_analysis(df)
-
-    pl_base = dict(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Plus Jakarta Sans,sans-serif", color=T["text"], size=12),
-        margin=dict(l=0, r=0, t=30, b=0),
-        legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0),
-    )
-
-    # ══════════════════════════════════════════════════════════════
-    # PAGE HEADER
-    # ══════════════════════════════════════════════════════════════
-    st.markdown(f"""
-    <div style="margin-bottom:20px;display:flex;align-items:flex-end;justify-content:space-between;">
-        <div>
-            <div style="font-size:20px;font-weight:700;color:{T['text']};">Span of Control Analysis</div>
-            <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
-                Analisis kedalaman hierarki & rentang kendali per divisi — McKinsey SoC Framework
-            </div>
-        </div>
-        <div style="font-size:11px;color:{T['text3']};text-align:right;">
-            Threshold: OK = 3–{SOC_OK_MAX} reports &nbsp;·&nbsp;
-            Flat ≤ {DEPTH_FLAT_MAX} layers &nbsp;·&nbsp; Medium {DEPTH_FLAT_MAX+1}–{DEPTH_MED_MAX}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════════════════
-    # FILTER
-    # ══════════════════════════════════════════════════════════════
-    fc1, fc2, fc3 = st.columns(3)
-    with fc1:
-        bu_opts_soc = ["Semua BU"] + sorted(soc_df["Business Unit"].dropna().unique().tolist())
-        sel_bu_soc  = st.selectbox("🏢 Business Unit", bu_opts_soc, key="soc_bu")
-    with fc2:
-        status_opts = ["Semua Status", "Healthy", "Monitor", "Improve", "Critical"]
-        sel_status  = st.selectbox("🎯 Filter Status", status_opts, key="soc_status")
-    with fc3:
-        soc_cond_opts = ["Semua Kondisi SoC", "OK", "Narrow", "Wide"]
-        sel_soc_cond  = st.selectbox("📊 SoC Condition", soc_cond_opts, key="soc_cond")
-
-    view_soc = soc_df.copy()
-    if sel_bu_soc   != "Semua BU":           view_soc = view_soc[view_soc["Business Unit"]  == sel_bu_soc]
-    if sel_status   != "Semua Status":        view_soc = view_soc[view_soc["Status"]         == sel_status]
-    if sel_soc_cond != "Semua Kondisi SoC":  view_soc = view_soc[view_soc["SoC Condition"]  == sel_soc_cond]
-
-    # ══════════════════════════════════════════════════════════════
-    # KPI CARDS
-    # ══════════════════════════════════════════════════════════════
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:12px 0;'></div>", unsafe_allow_html=True)
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("📁 Total Divisi",       len(view_soc))
-    k2.metric("✅ Healthy",            len(view_soc[view_soc["Status"] == "Healthy"]))
-    k3.metric("👁️ Monitor",           len(view_soc[view_soc["Status"] == "Monitor"]))
-    k4.metric("⚠️ Need Improvement",  len(view_soc[view_soc["Status"] == "Improve"]))
-    k5.metric("🚨 Critical",           len(view_soc[view_soc["Status"] == "Critical"]))
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════════════════
-    # ROW 1: Scoring Matrix Heatmap + Status Distribution
-    # ══════════════════════════════════════════════════════════════
-    r1l, r1r = st.columns([3, 2])
-
-    with r1l:
-        st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;'>Organization Effectiveness Scoring Matrix</div>", unsafe_allow_html=True)
-
-        # Build matrix: rows=SoC condition, cols=Depth condition
-        matrix_rows = ["Too Narrow", "OK", "Too Wide"]
-        matrix_cols = ["Flat (1–3)", "Medium (4–5)", "Deep (>5)"]
-        soc_map   = {"Narrow": "Too Narrow", "OK": "OK", "Wide": "Too Wide"}
-        depth_map = {"Flat": "Flat (1–3)", "Medium": "Medium (4–5)", "Deep": "Deep (>5)"}
-
-        # Count divisi per cell
-        cell_counts = {}
-        cell_status = {}
-        for _, row in view_soc.iterrows():
-            r = soc_map.get(row["SoC Condition"], row["SoC Condition"])
-            c = depth_map.get(row["Depth Condition"], row["Depth Condition"])
-            cell_counts[(r, c)] = cell_counts.get((r, c), 0) + 1
-            cell_status[(r, c)] = row["Status"]
-
-        # Color numeric mapping: Healthy=3, Monitor=2, Improve=1, Critical=0
-        status_num = {"Healthy": 3, "Monitor": 2, "Improve": 1, "Critical": 0}
-        z_vals, text_vals, hover_vals = [], [], []
-        for r in matrix_rows:
-            z_row, t_row, h_row = [], [], []
-            for c in matrix_cols:
-                st_val  = cell_status.get((r, c), "Monitor")
-                n_div   = cell_counts.get((r, c), 0)
-                _, lbl, _, act = SOC_MATRIX.get(
-                    ({"Too Narrow":"Narrow","OK":"OK","Too Wide":"Wide"}[r],
-                     {"Flat (1–3)":"Flat","Medium (4–5)":"Medium","Deep (>5)":"Deep"}[c]),
-                    ("Monitor", "-", "#6b7280", "-")
-                )
-                z_row.append(status_num.get(st_val, 2))
-                t_row.append(f"<b>{lbl}</b><br><span style='font-size:10px'>{n_div} divisi</span>")
-                h_row.append(f"<b>{r} + {c}</b><br>Status: {st_val}<br>Divisi: {n_div}<br><i>{lbl}</i>")
-            z_vals.append(z_row)
-            text_vals.append(t_row)
-            hover_vals.append(h_row)
-
-        fig_matrix = go.Figure(go.Heatmap(
-            z=z_vals, x=matrix_cols, y=matrix_rows,
-            colorscale=[
-                [0.0,  "#fecaca"],  # Critical
-                [0.33, "#fef9c3"],  # Improve
-                [0.66, "#dbeafe"],  # Monitor
-                [1.0,  "#dcfce7"],  # Healthy
-            ],
-            zmin=0, zmax=3,
-            text=text_vals,
-            texttemplate="%{text}",
-            textfont=dict(size=11),
-            hoverongaps=False,
-            hovertemplate="%{customdata}<extra></extra>",
-            customdata=hover_vals,
-            showscale=False,
-        ))
-        fig_matrix.update_layout(
-            **pl_base, height=260,
-            xaxis=dict(title="Hierarchy Depth", side="top", gridcolor="rgba(0,0,0,0)"),
-            yaxis=dict(title="SoC Condition",  gridcolor="rgba(0,0,0,0)", autorange="reversed"),
-        )
-        st.plotly_chart(fig_matrix, use_container_width=True, config={"displayModeBar": False})
-
-        # Legend
-        st.markdown(f"""
-        <div style="display:flex;gap:20px;font-size:11px;color:{T['text3']};
-            padding:6px 0;justify-content:flex-end;">
-            <span>🟢 Healthy</span><span>🔵 Monitor</span>
-            <span>🟡 Need Improvement</span><span>🔴 Critical</span>
-            <span style="font-style:italic;">Angka = jumlah divisi</span>
-        </div>""", unsafe_allow_html=True)
-
-    with r1r:
-        st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;'>Distribusi Status</div>", unsafe_allow_html=True)
-
-        status_dist = view_soc["Status"].value_counts().reset_index()
-        status_dist.columns = ["Status", "n"]
-        status_order = ["Healthy", "Monitor", "Improve", "Critical"]
-        status_dist["Status"] = pd.Categorical(status_dist["Status"], categories=status_order, ordered=True)
-        status_dist = status_dist.sort_values("Status")
-
-        fig_pie = go.Figure(go.Pie(
-            labels=status_dist["Status"],
-            values=status_dist["n"],
-            marker_colors=[STATUS_COLOR.get(s, "#6b7280") for s in status_dist["Status"]],
-            hole=0.5,
-            textinfo="percent+label",
-            hovertemplate="<b>%{label}</b><br>%{value} divisi (%{percent})<extra></extra>",
-        ))
-        fig_pie.update_layout(**pl_base, height=260)
-        st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
-
-    # ══════════════════════════════════════════════════════════════
-    # ROW 2: Scatter Plot SoC vs Depth + Bar Chart Avg SoC per BU
-    # ══════════════════════════════════════════════════════════════
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:8px 0 16px 0;'></div>", unsafe_allow_html=True)
-    r2l, r2r = st.columns([3, 2])
-
-    with r2l:
-        st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;'>Posisi Divisi: Avg SoC vs Hierarchy Depth</div>", unsafe_allow_html=True)
-
-        fig_scatter = go.Figure()
-
-        # Zone bands background
-        fig_scatter.add_hrect(y0=0,              y1=SOC_NARROW_MAX+0.5, fillcolor="rgba(59,130,246,0.07)", line_width=0)
-        fig_scatter.add_hrect(y0=SOC_NARROW_MAX+0.5, y1=SOC_OK_MAX+0.5,  fillcolor="rgba(5,150,105,0.07)", line_width=0)
-        fig_scatter.add_hrect(y0=SOC_OK_MAX+0.5, y1=20,                  fillcolor="rgba(220,38,38,0.07)", line_width=0)
-        fig_scatter.add_vline(x=DEPTH_FLAT_MAX+0.5, line_dash="dot", line_color=T["outline"], line_width=1.5)
-        fig_scatter.add_vline(x=DEPTH_MED_MAX+0.5,  line_dash="dot", line_color=T["outline"], line_width=1.5)
-
-        # Reference lines
-        fig_scatter.add_hline(y=SOC_NARROW_MAX+0.5, line_dash="dash", line_color="#3b82f6", opacity=0.5,
-                              annotation_text=f"Narrow boundary ({SOC_NARROW_MAX})", annotation_position="right")
-        fig_scatter.add_hline(y=SOC_OK_MAX+0.5,     line_dash="dash", line_color="#dc2626", opacity=0.5,
-                              annotation_text=f"Wide boundary ({SOC_OK_MAX})", annotation_position="right")
-
-        for _, row in view_soc.iterrows():
-            fig_scatter.add_trace(go.Scatter(
-                x=[row["Depth (Layers)"]],
-                y=[row["Avg SoC"]],
-                mode="markers+text",
-                marker=dict(
-                    size=max(10, min(30, row["Total Karyawan"] / 8)),
-                    color=row["Color"],
-                    opacity=0.85,
-                    line=dict(color="white", width=1.5),
-                ),
-                text=[row["Division"][:16] + "…" if len(row["Division"]) > 16 else row["Division"]],
-                textposition="top center",
-                textfont=dict(size=9, color=T["text"]),
-                name=row["Division"],
-                showlegend=False,
-                customdata=[[row["Division"], row["Business Unit"], row["Status"],
-                             row["Label"], row["Total Karyawan"], row["Avg SoC"], row["Depth (Layers)"]]],
-                hovertemplate=(
-                    "<b>%{customdata[0]}</b> (%{customdata[1]})<br>"
-                    "Status: <b>%{customdata[2]}</b><br>"
-                    "%{customdata[3]}<br>"
-                    "Avg SoC: %{customdata[5]:.1f} · Depth: %{customdata[6]} layers · "
-                    "%{customdata[4]} karyawan<extra></extra>"
-                ),
-            ))
-
-        fig_scatter.update_layout(
-            **pl_base, height=380,
-            xaxis=dict(title="Hierarchy Depth (Layers)", gridcolor=T["outline"],
-                       tickmode="linear", tick0=1, dtick=1),
-            yaxis=dict(title="Avg Direct Reports (SoC)", gridcolor=T["outline"]),
-            annotations=[
-                dict(x=1.5, y=1, text="Flat", showarrow=False, font=dict(size=10, color=T["text3"])),
-                dict(x=4.5, y=1, text="Medium", showarrow=False, font=dict(size=10, color=T["text3"])),
-                dict(x=7.0, y=1, text="Deep", showarrow=False, font=dict(size=10, color=T["text3"])),
-            ],
-        )
-        st.plotly_chart(fig_scatter, use_container_width=True, config={"displayModeBar": False})
-        st.caption("Ukuran bubble = jumlah karyawan di divisi. Posisi ideal: tengah-tengah (OK + Medium)")
-
-    with r2r:
-        st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;'>Avg SoC per Business Unit</div>", unsafe_allow_html=True)
-
-        bu_avg = (view_soc.groupby("Business Unit")
-                  .agg(avg_soc=("Avg SoC","mean"), n_div=("Division","count"))
-                  .reset_index().sort_values("avg_soc"))
-        bu_avg["avg_soc"] = bu_avg["avg_soc"].round(1)
-
-        def _bu_color(v):
-            if v <= SOC_NARROW_MAX: return "#3b82f6"
-            if v <= SOC_OK_MAX:     return "#059669"
-            return "#dc2626"
-
-        fig_bu = go.Figure(go.Bar(
-            x=bu_avg["avg_soc"], y=bu_avg["Business Unit"], orientation="h",
-            marker_color=[_bu_color(v) for v in bu_avg["avg_soc"]],
-            text=bu_avg["avg_soc"], textposition="outside",
-            customdata=bu_avg["n_div"],
-            hovertemplate="<b>%{y}</b><br>Avg SoC: %{x:.1f}<br>%{customdata} divisi<extra></extra>",
-        ))
-        fig_bu.add_vline(x=SOC_NARROW_MAX+0.5, line_dash="dot", line_color="#3b82f6", opacity=0.6)
-        fig_bu.add_vline(x=SOC_OK_MAX+0.5,     line_dash="dot", line_color="#dc2626", opacity=0.6)
-        fig_bu.update_layout(
-            **pl_base, height=380,
-            xaxis=dict(title="Avg Direct Reports", gridcolor=T["outline"]),
-            yaxis=dict(gridcolor="rgba(0,0,0,0)"),
-        )
-        st.plotly_chart(fig_bu, use_container_width=True, config={"displayModeBar": False})
-
-    # ══════════════════════════════════════════════════════════════
-    # ROW 3: Action Guidance Cards (9 kombinasi)
-    # ══════════════════════════════════════════════════════════════
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:8px 0 16px 0;'></div>", unsafe_allow_html=True)
-    st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:14px;'>Organization Health Action Guidance</div>", unsafe_allow_html=True)
-
-    # Legend pills
-    st.markdown(f"""
-    <div style="display:flex;gap:20px;margin-bottom:14px;font-size:12px;font-weight:600;">
-        <span style="color:#059669;">● Healthy</span>
-        <span style="color:#3b82f6;">● Monitor</span>
-        <span style="color:#d97706;">● Need Improvement</span>
-        <span style="color:#dc2626;">● Critical</span>
-    </div>""", unsafe_allow_html=True)
-
-    guidance_items = [
-        ("OK",     "Flat",   1), ("OK",     "Medium", 2), ("OK",     "Deep",   3),
-        ("Narrow", "Flat",   4), ("Narrow", "Medium", 5), ("Narrow", "Deep",   6),
-        ("Wide",   "Flat",   7), ("Wide",   "Medium", 8), ("Wide",   "Deep",   9),
-    ]
-    soc_label_map   = {"OK": "OK SoC", "Narrow": "Narrow SoC", "Wide": "Wide SoC"}
-    depth_label_map = {"Flat": "1–3 Layers", "Medium": "4–5 Layers", "Deep": ">5 Layers"}
-
-    # Hitung divisi yang masuk tiap cell dari data aktual
-    for row_start in range(0, 9, 3):
-        cols_g = st.columns(3)
-        for ci, (sc, dc, num) in enumerate(guidance_items[row_start:row_start+3]):
-            status, label, color, action = SOC_MATRIX[(sc, dc)]
-            sc_key  = {"Narrow": "Narrow", "OK": "OK", "Wide": "Wide"}[sc]
-            dc_key  = {"Flat": "Flat", "Medium": "Medium", "Deep": "Deep"}[dc]
-            n_match = len(view_soc[(view_soc["SoC Condition"] == sc_key) & (view_soc["Depth Condition"] == dc_key)])
-            bg      = STATUS_BG.get(status, "#f8fafc")
-
-            with cols_g[ci]:
-                st.markdown(f"""
-                <div style="background:{bg};border-radius:12px;padding:14px 16px;
-                    border-left:4px solid {color};min-height:140px;
-                    box-shadow:0 1px 8px rgba(0,0,0,0.05);">
-                    <div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:6px;line-height:1.3;">
-                        {num}. {soc_label_map[sc]} + {depth_label_map[dc]}
-                    </div>
-                    <div style="font-size:11px;font-weight:600;color:{color};margin-bottom:6px;">
-                        {status} — {label}
-                    </div>
-                    <div style="font-size:11px;color:{T['text_variant']};line-height:1.5;margin-bottom:8px;">
-                        {action}
-                    </div>
-                    <div style="font-size:10px;font-weight:700;color:{T['text3']};
-                        background:rgba(0,0,0,0.06);border-radius:4px;padding:2px 8px;
-                        display:inline-block;">
-                        {n_match} divisi saat ini
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-
-    # ══════════════════════════════════════════════════════════════
-    # ROW 4: Detail Table per Divisi
-    # ══════════════════════════════════════════════════════════════
-    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
-    st.markdown(f"<div style='font-size:13px;font-weight:700;color:{T['text']};margin-bottom:10px;'>Detail per Divisi</div>", unsafe_allow_html=True)
-
-    # Sort by Status severity
-    sev_order = {"Critical": 0, "Improve": 1, "Monitor": 2, "Healthy": 3}
-    view_soc_display = view_soc.copy()
-    view_soc_display["_sev"] = view_soc_display["Status"].map(sev_order)
-    view_soc_display = view_soc_display.sort_values("_sev").drop(columns=["_sev","Color","Action"])
-
-    st.dataframe(
-        view_soc_display[[
-            "Business Unit","Division","Total Karyawan","Total Manager","Total IC",
-            "Avg SoC","Min SoC","Max SoC","Depth (Layers)",
-            "SoC Condition","Depth Condition","Status","Label"
-        ]].reset_index(drop=True),
-        use_container_width=True, height=400
-    )
-
-    # Export
-    ec1, ec2, _ = st.columns([1,1,3])
-    with ec1:
-        st.download_button("📄 CSV", view_soc_display.to_csv(index=False).encode("utf-8"),
-                           "soc_analysis.csv", "text/csv", use_container_width=True)
-    with ec2:
-        st.download_button("📊 Excel", to_excel(view_soc_display), "soc_analysis.xlsx",
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                           use_container_width=True)
