@@ -1006,11 +1006,25 @@ treeData.forEach(n => applyInitialCollapse(n, 0)); rerenderTree(); setTimeout(fi
 # ══════════════════════════════════════════════════════════════════
 st.set_page_config(page_title="HRIS", layout="wide", page_icon="🏢", initial_sidebar_state="expanded")
 
+# ── Session state defaults ────────────────────────────────────────
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 if "nav_filter" not in st.session_state:
     st.session_state.nav_filter = {}
 
+# ══════════════════════════════════════════════════════════════════
+# AUTHENTICATION GATE
+# ══════════════════════════════════════════════════════════════════
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "auth_user" not in st.session_state:
+    st.session_state.auth_user = {}
+
+if not st.session_state.authenticated:
+    _render_login_page()
+    st.stop()
+
+# ── Sudah login — lanjut load app ────────────────────────────────
 df, data_source = load_data()
 
 if df is None:
@@ -1471,8 +1485,45 @@ with st.sidebar:
         if st.button(f"{toggle_icon} Mode", use_container_width=True, key="toggle_btn"):
             st.session_state.dark_mode = not st.session_state.dark_mode; st.rerun()
 
+    # ── User info + Logout ────────────────────────────────────────
+    _auth_user  = st.session_state.get("auth_user", {})
+    _user_name  = _auth_user.get("name", "User")
+    _user_role  = _auth_user.get("role", "viewer")
+    _role_label = {"admin": "Admin", "hr": "HR", "clevel": "C-Level"}.get(_user_role, "Viewer")
+    _role_color = "#9b8fef" if dm else "#4234b6"
+
     st.markdown(f"""
-    <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
+    <div style="margin:10px 16px 0 16px;background:rgba(255,255,255,0.12);
+        border-radius:14px;padding:12px 14px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <div style="width:34px;height:34px;border-radius:50%;
+                background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
+                display:flex;align-items:center;justify-content:center;
+                font-size:14px;font-weight:700;color:white;flex-shrink:0;">
+                {_user_name[0].upper() if _user_name else "U"}
+            </div>
+            <div style="min-width:0;flex:1;">
+                <div style="font-size:13px;font-weight:700;color:{T['sidebar_active']};
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                    {_user_name}</div>
+                <div style="font-size:10px;font-weight:600;color:{_role_color};
+                    text-transform:uppercase;letter-spacing:0.05em;margin-top:1px;">
+                    {_role_label}</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+
+    if st.button("🚪  Keluar", use_container_width=True, key="logout_btn"):
+        for _k in ["authenticated", "auth_user", "auth_username"]:
+            st.session_state.pop(_k, None)
+        st.rerun()
+
+    st.markdown(f"""
+    <div style="padding:10px 20px 14px 20px;font-size:10px;color:{T['sidebar_text2']};
+        text-align:center;letter-spacing:0.03em;">
         Auto-refresh setiap 5 menit
     </div>
     """, unsafe_allow_html=True)
