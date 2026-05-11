@@ -698,7 +698,9 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
 # ══════════════════════════════════════════════════════════════════
 # ORG CHART HTML RENDERER
 # ══════════════════════════════════════════════════════════════════
-def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme=None):
+def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme=None, highlight_id=None):
+    # Convert highlight_id ke JS literal
+    highlight_id_js = f'"{highlight_id}"' if highlight_id else 'null'
     level_map = {"all": "999", "top": "0", "level1": "1"}
     init_depth = level_map.get(initial_level, "999")
     th          = theme or {}
@@ -735,6 +737,24 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
   .node-box.in-div {{ background: {node_in_bg}; border-color: {node_in_bdr}; color: {node_in_txt}; }}
   .node-box.out-div {{ background: {node_out_bg}; border-color: {node_out_bdr}; color: {node_out_txt}; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }}
   .node-box.company-mode {{ background: linear-gradient(135deg,#5b4fcf,#7c6fcd); border-color: #4a3fb8; color: white; box-shadow: 0 4px 20px rgba(91,79,207,0.3); }}
+  .node-box.highlighted {{
+    background: linear-gradient(135deg,#fbbf24,#f59e0b) !important;
+    border-color: #d97706 !important;
+    color: #1a1a00 !important;
+    box-shadow: 0 0 0 3px #fde68a, 0 8px 32px rgba(245,158,11,0.5) !important;
+    animation: pulse-highlight 1.6s ease-in-out infinite !important;
+    z-index: 10;
+    position: relative;
+  }}
+  .node-box.highlighted .node-name {{ color: #1a1a00 !important; font-weight: 800 !important; }}
+  .node-box.highlighted .node-pos,
+  .node-box.highlighted .node-div,
+  .node-box.highlighted .node-sbu {{ color: #3a2800 !important; opacity: 0.85 !important; }}
+  @keyframes pulse-highlight {{
+    0%   {{ box-shadow: 0 0 0 3px #fde68a, 0 8px 32px rgba(245,158,11,0.5); transform: scale(1); }}
+    50%  {{ box-shadow: 0 0 0 8px rgba(253,230,138,0.3), 0 12px 40px rgba(245,158,11,0.7); transform: scale(1.04); }}
+    100% {{ box-shadow: 0 0 0 3px #fde68a, 0 8px 32px rgba(245,158,11,0.5); transform: scale(1); }}
+  }}
   .badge {{ position: absolute; top: -8px; right: -8px; background: {badge_bg}; color: white; border-radius: 999px; font-size: 9px; font-weight: 700; padding: 2px 7px; min-width: 20px; border: 2px solid #f8f7ff; box-shadow: 0 2px 8px rgba(91,79,207,0.3); }}
   .node-name {{ font-weight: 700; font-size: 12px; line-height: 1.3; margin-bottom: 3px; }}
   .node-pos {{ font-size: 10px; opacity: 0.8; line-height: 1.3; margin-bottom: 3px; }}
@@ -762,12 +782,17 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
   <div class="legend-item"><div class="legend-dot" style="background:{node_in_bdr};border:1px solid {node_in_bdr}"></div><span>Divisi ini</span></div>
   <div class="legend-item"><div class="legend-dot" style="background:{node_out_bdr};border:1px solid {node_out_bdr}"></div><span>Atasan luar divisi</span></div>
   <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;border-radius:999px"></div><span>Jml subordinate</span></div>
+  <div class="legend-item" id="legend-highlight" style="display:none;">
+    <div class="legend-dot" style="background:#f59e0b;border:2px solid #d97706;border-radius:3px;"></div>
+    <span style="color:{hint_color}">Karyawan dicari</span>
+  </div>
   <div class="legend-item" style="color:{hint_color}">💡 Klik node · Scroll zoom · Drag geser</div>
 </div>
 <script>
 const treeData = {tree_json_str};
 const collapsed = {{}};
 let initDepth = {init_depth};
+const highlightId = {highlight_id_js};  // null or "EMP_ID" 
 let scale = 1, translateX = 0, translateY = 0;
 let isDragging = false, dragStartX = 0, dragStartY = 0, dragStartTX = 0, dragStartTY = 0;
 const canvas = document.getElementById('canvas');
@@ -796,9 +821,12 @@ function renderNode(node) {{
   const isCollapsed = collapsed[node.id] || false;
   const hasChildren = node.children && node.children.length > 0;
   const descCount   = countDescendants(node);
+  const isHighlight = highlightId && node.id === highlightId;
   const wrapper = document.createElement('div'); wrapper.className = 'node-wrapper';
   const box     = document.createElement('div');
-  box.className = `node-box ${{node.company_mode ? 'company-mode' : node.in_div ? 'in-div' : 'out-div'}}`;
+  const baseClass = node.company_mode ? 'company-mode' : node.in_div ? 'in-div' : 'out-div';
+  box.className = `node-box ${{baseClass}}${{isHighlight ? ' highlighted' : ''}}`;
+  if (isHighlight) {{ box.id = 'highlighted-node'; }}
   if (hasChildren && descCount > 0) {{
     const badge = document.createElement('div'); badge.className = 'badge';
     badge.textContent = isCollapsed ? descCount : node.children.length; box.appendChild(badge);
@@ -823,8 +851,39 @@ function renderNode(node) {{
   }}
   return wrapper;
 }}
-function rerenderTree() {{ const r = document.getElementById('tree-root'); r.innerHTML = ''; treeData.forEach(n => r.appendChild(renderNode(n))); }}
-treeData.forEach(n => applyInitialCollapse(n, 0)); rerenderTree(); setTimeout(fitView, 300);
+function scrollToHighlighted() {{
+  const el = document.getElementById('highlighted-node');
+  if (!el) return;
+  // Tunggu layout selesai
+  setTimeout(() => {{
+    const canvasRect = canvas.getBoundingClientRect();
+    const elRect     = el.getBoundingClientRect();
+    // Hitung posisi relatif terhadap tree-root
+    const elCenterX  = elRect.left + elRect.width  / 2 - canvasRect.left;
+    const elCenterY  = elRect.top  + elRect.height / 2 - canvasRect.top;
+    const targetX    = canvasRect.width  / 2 - elCenterX;
+    const targetY    = canvasRect.height / 2 - elCenterY;
+    // Smooth transition
+    treeRoot.style.transition = 'transform 0.6s cubic-bezier(0.4,0,0.2,1)';
+    scale = 1.2;
+    translateX = targetX;
+    translateY = targetY - 60;
+    applyTransform();
+    setTimeout(() => {{ treeRoot.style.transition = ''; }}, 700);
+    // Show legend item
+    const legEl = document.getElementById('legend-highlight');
+    if (legEl) legEl.style.display = 'flex';
+  }}, 350);
+}}
+function rerenderTree() {{
+  const r = document.getElementById('tree-root');
+  r.innerHTML = '';
+  treeData.forEach(n => r.appendChild(renderNode(n)));
+  if (highlightId) {{ scrollToHighlighted(); }}
+}}
+treeData.forEach(n => applyInitialCollapse(n, 0));
+rerenderTree();
+if (!highlightId) {{ setTimeout(fitView, 300); }}
 </script></body></html>"""
 
 
@@ -1477,7 +1536,7 @@ if _active == 0:
         ]["Employee ID"].astype(str).tolist()
 
         tree_data  = build_tree_json(full_data, selected_div, root_ids, mode="division")
-        chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T)
+        chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T, highlight_id=search_highlight_id)
         st.components.v1.html(chart_html, height=680, scrolling=False)
 
         st.markdown("**⬇️ Download Data**")
