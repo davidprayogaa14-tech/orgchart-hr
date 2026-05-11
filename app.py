@@ -289,7 +289,7 @@ def _draw_pdf_footer(c, page_w, downloaded_at):
     c.line(36, 28, page_w - 36, 28)
     c.setFillColor(PDF_TEXT_MUTED)
     c.setFont("Helvetica", 7)
-    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Analytics")
+    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Dashboard")
     c.drawRightString(page_w - 36, 18, "HR Org Chart Dashboard")
 
 
@@ -1282,7 +1282,7 @@ with st.sidebar:
                 <div style="font-size:16px;font-weight:800;color:{T['sidebar_active']};
                     font-family:'Manrope',sans-serif;line-height:1.2;letter-spacing:-0.02em;">HRIS</div>
                 <div style="font-size:11px;color:{T['sidebar_text2']};font-weight:500;
-                    letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">People Analytics</div>
+                    letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">People Dashboard</div>
             </div>
         </div>
         <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:7px 12px;
@@ -1371,7 +1371,7 @@ st.markdown(f"""
     display:flex;align-items:flex-end;justify-content:space-between;">
     <div>
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">HR · People Analytics</div>
+            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">HR · People Dashboard</div>
         <div style="font-size:32px;font-weight:800;color:{T['text']};
             font-family:'Manrope',sans-serif;line-height:1.1;letter-spacing:-0.03em;">Org Chart Dashboard</div>
         <div style="font-size:14px;color:{T['text_variant']};margin-top:6px;font-weight:400;line-height:1.6;">
