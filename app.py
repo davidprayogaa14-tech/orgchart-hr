@@ -290,7 +290,7 @@ def _draw_pdf_footer(c, page_w, downloaded_at):
     c.setFillColor(PDF_TEXT_MUTED)
     c.setFont("Helvetica", 7)
     c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Dashboard")
-    c.drawRightString(page_w - 36, 18, "HR Org Chart Dashboard")
+    c.drawRightString(page_w - 36, 18, "HR Organization Dashboard")
 
 
 def _wrap_text(text: str, max_chars: int) -> list:
@@ -1373,9 +1373,9 @@ st.markdown(f"""
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;
             letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">HR · People Dashboard</div>
         <div style="font-size:32px;font-weight:800;color:{T['text']};
-            font-family:'Manrope',sans-serif;line-height:1.1;letter-spacing:-0.03em;">Org Chart Dashboard</div>
+            font-family:'Manrope',sans-serif;line-height:1.1;letter-spacing:-0.03em;">Organization Dashboard</div>
         <div style="font-size:14px;color:{T['text_variant']};margin-top:6px;font-weight:400;line-height:1.6;">
-            Visualisasi & analitik struktur organisasi real-time
+            Dashboard Visualisasi Data Organisasi
         </div>
     </div>
     <div style="background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
