@@ -2412,6 +2412,155 @@ elif _active == 5:
     with st.spinner("Menghitung hierarki dan SoC scores..."):
         soc_df = build_soc_dataframe(df, CHIEF_ROOT)
 
+    # ── HIGHLIGHTS KEY FINDINGS — BU selector ──────────────────
+    st.markdown(f"""
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;
+        color:{T['text3']};margin-bottom:10px;">Highlights Key Findings</div>
+    """, unsafe_allow_html=True)
+
+    bu_list_soc = sorted(soc_df["Business Unit"].dropna().unique().tolist())
+    col_bu_sel, _ = st.columns([2, 5])
+    with col_bu_sel:
+        selected_bu_soc = st.selectbox("Pilih Business Unit", bu_list_soc, key="soc_bu_highlight")
+
+    bu_df = soc_df[soc_df["Business Unit"] == selected_bu_soc].copy()
+    total_bu  = len(bu_df)
+
+    # ── Compute BU-level metrics ──────────────────────────────
+    if total_bu > 0:
+        # SoC condition distribution
+        pct_narrow = round(len(bu_df[bu_df["soc_condition"]=="Narrow"]) / total_bu * 100, 1)
+        pct_wide   = round(len(bu_df[bu_df["soc_condition"]=="Wide"])   / total_bu * 100, 1)
+        pct_ok     = round(len(bu_df[bu_df["soc_condition"]=="OK"])     / total_bu * 100, 1)
+
+        # Depth distribution
+        pct_deep   = round(len(bu_df[bu_df["depth_band"]=="Deep"])   / total_bu * 100, 1)
+        pct_medium = round(len(bu_df[bu_df["depth_band"]=="Medium"]) / total_bu * 100, 1)
+        pct_flat   = round(len(bu_df[bu_df["depth_band"]=="Flat"])   / total_bu * 100, 1)
+
+        # Dominant SoC condition & depth band
+        dom_soc   = bu_df["soc_condition"].mode()[0]  if not bu_df["soc_condition"].empty else "-"
+        dom_depth = bu_df["depth_band"].mode()[0]     if not bu_df["depth_band"].empty    else "-"
+
+        # Overall effectiveness: derive from dominant scenario
+        dom_key  = f"{dom_soc}-{dom_depth}"
+        dom_g    = SOC_GUIDANCE.get(dom_key, {})
+        org_eff  = dom_g.get("status",  "Monitor")
+        imp_desc = dom_g.get("desc",    "-")
+        imp_tgt  = dom_g.get("target",  "-")
+        scenario = dom_g.get("scenario", "-")
+
+        # Key findings: top 2 scenario labels by count
+        scenario_counts = bu_df.groupby("guidance_key").size().reset_index(name="cnt").sort_values("cnt", ascending=False)
+        kf_items = []
+        for _, scrow in scenario_counts.head(4).iterrows():
+            g2   = SOC_GUIDANCE.get(scrow["guidance_key"], {})
+            pct2 = round(scrow["cnt"] / total_bu * 100, 2)
+            kf_items.append({"pct": pct2, "label": g2.get("label","-"), "key": scrow["guidance_key"]})
+
+        # Status color mapping
+        STATUS_HEX = {
+            "Healthy":          {"bg":"#f0fff4","txt":"#166534","badge":"#dcfce7","border":"#86efac"},
+            "Monitor":          {"bg":"#eff6ff","txt":"#1d4ed8","badge":"#dbeafe","border":"#93c5fd"},
+            "Need Improvement": {"bg":"#fffbeb","txt":"#92400e","badge":"#fef9c3","border":"#fde68a"},
+            "Critical":         {"bg":"#fff1f2","txt":"#be123c","badge":"#ffe4e6","border":"#fecdd3"},
+        }
+        SOC_COLORS  = {"OK":"#166534","Narrow":"#be123c","Wide":"#92400e"}
+        DEPTH_COLORS= {"Flat":"#166534","Medium":"#1d4ed8","Deep":"#be123c"}
+        eff_c = STATUS_HEX.get(org_eff, STATUS_HEX["Monitor"])
+
+        # Build key findings HTML items
+        kf_html = ""
+        for i, kf in enumerate(kf_items[:4]):
+            kf_g   = SOC_GUIDANCE.get(kf["key"], {})
+            kf_st  = kf_g.get("status","Monitor")
+            kf_c   = STATUS_HEX.get(kf_st, STATUS_HEX["Monitor"])
+            kf_html += f"""
+            <div style="text-align:center;padding:8px 4px;">
+                <div style="font-size:22px;font-weight:800;font-family:'Manrope',sans-serif;
+                    color:{T['primary']};letter-spacing:-0.03em;line-height:1;">{kf['pct']}%</div>
+                <div style="font-size:10px;color:{T['text_variant']};margin-top:3px;line-height:1.3;">{kf['label']}</div>
+            </div>"""
+
+        kf_grid_cols = f"repeat({min(len(kf_items),4)}, 1fr)"
+
+        st.markdown(f"""
+        <div style="display:grid;grid-template-columns:280px 1fr;gap:16px;margin-bottom:20px;">
+
+          <!-- LEFT: Effectiveness Scores card -->
+          <div style="background:{T['surface_lowest']};border-radius:16px;padding:20px 22px;
+              box-shadow:0 2px 20px {T['metric_shadow']},0 0 0 1px {T['outline']};position:relative;overflow:hidden;">
+              <div style="position:absolute;top:0;left:0;right:0;height:3px;
+                  background:linear-gradient(90deg,{T['primary']},{T['primary_cont']});opacity:0.7;"></div>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;
+                  color:{T['text3']};margin-bottom:14px;">Effectiveness Scores</div>
+
+              <div style="margin-bottom:14px;">
+                  <div style="font-size:12px;font-weight:600;color:{T['text_variant']};margin-bottom:6px;">
+                      Organization Effectiveness</div>
+                  <span style="display:inline-block;background:{eff_c['badge']};color:{eff_c['txt']};
+                      font-size:11px;font-weight:800;padding:4px 14px;border-radius:6px;
+                      text-transform:uppercase;letter-spacing:0.06em;border:1px solid {eff_c['border']};">
+                      {org_eff}
+                  </span>
+              </div>
+
+              <div style="height:1px;background:{T['outline']};margin:12px 0;"></div>
+
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                  <div>
+                      <div style="font-size:11px;color:{T['text3']};font-weight:600;margin-bottom:5px;">SoC Score</div>
+                      <span style="display:inline-block;background:{SOC_COLORS.get(dom_soc,'#6b7280')};
+                          color:white;font-size:11px;font-weight:800;padding:3px 12px;
+                          border-radius:5px;text-transform:uppercase;letter-spacing:0.05em;">{dom_soc}</span>
+                  </div>
+                  <div>
+                      <div style="font-size:11px;color:{T['text3']};font-weight:600;margin-bottom:5px;">Depth Score</div>
+                      <span style="display:inline-block;background:{DEPTH_COLORS.get(dom_depth,'#6b7280')};
+                          color:white;font-size:11px;font-weight:800;padding:3px 12px;
+                          border-radius:5px;text-transform:uppercase;letter-spacing:0.05em;">{dom_depth}</span>
+                  </div>
+              </div>
+          </div>
+
+          <!-- RIGHT: Org Diagnostic Key Findings -->
+          <div style="background:{T['surface_lowest']};border-radius:16px;padding:20px 22px;
+              box-shadow:0 2px 20px {T['metric_shadow']},0 0 0 1px {T['outline']};position:relative;overflow:hidden;">
+              <div style="position:absolute;top:0;left:0;right:0;height:3px;
+                  background:linear-gradient(90deg,{T['primary']},{T['primary_cont']});opacity:0.7;"></div>
+              <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;
+                  color:{T['text3']};margin-bottom:14px;">Organization Diagnostic Key Findings — {selected_bu_soc}</div>
+              <div style="display:grid;grid-template-columns:{kf_grid_cols};gap:4px;">
+                  {kf_html}
+              </div>
+          </div>
+
+        </div>
+
+        <!-- Improvement Target banner -->
+        <div style="background:{T['surface_lowest']};border-radius:14px;padding:16px 20px;
+            margin-bottom:20px;display:flex;align-items:flex-start;gap:16px;
+            box-shadow:0 2px 16px {T['metric_shadow']},0 0 0 1px {T['outline']};">
+            <div style="width:4px;min-height:48px;background:#f59e0b;border-radius:4px;flex-shrink:0;margin-top:2px;"></div>
+            <div>
+                <div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:4px;">
+                    Organization Improvement Target — Scenario {scenario}</div>
+                <div style="font-size:12px;color:{T['text_variant']};margin-bottom:6px;line-height:1.5;">
+                    {imp_desc}</div>
+                <div style="font-size:12px;font-weight:700;color:{T['text']};">
+                    Target: {imp_tgt}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    else:
+        st.info(f"Tidak ada data manager untuk BU: {selected_bu_soc}")
+
+    # ── Divider ────────────────────────────────────────────────
+    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:4px 0 20px;'></div>",
+                unsafe_allow_html=True)
+
+    # ── Global metric summary ──────────────────────────────────
     total_mgr    = len(soc_df)
     pct_healthy  = round(len(soc_df[soc_df["soc_status"]=="Healthy"])  / total_mgr * 100, 1) if total_mgr else 0
     pct_critical = round(len(soc_df[soc_df["soc_status"]=="Critical"]) / total_mgr * 100, 1) if total_mgr else 0
