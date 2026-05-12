@@ -1371,7 +1371,7 @@ st.markdown(f"""
     display:flex;align-items:flex-end;justify-content:space-between;">
     <div>
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">HR · People Dashboard</div>
+            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">People Dashboard</div>
         <div style="font-size:32px;font-weight:800;color:{T['text']};
             font-family:'Manrope',sans-serif;line-height:1.1;letter-spacing:-0.03em;">Organization Dashboard</div>
         <div style="font-size:14px;color:{T['text_variant']};margin-top:6px;font-weight:400;line-height:1.6;">
