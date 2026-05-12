@@ -31,6 +31,276 @@ SCOPES     = [
 ]
 CHIEF_ROOT = "SLKR001"
 
+# ══════════════════════════════════════════════════════════════════
+# SOC ANALYSIS — CONSTANTS & FRAMEWORK
+# Threshold: Narrow ≤3 · OK 4–8 · Wide ≥9 direct reports
+# Depth: Flat 1–3 · Medium 4–5 · Deep >5 layers
+# ══════════════════════════════════════════════════════════════════
+SOC_NARROW_MAX = 3
+SOC_OK_MAX     = 8
+DEPTH_FLAT_MAX = 3
+DEPTH_MED_MAX  = 5
+
+SOC_GUIDANCE = {
+    "OK-Flat":       {"scenario":1,"status":"Healthy",          "label":"Lean and agile structure",                      "desc":"Healthy: lean and agile structure. Maintain current structure.",                              "target":"Keep within healthy SoC range."},
+    "OK-Medium":     {"scenario":2,"status":"Healthy",          "label":"Healthy operating model",                        "desc":"Healthy: standard benchmark. Maintain accountability.",                                      "target":"Document best practices."},
+    "OK-Deep":       {"scenario":3,"status":"Monitor",          "label":"Stable but slow structure",                      "desc":"Monitor: slow decision-making. Reduce bottlenecks.",                                         "target":"Reduce depth to 5 layers or less."},
+    "Narrow-Flat":   {"scenario":4,"status":"Monitor",          "label":"Underutilized leadership, IC-heavy structure",   "desc":"Monitor: underutilized leaders. Consolidate teams.",                                         "target":"Min optimized 10% SoC direct reports (increase)."},
+    "Narrow-Medium": {"scenario":5,"status":"Monitor",          "label":"Early layering, micro-management risk",          "desc":"Monitor: early layering. Merge small reporting groups.",                                     "target":"Review and remove duplicate roles."},
+    "Narrow-Deep":   {"scenario":6,"status":"Need Improvement", "label":"Structural inefficiency, artificial layers",     "desc":"Improve: too many layers. Remove artificial layers.",                                        "target":"Reduce depth to 5 layers or less."},
+    "Wide-Flat":     {"scenario":7,"status":"Need Improvement", "label":"Leader overload, informal bottlenecks",          "desc":"Improve: leader bottlenecks. Add delegation.",                                               "target":"Min optimized 10% SoC direct reports (reducing)."},
+    "Wide-Medium":   {"scenario":8,"status":"Monitor",          "label":"Coordination-heavy leadership",                  "desc":"Monitor: overloaded leaders. Create team clusters.",                                         "target":"Min optimized 10% SoC direct reports (reducing)."},
+    "Wide-Deep":     {"scenario":9,"status":"Critical",         "label":"Dual inefficiency (layers + overload)",          "desc":"Critical: dual inefficiency — layers and overload. Simplify hierarchy.",                      "target":"Reduce SoC and depth."},
+}
+
+
+def get_soc_condition(direct: int) -> str:
+    if direct <= SOC_NARROW_MAX: return "Narrow"
+    if direct <= SOC_OK_MAX:     return "OK"
+    return "Wide"
+
+
+def get_depth_band(depth: int) -> str:
+    if depth <= DEPTH_FLAT_MAX: return "Flat"
+    if depth <= DEPTH_MED_MAX:  return "Medium"
+    return "Deep"
+
+
+def compute_hierarchy_depth(emp_id: str, df: pd.DataFrame, root_id: str = "SLKR001") -> int:
+    id_to_mgr = df.set_index("Employee ID")["Manager ID"].to_dict()
+    depth, current, visited = 0, emp_id, set()
+    while current and current not in visited:
+        if current == root_id: return depth
+        visited.add(current)
+        parent = id_to_mgr.get(current, "")
+        if not parent or parent in ("", "nan"): break
+        current = parent
+        depth += 1
+    return depth
+
+
+@st.cache_data(ttl=300)
+def build_soc_dataframe(df: pd.DataFrame, chief_root: str = "SLKR001") -> pd.DataFrame:
+    direct_count = (
+        df[df["Manager ID"].notna() & (df["Manager ID"] != "") & (df["Manager ID"] != "nan")]
+        .groupby("Manager ID").size().reset_index(name="direct_reports")
+        .rename(columns={"Manager ID": "Employee ID"})
+    )
+    mgr_ids = set(direct_count["Employee ID"].tolist())
+    mgr_df  = df[df["Employee ID"].isin(mgr_ids)].copy()
+    mgr_df  = mgr_df.merge(direct_count, on="Employee ID", how="left")
+    mgr_df["direct_reports"]  = mgr_df["direct_reports"].fillna(0).astype(int)
+    mgr_df["hierarchy_depth"] = mgr_df["Employee ID"].apply(lambda eid: compute_hierarchy_depth(eid, df, chief_root))
+    mgr_df["soc_condition"]   = mgr_df["direct_reports"].apply(get_soc_condition)
+    mgr_df["depth_band"]      = mgr_df["hierarchy_depth"].apply(get_depth_band)
+    mgr_df["guidance_key"]    = mgr_df["soc_condition"] + "-" + mgr_df["depth_band"]
+    mgr_df["soc_status"]      = mgr_df["guidance_key"].apply(lambda k: SOC_GUIDANCE.get(k, {}).get("status",   "-"))
+    mgr_df["soc_scenario"]    = mgr_df["guidance_key"].apply(lambda k: SOC_GUIDANCE.get(k, {}).get("scenario", "-"))
+    mgr_df["soc_label"]       = mgr_df["guidance_key"].apply(lambda k: SOC_GUIDANCE.get(k, {}).get("label",    "-"))
+    mgr_df["action_target"]   = mgr_df["guidance_key"].apply(lambda k: SOC_GUIDANCE.get(k, {}).get("target",   "-"))
+    return mgr_df.reset_index(drop=True)
+
+
+def render_soc_dashboard(soc_df: pd.DataFrame, T: dict) -> str:
+    records = []
+    for _, row in soc_df.iterrows():
+        sc_val = row.get("soc_scenario", 0)
+        records.append({
+            "id": str(row.get("Employee ID","")), "name": str(row.get("Employee Name","")),
+            "position": str(row.get("Job Position","")), "division": str(row.get("Division","")),
+            "bu": str(row.get("Business Unit","")), "sbu": str(row.get("SBU/Tribe","")),
+            "direct": int(row.get("direct_reports",0)), "depth": int(row.get("hierarchy_depth",0)),
+            "key": str(row.get("guidance_key","")), "status": str(row.get("soc_status","")),
+            "scenario": int(sc_val) if str(sc_val).isdigit() else 0,
+            "label": str(row.get("soc_label","")), "target": str(row.get("action_target","")),
+            "soc_cond": str(row.get("soc_condition","")), "depth_band": str(row.get("depth_band","")),
+        })
+    guidance_json = json.dumps(SOC_GUIDANCE)
+    records_json  = json.dumps(records)
+    bg   = T.get("bg","#faf8ff"); sl   = T.get("surface_low","#f4f3fb"); s0   = T.get("surface_lowest","#ffffff")
+    tx   = T.get("text","#1a1b21"); tx2 = T.get("text_variant","#36364a"); tx3  = T.get("text3","#5a5a6a")
+    pr   = T.get("primary","#4234b6"); pc  = T.get("primary_cont","#5b4fcf"); pf   = T.get("primary_fixed","#e4dfff")
+    ol   = T.get("outline","rgba(200,196,214,0.35)"); ms  = T.get("metric_shadow","rgba(66,52,182,0.07)")
+    SC   = json.dumps({"Healthy":{"bg":"#f0fff4","bdr":"#86efac","txt":"#166534","badge_bg":"#dcfce7"},"Monitor":{"bg":"#eff6ff","bdr":"#93c5fd","txt":"#1d4ed8","badge_bg":"#dbeafe"},"Need Improvement":{"bg":"#fffbeb","bdr":"#fde68a","txt":"#92400e","badge_bg":"#fef9c3"},"Critical":{"bg":"#fff1f2","bdr":"#fecdd3","txt":"#be123c","badge_bg":"#ffe4e6"}})
+    return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Manrope:wght@700;800&display=swap');
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{font-family:'Plus Jakarta Sans',sans-serif;background:{bg};color:{tx};font-size:13px;}}
+.wrap{{padding:0;}}
+.filter-row{{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;}}
+select{{background:{s0};border:1.5px solid {ol};border-radius:10px;color:{tx};font-size:12.5px;padding:7px 12px;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;}}
+select:focus{{outline:none;border-color:{pr};}}
+.metric-row{{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;}}
+.metric-card{{background:{s0};border-radius:14px;padding:18px 20px;box-shadow:0 2px 16px {ms},0 0 0 1px {ol};position:relative;overflow:hidden;}}
+.metric-card::before{{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:linear-gradient(90deg,{pr},{pc});opacity:0.6;}}
+.metric-label{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:{tx3};margin-bottom:6px;}}
+.metric-val{{font-size:28px;font-weight:800;font-family:'Manrope',sans-serif;letter-spacing:-0.03em;line-height:1;}}
+.metric-sub{{font-size:11px;color:{tx3};margin-top:4px;}}
+.section-label{{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.09em;color:{tx3};margin-bottom:12px;}}
+.tab-row{{display:flex;gap:0;border-bottom:1px solid {ol};margin-bottom:20px;}}
+.tab-btn{{font-size:13px;font-weight:600;padding:10px 20px;background:none;border:none;border-bottom:2.5px solid transparent;cursor:pointer;color:{tx3};font-family:'Plus Jakarta Sans',sans-serif;transition:color 0.15s;margin-bottom:-1px;}}
+.tab-btn:hover{{color:{pr};}}
+.tab-btn.active{{color:{pr};border-bottom-color:{pr};}}
+.matrix-grid{{display:grid;grid-template-columns:110px repeat(3,1fr);gap:6px;margin-bottom:16px;}}
+.mhdr{{font-size:11px;font-weight:600;color:{tx3};text-align:center;padding:6px 4px;}}
+.mrow-label{{font-size:11px;font-weight:600;color:{tx2};display:flex;align-items:center;}}
+.mcell{{border-radius:12px;padding:12px 8px;text-align:center;cursor:pointer;border:2px solid transparent;transition:all 0.18s;}}
+.mcell:hover{{transform:scale(1.02);box-shadow:0 4px 16px rgba(66,52,182,0.12);}}
+.mcell.selected{{border-color:{pr};box-shadow:0 0 0 3px {pf};}}
+.mcell-count{{font-size:22px;font-weight:800;font-family:'Manrope',sans-serif;letter-spacing:-0.03em;}}
+.mcell-label{{font-size:10px;margin-top:3px;line-height:1.3;opacity:0.85;}}
+.cell-healthy{{background:#f0fff4;color:#166534;}}
+.cell-monitor{{background:#eff6ff;color:#1d4ed8;}}
+.cell-improve{{background:#fffbeb;color:#92400e;}}
+.cell-critical{{background:#fff1f2;color:#be123c;}}
+.guidance-box{{background:{s0};border-radius:14px;padding:18px 20px;box-shadow:0 2px 16px {ms},0 0 0 1px {ol};margin-top:4px;}}
+.guidance-hint{{text-align:center;color:{tx3};font-size:12px;padding:16px;}}
+.badge{{display:inline-block;font-size:10px;font-weight:700;padding:3px 10px;border-radius:999px;}}
+.tbl-wrap{{border:1px solid {ol};border-radius:14px;overflow:hidden;}}
+table{{width:100%;border-collapse:collapse;font-size:12px;table-layout:fixed;}}
+th{{background:{sl};color:{tx3};font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:0.07em;padding:10px 12px;text-align:left;border-bottom:1px solid {ol};}}
+td{{padding:9px 12px;border-bottom:1px solid {ol};color:{tx};vertical-align:middle;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+tr:last-child td{{border-bottom:none;}}
+tr:hover td{{background:{sl};}}
+.empty-row{{text-align:center;color:{tx3};padding:24px;}}
+.chart-legend{{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;}}
+.leg-item{{display:flex;align-items:center;gap:6px;font-size:11px;color:{tx2};}}
+.leg-dot{{width:10px;height:10px;border-radius:2px;}}
+</style></head><body>
+<div class="wrap">
+<div class="filter-row">
+  <select id="f-bu" onchange="applyFilters()"><option value="all">Semua Business Unit</option></select>
+  <select id="f-div" onchange="applyFilters()"><option value="all">Semua Divisi</option></select>
+  <select id="f-status" onchange="applyFilters()"><option value="all">Semua Status</option><option>Healthy</option><option>Monitor</option><option>Need Improvement</option><option>Critical</option></select>
+  <select id="f-soc" onchange="applyFilters()"><option value="all">Semua SoC Condition</option><option>OK</option><option>Narrow</option><option>Wide</option></select>
+</div>
+<div class="metric-row" id="metric-row"></div>
+<div class="tab-row">
+  <button class="tab-btn active" onclick="showTab('matrix',this)">Scoring Matrix</button>
+  <button class="tab-btn" onclick="showTab('table',this)">Manager Detail</button>
+  <button class="tab-btn" onclick="showTab('chart',this)">Distribusi</button>
+</div>
+<div id="tab-matrix">
+  <p class="section-label">Organization Effectiveness Scoring — 3×3 Matrix</p>
+  <div class="matrix-grid" id="matrix-grid"></div>
+  <div id="guidance-area"><div class="guidance-hint">Klik sel untuk melihat action guidance</div></div>
+</div>
+<div id="tab-table" style="display:none">
+  <p class="section-label">Manager-level SoC Detail</p>
+  <div class="tbl-wrap"><table>
+    <thead><tr>
+      <th style="width:20%">Nama Manager</th><th style="width:18%">Posisi</th>
+      <th style="width:14%">Divisi</th><th style="width:10%">BU</th>
+      <th style="width:9%;text-align:center">Direct</th><th style="width:9%;text-align:center">Depth</th>
+      <th style="width:9%;text-align:center">SoC</th><th style="width:11%">Status</th>
+    </tr></thead>
+    <tbody id="tbl-body"></tbody>
+  </table></div>
+</div>
+<div id="tab-chart" style="display:none">
+  <p class="section-label">Distribusi Status SoC per Business Unit</p>
+  <div class="chart-legend">
+    <span class="leg-item"><span class="leg-dot" style="background:#166534"></span>Healthy</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#1d4ed8"></span>Monitor</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#92400e"></span>Need Improvement</span>
+    <span class="leg-item"><span class="leg-dot" style="background:#be123c"></span>Critical</span>
+  </div>
+  <div style="position:relative;height:300px"><canvas id="dist-chart"></canvas></div>
+</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const ALL_DATA={records_json};const GUIDANCE={guidance_json};const SC={SC};
+const DEPTHS=["Flat","Medium","Deep"];const SOCS=["OK","Narrow","Wide"];
+const DEPTH_LBL={{"Flat":"1–3 Layers","Medium":"4–5 Layers","Deep":">5 Layers"}};
+const SOC_LBL={{"OK":"OK SoC","Narrow":"Narrow SoC","Wide":"Wide SoC"}};
+const SCLS={{"Healthy":"cell-healthy","Monitor":"cell-monitor","Need Improvement":"cell-improve","Critical":"cell-critical"}};
+const PR="{pr}";const TX="{tx}";const TX2="{tx2}";const TX3="{tx3}";
+let filtered=[...ALL_DATA];let activeCell=null;let chartInst=null;
+function populate_filters(){{const bus=[...new Set(ALL_DATA.map(r=>r.bu))].sort();const buSel=document.getElementById("f-bu");bus.forEach(b=>{{const o=document.createElement("option");o.value=o.text=b;buSel.appendChild(o);}});}}
+function applyFilters(){{
+  const bu=document.getElementById("f-bu").value;const div=document.getElementById("f-div").value;
+  const st=document.getElementById("f-status").value;const sc=document.getElementById("f-soc").value;
+  const divSel=document.getElementById("f-div");
+  const selBU=bu==="all"?ALL_DATA:ALL_DATA.filter(r=>r.bu===bu);
+  const divs=[...new Set(selBU.map(r=>r.division))].sort();
+  divSel.innerHTML='<option value="all">Semua Divisi</option>';
+  divs.forEach(d=>{{const o=document.createElement("option");o.value=o.text=d;divSel.appendChild(o);}});
+  filtered=ALL_DATA.filter(r=>{{
+    if(bu!=="all"&&r.bu!==bu)return false;if(div!=="all"&&r.division!==div)return false;
+    if(st!=="all"&&r.status!==st)return false;if(sc!=="all"&&r.soc_cond!==sc)return false;return true;
+  }});activeCell=null;renderAll();
+}}
+function renderMetrics(){{
+  const total=filtered.length;const counts={{}};
+  ["Healthy","Monitor","Need Improvement","Critical"].forEach(s=>counts[s]=0);
+  filtered.forEach(r=>{{if(counts[r.status]!==undefined)counts[r.status]++;}});
+  const pct=s=>total?Math.round(counts[s]/total*100):0;
+  document.getElementById("metric-row").innerHTML=`
+    <div class="metric-card"><div class="metric-label">Total Dianalisis</div><div class="metric-val" style="color:${{PR}}">${{total}}</div><div class="metric-sub">manager</div></div>
+    <div class="metric-card"><div class="metric-label" style="color:#166534">Healthy</div><div class="metric-val" style="color:#166534">${{counts.Healthy}}</div><div class="metric-sub">${{pct("Healthy")}}% dari total</div></div>
+    <div class="metric-card"><div class="metric-label" style="color:#92400e">Need Improvement</div><div class="metric-val" style="color:#92400e">${{counts["Need Improvement"]}}</div><div class="metric-sub">${{pct("Need Improvement")}}% dari total</div></div>
+    <div class="metric-card"><div class="metric-label" style="color:#be123c">Critical</div><div class="metric-val" style="color:#be123c">${{counts.Critical}}</div><div class="metric-sub">${{pct("Critical")}}% dari total</div></div>`;
+}}
+function renderMatrix(){{
+  let html='<div class="mhdr"></div>';
+  DEPTHS.forEach(d=>{{html+=`<div class="mhdr">${{DEPTH_LBL[d]}}</div>`;}});
+  SOCS.forEach(s=>{{
+    html+=`<div class="mrow-label">${{SOC_LBL[s]}}</div>`;
+    DEPTHS.forEach(d=>{{
+      const key=s+"-"+d;const g=GUIDANCE[key]||{{}};
+      const cnt=filtered.filter(r=>r.key===key).length;
+      const cls=SCLS[g.status]||"cell-monitor";const sel=activeCell===key?" selected":"";
+      html+=`<div class="mcell ${{cls}}${{sel}}" onclick="selectCell('${{key}}')"><div class="mcell-count">${{cnt}}</div><div class="mcell-label">${{g.label||""}}</div></div>`;
+    }});
+  }});
+  document.getElementById("matrix-grid").innerHTML=html;renderGuidance();
+}}
+function selectCell(key){{activeCell=activeCell===key?null:key;renderMatrix();}}
+function renderGuidance(){{
+  const el=document.getElementById("guidance-area");
+  if(!activeCell){{el.innerHTML='<div class="guidance-hint">Klik sel untuk melihat action guidance</div>';return;}}
+  const g=GUIDANCE[activeCell]||{{}};const cnt=filtered.filter(r=>r.key===activeCell).length;const sc=SC[g.status]||{{}};
+  el.innerHTML=`<div class="guidance-box">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <span class="badge" style="background:${{sc.badge_bg}};color:${{sc.txt}}">${{g.status||""}}</span>
+      <span style="font-size:14px;font-weight:700;color:${{TX}}">Skenario ${{g.scenario}} — ${{g.label}}</span>
+      <span style="margin-left:auto;font-size:12px;color:${{TX3}}">${{cnt}} manager</span>
+    </div>
+    <div style="font-size:13px;color:${{TX2}};margin-bottom:10px;line-height:1.6">${{g.desc||""}}</div>
+    <div style="font-size:12px;color:${{TX3}}"><span style="font-weight:600;color:${{TX2}}">Target:</span> ${{g.target||""}}</div>
+  </div>`;
+}}
+function renderTable(){{
+  const rows=filtered.map(r=>{{const sc=SC[r.status]||{{}};return `<tr>
+    <td style="font-weight:600" title="${{r.name}}">${{r.name}}</td>
+    <td style="color:${{TX2}}" title="${{r.position}}">${{r.position}}</td>
+    <td style="color:${{TX2}}" title="${{r.division}}">${{r.division}}</td>
+    <td style="color:${{TX3}}">${{r.bu}}</td>
+    <td style="text-align:center">${{r.direct}}</td><td style="text-align:center">${{r.depth}}</td>
+    <td style="text-align:center;font-size:11px;color:${{TX2}}">${{r.soc_cond}}</td>
+    <td><span class="badge" style="background:${{sc.badge_bg}};color:${{sc.txt}}">${{r.status}}</span></td>
+  </tr>`;}}).join("");
+  document.getElementById("tbl-body").innerHTML=rows||'<tr><td colspan="8" class="empty-row">Tidak ada data sesuai filter</td></tr>';
+}}
+function renderChart(){{
+  if(chartInst){{chartInst.destroy();chartInst=null;}}
+  const bus=[...new Set(ALL_DATA.map(r=>r.bu))].sort();
+  const statuses=["Healthy","Monitor","Need Improvement","Critical"];
+  const colors=["#166534","#1d4ed8","#92400e","#be123c"];
+  const datasets=statuses.map((st,i)=>({{label:st,data:bus.map(bu=>filtered.filter(r=>r.bu===bu&&r.status===st).length),backgroundColor:colors[i],borderRadius:4,borderSkipped:false}}));
+  chartInst=new Chart(document.getElementById("dist-chart"),{{type:"bar",data:{{labels:bus,datasets}},options:{{responsive:true,maintainAspectRatio:false,plugins:{{legend:{{display:false}}}},scales:{{x:{{stacked:true,grid:{{display:false}},ticks:{{color:TX3,font:{{size:11}}}}}},y:{{stacked:true,beginAtZero:true,grid:{{color:"rgba(128,128,128,0.12)"}},ticks:{{color:TX3,font:{{size:11}},stepSize:1}}}}}}}}}});
+}}
+function showTab(name,btn){{
+  ["matrix","table","chart"].forEach(t=>{{document.getElementById("tab-"+t).style.display=t===name?"":"none";}});
+  document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));btn.classList.add("active");
+  if(name==="chart")renderChart();
+}}
+function renderAll(){{renderMetrics();renderMatrix();renderTable();}}
+populate_filters();renderAll();
+</script></body></html>"""
+
 
 # ══════════════════════════════════════════════════════════════════
 # DATA HELPERS
@@ -1335,6 +1605,7 @@ with st.sidebar:
         ("⚠️", "Manager ID Hilang",  2),
         ("👔", "Daftar Manager",     3),
         ("📝", "Change Request",     4),
+        ("📊", "SoC Analysis",       5),
     ]
     active_idx = st.session_state.active_tab
     for icon_nav, label_nav, tab_idx in nav_items:
@@ -2122,3 +2393,60 @@ elif _active == 4:
                 with col_hd2:
                     st.download_button("📊 Excel", to_excel(view_hist), "cr_history.xlsx",
                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 6 — SOC ANALYSIS
+# ══════════════════════════════════════════════════════════════════
+elif _active == 5:
+    st.markdown(f"""
+    <div style="margin-bottom:24px;">
+        <div style="font-size:20px;font-weight:700;color:{T['text']};">Span of Control Analysis</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
+            Analisis kesehatan organisasi berbasis framework Mekari Organization Effectiveness Scoring.
+            Threshold: Narrow ≤{SOC_NARROW_MAX} · OK {SOC_NARROW_MAX+1}–{SOC_OK_MAX} · Wide ≥{SOC_OK_MAX+1} direct reports.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.spinner("Menghitung hierarki dan SoC scores..."):
+        soc_df = build_soc_dataframe(df, CHIEF_ROOT)
+
+    total_mgr    = len(soc_df)
+    pct_healthy  = round(len(soc_df[soc_df["soc_status"]=="Healthy"])  / total_mgr * 100, 1) if total_mgr else 0
+    pct_critical = round(len(soc_df[soc_df["soc_status"]=="Critical"]) / total_mgr * 100, 1) if total_mgr else 0
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("👔 Total Manager Dianalisis", total_mgr)
+    m2.metric("🟢 Healthy",          f"{len(soc_df[soc_df['soc_status']=='Healthy'])} ({pct_healthy}%)")
+    m3.metric("🟡 Need Improvement", len(soc_df[soc_df["soc_status"]=="Need Improvement"]))
+    m4.metric("🔴 Critical",         f"{len(soc_df[soc_df['soc_status']=='Critical'])} ({pct_critical}%)")
+
+    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:16px 0;'></div>", unsafe_allow_html=True)
+
+    soc_html = render_soc_dashboard(soc_df, T)
+    st.components.v1.html(soc_html, height=840, scrolling=False)
+
+    st.markdown(f"<div style='height:1px;background:{T['outline']};margin:20px 0 12px;'></div>", unsafe_allow_html=True)
+    st.markdown("**⬇️ Download Data SoC**")
+
+    export_cols = ["Employee ID","Employee Name","Job Position","Division","Business Unit","SBU/Tribe",
+                   "direct_reports","hierarchy_depth","soc_condition","depth_band",
+                   "soc_status","soc_scenario","soc_label","action_target"]
+    available   = [c for c in export_cols if c in soc_df.columns]
+    export_df   = soc_df[available].rename(columns={
+        "direct_reports":"Direct Reports","hierarchy_depth":"Hierarchy Depth",
+        "soc_condition":"SoC Condition","depth_band":"Depth Band",
+        "soc_status":"Status","soc_scenario":"Scenario","soc_label":"Label","action_target":"Action Target",
+    })
+    col_d1, col_d2, _ = st.columns([1, 1, 4])
+    with col_d1:
+        st.download_button("📄 CSV", export_df.to_csv(index=False).encode("utf-8"),
+                           "soc_analysis.csv", "text/csv", use_container_width=True)
+    with col_d2:
+        buf = BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as w:
+            export_df.to_excel(w, index=False, sheet_name="SoC Analysis")
+        st.download_button("📊 Excel", buf.getvalue(), "soc_analysis.xlsx",
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           use_container_width=True)
