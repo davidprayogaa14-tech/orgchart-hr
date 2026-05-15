@@ -31,6 +31,217 @@ SCOPES     = [
 ]
 CHIEF_ROOT = "SLKR001"
 
+# ══════════════════════════════════════════════════════════════════
+# RBAC MODULE — Access Control List
+# ══════════════════════════════════════════════════════════════════
+
+# Fallback ACL jika worksheet app_users belum dibuat di Sheets
+_ACL_FALLBACK = {
+    "od_admin@mekari.com": {
+        "employee_id": "",
+        "name": "OD Admin",
+        "role": "admin",
+        "allowed_bus": "*",
+        "allowed_divs": "*",
+        "allowed_sbus": "*",
+        "is_active": True,
+    },
+    "hr_team@mekari.com": {
+        "employee_id": "",
+        "name": "Tim HR",
+        "role": "cxo",
+        "allowed_bus": "*",
+        "allowed_divs": "*",
+        "allowed_sbus": "*",
+        "is_active": True,
+    },
+}
+
+# Kolom worksheet app_users
+_ACL_COLS = [
+    "email", "employee_id", "name", "role",
+    "allowed_bus", "allowed_divs", "allowed_sbus",
+    "is_active", "created_at", "updated_at",
+]
+
+
+@st.cache_data(ttl=120)
+def load_acl_table() -> dict:
+    """
+    Load ACL dari worksheet 'app_users' di Google Sheets.
+    Return dict keyed by email (lowercase).
+    Fallback ke _ACL_FALLBACK jika sheet belum ada.
+    """
+    client = get_gspread_client()
+    if not client:
+        return _ACL_FALLBACK
+    try:
+        ws   = client.open_by_key(SHEET_ID).worksheet("app_users")
+        rows = ws.get_all_records()
+        if not rows:
+            return _ACL_FALLBACK
+        acl: dict = {}
+        for r in rows:
+            email_key = str(r.get("email", "")).strip().lower()
+            if not email_key:
+                continue
+            acl[email_key] = {
+                "employee_id": str(r.get("employee_id", "")).strip(),
+                "name":        str(r.get("name", "")).strip(),
+                "role":        str(r.get("role", "employee")).strip().lower(),
+                "allowed_bus": str(r.get("allowed_bus", "")).strip(),
+                "allowed_divs":str(r.get("allowed_divs","*")).strip(),
+                "allowed_sbus":str(r.get("allowed_sbus","*")).strip(),
+                "is_active":   str(r.get("is_active","TRUE")).strip().upper() in ("TRUE","1","YES"),
+            }
+        return acl if acl else _ACL_FALLBACK
+    except Exception:
+        return _ACL_FALLBACK
+
+
+def get_acl_sheet():
+    """Return worksheet 'app_users' handle, or None."""
+    client = get_gspread_client()
+    if not client:
+        return None
+    try:
+        return client.open_by_key(SHEET_ID).worksheet("app_users")
+    except Exception:
+        try:
+            # Buat worksheet baru kalau belum ada
+            sh = client.open_by_key(SHEET_ID)
+            ws = sh.add_worksheet(title="app_users", rows=200, cols=len(_ACL_COLS))
+            ws.append_row(_ACL_COLS, value_input_option="USER_ENTERED")
+            return ws
+        except Exception:
+            return None
+
+
+def get_user_info(email: str) -> dict | None:
+    """
+    Lookup user by email from ACL table.
+    Returns user dict or None if not found / inactive.
+    """
+    acl = load_acl_table()
+    user = acl.get(email.strip().lower())
+    if user and user.get("is_active", True):
+        return user
+    return None
+
+
+def apply_rbac_filter(df: pd.DataFrame, user_info: dict) -> pd.DataFrame:
+    """
+    Row-Level Security filter.
+    - admin / cxo   → full access, no filter
+    - leader        → filter by allowed_bus, optionally allowed_divs & allowed_sbus
+    - employee      → only subtree below their direct manager (C-1)
+    Returns filtered copy of df.
+    """
+    role = user_info.get("role", "employee")
+
+    if role in ("admin", "cxo"):
+        return df
+
+    if role == "leader":
+        allowed_bus  = [b.strip() for b in user_info.get("allowed_bus", "").split(",") if b.strip()]
+        allowed_divs = user_info.get("allowed_divs", "*").strip()
+        allowed_sbus = user_info.get("allowed_sbus", "*").strip()
+
+        filtered = df[df["Business Unit"].isin(allowed_bus)].copy() if allowed_bus else df.copy()
+
+        if allowed_divs and allowed_divs != "*":
+            divs = [d.strip() for d in allowed_divs.split(",") if d.strip()]
+            filtered = filtered[filtered["Division"].isin(divs)]
+
+        if allowed_sbus and allowed_sbus != "*":
+            sbus = [s.strip() for s in allowed_sbus.split(",") if s.strip()]
+            filtered = filtered[filtered["SBU/Tribe"].isin(sbus)]
+
+        return filtered
+
+    # role == "employee" → subtree below direct manager
+    emp_id = user_info.get("employee_id", "").strip()
+    if not emp_id:
+        return df.iloc[0:0]  # empty — no EID mapped
+
+    manager_ids = df[df["Employee ID"] == emp_id]["Manager ID"].values
+    if not len(manager_ids) or not manager_ids[0]:
+        return df.iloc[0:0]
+
+    manager_id = manager_ids[0]
+    # BFS downward from manager
+    subtree = set()
+    queue   = [manager_id]
+    while queue:
+        curr = queue.pop(0)
+        subtree.add(curr)
+        children = df[df["Manager ID"] == curr]["Employee ID"].tolist()
+        queue.extend(children)
+
+    return df[df["Employee ID"].isin(subtree)].copy()
+
+
+def save_acl_user(user_data: dict) -> bool:
+    """Append or update a user row in app_users worksheet."""
+    ws = get_acl_sheet()
+    if not ws:
+        return False
+    try:
+        # Cek apakah email sudah ada (update)
+        cell = None
+        try:
+            cell = ws.find(user_data["email"].strip().lower())
+        except Exception:
+            pass
+
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        row_vals = [
+            user_data["email"].strip().lower(),
+            user_data.get("employee_id", ""),
+            user_data.get("name", ""),
+            user_data.get("role", "employee"),
+            user_data.get("allowed_bus", ""),
+            user_data.get("allowed_divs", "*"),
+            user_data.get("allowed_sbus", "*"),
+            "TRUE" if user_data.get("is_active", True) else "FALSE",
+            user_data.get("created_at", now_str),
+            now_str,
+        ]
+
+        if cell:
+            # Update baris existing
+            ws.update(f"A{cell.row}", [row_vals])
+        else:
+            # Append baru
+            row_vals[8] = now_str  # created_at = now
+            ws.append_row(row_vals, value_input_option="USER_ENTERED")
+
+        load_acl_table.clear()  # invalidate cache
+        return True
+    except Exception as e:
+        st.error(f"Gagal simpan ACL: {e}")
+        return False
+
+
+def delete_acl_user(email: str) -> bool:
+    """Deactivate (soft delete) a user by toggling is_active=FALSE."""
+    ws = get_acl_sheet()
+    if not ws:
+        return False
+    try:
+        cell = ws.find(email.strip().lower())
+        if not cell:
+            return False
+        # Column 8 = is_active (1-indexed)
+        ws.update_cell(cell.row, 8, "FALSE")
+        ws.update_cell(cell.row, 10, datetime.now().strftime("%Y-%m-%d %H:%M"))
+        load_acl_table.clear()
+        return True
+    except Exception as e:
+        st.error(f"Gagal nonaktifkan user: {e}")
+        return False
+
+
 # DATA HELPERS
 # ══════════════════════════════════════════════════════════════════
 def clean_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -890,6 +1101,119 @@ if (!highlightId) {{ setTimeout(fitView, 300); }}
 # ══════════════════════════════════════════════════════════════════
 st.set_page_config(page_title="Mekari", layout="wide", page_icon="🏢", initial_sidebar_state="expanded")
 
+# ══════════════════════════════════════════════════════════════════
+# AUTH GATE — Login Page
+# ══════════════════════════════════════════════════════════════════
+def _render_login_page():
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
+    html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif !important; }
+    .stApp { background: #faf8ff !important; }
+    .block-container { max-width: 440px !important; padding-top: 10vh !important; margin: 0 auto !important; }
+    header, #MainMenu, footer { visibility: hidden !important; }
+    [data-testid="stTextInput"] input {
+        background: #ffffff !important; border: 1.5px solid rgba(200,196,214,0.5) !important;
+        border-radius: 12px !important; font-size: 14px !important; padding: 12px 16px !important;
+        color: #1a1b21 !important;
+    }
+    [data-testid="stTextInput"] input:focus { border-color: #4234b6 !important; box-shadow: 0 0 0 3px #e4dfff !important; outline: none !important; }
+    [data-testid="stFormSubmitButton"] button {
+        background: linear-gradient(135deg, #4234b6, #5b4fcf) !important;
+        color: white !important; border: none !important; border-radius: 9999px !important;
+        font-weight: 700 !important; font-size: 14px !important; padding: 14px 28px !important;
+        width: 100% !important; box-shadow: 0 4px 20px rgba(66,52,182,0.3) !important;
+    }
+    [data-testid="stWidgetLabel"] p { color: #36364a !important; font-size: 13px !important; font-weight: 600 !important; }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown("""
+    <div style="text-align:center; margin-bottom:40px;">
+        <div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#4234b6,#5b4fcf);
+            display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 16px;
+            box-shadow:0 8px 32px rgba(66,52,182,0.35);">&#127962;</div>
+        <div style="font-size:26px;font-weight:800;color:#1a1b21;font-family:'Manrope',sans-serif;letter-spacing:-0.03em;">Mekari</div>
+        <div style="font-size:13px;color:#5a5a6a;margin-top:4px;font-weight:500;letter-spacing:0.04em;text-transform:uppercase;">People Dashboard</div>
+    </div>
+    """, unsafe_allow_html=True)
+    with st.form("login_form", clear_on_submit=False):
+        email_input = st.text_input("Email", placeholder="nama@mekari.com")
+        pass_input  = st.text_input("Password", type="password", placeholder="Kata sandi")
+        submitted   = st.form_submit_button("Masuk", use_container_width=True)
+    if submitted:
+        if not email_input.strip() or not pass_input.strip():
+            st.error("Email dan password tidak boleh kosong.")
+            st.stop()
+        user_info = None
+        # Cek Streamlit Secrets terlebih dahulu
+        if "auth" in st.secrets and "users" in st.secrets.get("auth", {}):
+            users_secret = st.secrets["auth"]["users"]
+            email_key    = email_input.strip().lower().replace(".", "_").replace("@", "_at_")
+            if email_key in users_secret:
+                sec = users_secret[email_key]
+                if sec.get("password") == pass_input:
+                    user_info = {
+                        "employee_id": sec.get("employee_id", ""),
+                        "name":        sec.get("name", email_input),
+                        "role":        sec.get("role", "employee"),
+                        "allowed_bus": sec.get("allowed_bus", "*"),
+                        "allowed_divs":sec.get("allowed_divs","*"),
+                        "allowed_sbus":sec.get("allowed_sbus","*"),
+                        "is_active":   True,
+                    }
+        else:
+            # Dev fallback credentials
+            _DEV_CREDS = {
+                "od_admin@mekari.com":  ("mekari_od_2026", "admin"),
+                "hr_team@mekari.com":   ("hr_team_2026",   "cxo"),
+                "tech_lead@mekari.com": ("tech_lead_2026", "leader"),
+                "fin_lead@mekari.com":  ("fin_lead_2026",  "leader"),
+            }
+            _DEV_BUS = {
+                "tech_lead@mekari.com": "Technology",
+                "fin_lead@mekari.com":  "Corporate & Finance Management",
+            }
+            email_lower = email_input.strip().lower()
+            if email_lower in _DEV_CREDS:
+                expected_pass, role = _DEV_CREDS[email_lower]
+                if expected_pass == pass_input:
+                    acl_entry = get_user_info(email_lower)
+                    if acl_entry:
+                        user_info = acl_entry
+                    else:
+                        user_info = {
+                            "employee_id": "",
+                            "name": email_lower.split("@")[0].replace("_"," ").title(),
+                            "role": role,
+                            "allowed_bus": _DEV_BUS.get(email_lower, "*"),
+                            "allowed_divs": "*",
+                            "allowed_sbus": "*",
+                            "is_active": True,
+                        }
+        if user_info and user_info.get("is_active", True):
+            st.session_state.authenticated = True
+            st.session_state.user_email    = email_input.strip().lower()
+            st.session_state.user_info     = user_info
+            st.rerun()
+        else:
+            st.error("Email atau password salah, atau akun tidak aktif.")
+            st.stop()
+    st.markdown("""
+    <div style="text-align:center;margin-top:24px;font-size:11px;color:#9e9ea0;">
+        Hubungi OD Admin untuk akses &middot; Mekari People Analytics
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+
+if not st.session_state.get("authenticated", False):
+    _render_login_page()
+
+_user_info = st.session_state.get("user_info", {"role": "admin", "allowed_bus": "*", "allowed_divs": "*", "allowed_sbus": "*", "name": "User", "employee_id": ""})
+_user_role = _user_info.get("role", "employee")
+_is_admin  = _user_role == "admin"
+_is_cxo    = _user_role in ("admin", "cxo")
+
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 if "nav_filter" not in st.session_state:
@@ -898,8 +1222,11 @@ if "nav_filter" not in st.session_state:
 df, data_source = load_data()
 
 if df is None:
-    st.error("❌ Tidak ada data yang bisa dimuat. Pastikan credentials.json dan employee_data.csv tersedia.")
+    st.error("Tidak ada data yang bisa dimuat. Pastikan credentials.json dan employee_data.csv tersedia.")
     st.stop()
+
+# Apply Row-Level Security — filter df sesuai akses user
+df = apply_rbac_filter(df, _user_info)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1327,6 +1654,33 @@ with st.sidebar:
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = 0
 
+    # User identity card
+    _uname    = _user_info.get("name", "User")
+    _uemail   = st.session_state.get("user_email", "")
+    _urole    = _user_role.upper()
+    _role_colors = {"ADMIN": "#4234b6", "CXO": "#059669", "LEADER": "#d97706", "EMPLOYEE": "#64748b"}
+    _role_color  = _role_colors.get(_urole, "#64748b")
+    _initials    = "".join([w[0].upper() for w in _uname.split()[:2]])
+    st.markdown(f"""
+    <div style="padding:10px 18px 14px 18px;">
+        <div style="display:flex;align-items:center;gap:10px;
+            background:rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;">
+            <div style="width:34px;height:34px;border-radius:50%;
+                background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
+                display:flex;align-items:center;justify-content:center;
+                font-size:13px;font-weight:700;color:white;flex-shrink:0;">{_initials}</div>
+            <div style="min-width:0;">
+                <div style="font-size:13px;font-weight:700;color:{T['sidebar_active']};
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{_uname}</div>
+                <div style="display:flex;align-items:center;gap:5px;margin-top:2px;">
+                    <span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:999px;
+                        background:{_role_color};color:white;letter-spacing:0.06em;">{_urole}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     nav_items = [
         ("🌳", "Org Chart",          0),
         ("👥", "Data Karyawan",      1),
@@ -1334,6 +1688,10 @@ with st.sidebar:
         ("👔", "Daftar Manager",     3),
         ("📝", "Change Request",     4),
     ]
+    # Admin Panel hanya muncul untuk role admin
+    if _is_admin:
+        nav_items.append(("🛡️", "Admin Panel",  5))
+
     active_idx = st.session_state.active_tab
     for icon_nav, label_nav, tab_idx in nav_items:
         is_active = (active_idx == tab_idx)
@@ -1353,6 +1711,13 @@ with st.sidebar:
     with col_sb2:
         if st.button(f"{toggle_icon} Mode", use_container_width=True, key="toggle_btn"):
             st.session_state.dark_mode = not st.session_state.dark_mode; st.rerun()
+
+    # Logout button
+    st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
+    if st.button("🚪  Keluar", use_container_width=True, key="logout_btn"):
+        for k in ["authenticated","user_email","user_info","active_tab"]:
+            st.session_state.pop(k, None)
+        st.rerun()
 
     st.markdown(f"""
     <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
@@ -2123,3 +2488,154 @@ elif _active == 4:
 
 
 # ══════════════════════════════════════════════════════════════════
+# TAB 6 — ADMIN PANEL (role=admin only)
+# ══════════════════════════════════════════════════════════════════
+elif _active == 5:
+    if not _is_admin:
+        st.error("Akses ditolak. Halaman ini hanya untuk Admin.")
+        st.stop()
+
+    st.markdown(f"""
+    <div style="margin-bottom:24px;">
+        <div style="font-size:20px;font-weight:700;color:{T['text']};">Admin Panel — Access Control</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
+            Kelola hak akses user dashboard. Perubahan aktif dalam 2 menit (cache TTL).
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    adm_tab1, adm_tab2 = st.tabs(["👥  Daftar User", "➕  Tambah / Edit User"])
+
+    with adm_tab1:
+        col_acl_reload, _ = st.columns([1, 5])
+        with col_acl_reload:
+            if st.button("🔄 Refresh ACL", key="acl_refresh"):
+                load_acl_table.clear(); st.rerun()
+
+        acl_data = load_acl_table()
+        if not acl_data:
+            st.info("Belum ada user di ACL table.")
+        else:
+            acl_rows = []
+            for email, info in acl_data.items():
+                acl_rows.append({
+                    "Email":        email,
+                    "Nama":         info.get("name", ""),
+                    "Role":         info.get("role", ""),
+                    "Allowed BUs":  info.get("allowed_bus", "*"),
+                    "Allowed Divs": info.get("allowed_divs", "*"),
+                    "Allowed SBUs": info.get("allowed_sbus", "*"),
+                    "Aktif":        info.get("is_active", True),
+                    "Employee ID":  info.get("employee_id", ""),
+                })
+            acl_df = pd.DataFrame(acl_rows)
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Total User", len(acl_df))
+            m2.metric("Aktif", len(acl_df[acl_df["Aktif"] == True]))
+            m3.metric("Admin/CXO", len(acl_df[acl_df["Role"].isin(["admin","cxo"])]))
+            m4.metric("Leader", len(acl_df[acl_df["Role"] == "leader"]))
+
+            st.divider()
+            st.caption(f"Total **{len(acl_df)}** user terdaftar")
+            st.dataframe(acl_df, use_container_width=True, height=380)
+
+            st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-top:20px;margin-bottom:8px;'>Nonaktifkan User</div>", unsafe_allow_html=True)
+            active_emails = [r["Email"] for r in acl_rows if r["Aktif"]]
+            col_d1, col_d2, col_d3 = st.columns([2, 1, 3])
+            with col_d1:
+                email_to_disable = st.selectbox("Pilih user:", ["—"] + sorted(active_emails), key="disable_user_sel")
+            with col_d2:
+                st.markdown("<div style='margin-top:26px;'></div>", unsafe_allow_html=True)
+                if st.button("Nonaktifkan", key="disable_user_btn", use_container_width=True):
+                    if email_to_disable != "—":
+                        if delete_acl_user(email_to_disable):
+                            st.success(f"User {email_to_disable} dinonaktifkan.")
+                            st.rerun()
+            with col_d3:
+                st.markdown(f"<div style='margin-top:30px;font-size:12px;color:{T['text_variant']};'>Soft delete — data tidak dihapus, user tidak bisa login.</div>", unsafe_allow_html=True)
+
+            st.divider()
+            col_exp1, col_exp2, _ = st.columns([1, 1, 3])
+            with col_exp1:
+                st.download_button("📄 CSV", acl_df.to_csv(index=False).encode("utf-8"),
+                                   "acl_users.csv", "text/csv", use_container_width=True)
+            with col_exp2:
+                st.download_button("📊 Excel", to_excel(acl_df), "acl_users.xlsx",
+                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+    with adm_tab2:
+        st.markdown(f"<div style='font-size:15px;font-weight:600;color:{T['text']};margin-bottom:16px;'>Form Tambah / Edit User</div>", unsafe_allow_html=True)
+
+        bu_list_all  = sorted(df["Business Unit"].dropna().unique().tolist()) if df is not None else []
+        div_list_all = sorted(df["Division"].dropna().unique().tolist()) if df is not None else []
+
+        ROLE_OPTIONS = ["admin", "cxo", "leader", "employee"]
+        ROLE_LABELS  = {"admin": "Admin — Super User", "cxo": "CXO — Full Visibility",
+                        "leader": "Leader — BU Scoped", "employee": "Employee — Subtree Only"}
+
+        with st.form("add_user_form", clear_on_submit=True):
+            col_u1, col_u2 = st.columns(2)
+            with col_u1: new_email  = st.text_input("Email *", placeholder="nama@mekari.com")
+            with col_u2: new_empid  = st.text_input("Employee ID", placeholder="SLKR001")
+            col_u3, col_u4 = st.columns(2)
+            with col_u3: new_name   = st.text_input("Nama Lengkap *", placeholder="Nama tampil di dashboard")
+            with col_u4: new_role   = st.selectbox("Role *", ROLE_OPTIONS, format_func=lambda x: ROLE_LABELS[x])
+
+            st.markdown(f"<div style='font-size:12px;color:{T['text_variant']};margin:4px 0 12px 0;'>Scope Akses — bintang (*) = akses penuh pada level tersebut</div>", unsafe_allow_html=True)
+
+            col_u5, col_u6, col_u7 = st.columns(3)
+            with col_u5:
+                new_bus_sel  = st.multiselect("Allowed Business Units", bu_list_all)
+            with col_u6:
+                new_divs_sel = st.multiselect("Allowed Divisions (opsional)", div_list_all)
+            with col_u7:
+                new_sbus_inp = st.text_input("Allowed SBU/Tribe (opsional)", placeholder="SBU A, SBU B atau *")
+
+            new_active = st.checkbox("Aktifkan akun ini", value=True)
+            now_str_form = datetime.now().strftime("%Y-%m-%d %H:%M")
+            submitted_user = st.form_submit_button("Simpan User", use_container_width=True)
+
+        if submitted_user:
+            form_errors = []
+            if not new_email.strip() or "@" not in new_email: form_errors.append("Email tidak valid")
+            if not new_name.strip(): form_errors.append("Nama lengkap wajib diisi")
+            if form_errors:
+                for e in form_errors: st.error(f"{e}")
+            else:
+                if new_role in ("admin", "cxo"):
+                    bus_str = divs_str = sbus_str = "*"
+                else:
+                    bus_str  = ",".join(new_bus_sel)  if new_bus_sel  else "*"
+                    divs_str = ",".join(new_divs_sel) if new_divs_sel else "*"
+                    sbus_str = new_sbus_inp.strip()   if new_sbus_inp.strip() else "*"
+
+                user_payload = {
+                    "email": new_email.strip().lower(), "employee_id": new_empid.strip(),
+                    "name":  new_name.strip(), "role": new_role,
+                    "allowed_bus": bus_str, "allowed_divs": divs_str, "allowed_sbus": sbus_str,
+                    "is_active": new_active, "created_at": now_str_form,
+                }
+                if save_acl_user(user_payload):
+                    st.success(f"User {new_name} ({new_email.strip().lower()}) berhasil disimpan.")
+                    st.rerun()
+
+        st.markdown(f"<div style='height:1px;background:{T['border']};margin:20px 0;'></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:12px;'>Panduan Role</div>", unsafe_allow_html=True)
+        for role_n, tier, desc, color in [
+            ("Admin",    "Super User",   "Semua data + kelola ACL",        "#4234b6"),
+            ("CXO",      "Full Access",  "Semua data, read-only",           "#059669"),
+            ("Leader",   "BU Scoped",   "Hanya BU/Divisi yang di-assign",  "#d97706"),
+            ("Employee", "Subtree",     "Struktur di bawah manajer saja",  "#64748b"),
+        ]:
+            st.markdown(f"""
+            <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;
+                border-radius:10px;margin-bottom:6px;background:{T['surface_low']};">
+                <span style="font-size:11px;font-weight:700;padding:2px 10px;border-radius:999px;
+                    background:{color};color:white;min-width:72px;text-align:center;">{role_n.upper()}</span>
+                <div>
+                    <span style="font-size:13px;font-weight:600;color:{T['text']};">{tier}</span>
+                    <span style="font-size:12px;color:{T['text_variant']};margin-left:8px;">— {desc}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
