@@ -54,14 +54,14 @@ LANG = {
         "company_warning":"⚠️ Mode seluruh perusahaan menampilkan semua karyawan.",
         "tab_data_title":"Data Karyawan","tab_data_sub":"Seluruh data karyawan dengan filter dan pencarian",
         "search_name":"🔍 Cari nama karyawan","filter_all":"Semua",
-        "tab_cc_title":"Compliance Check","tab_cc_sub":"Deteksi anomali data antara Employee Data dan MPP Data",
-        "cc_tab_summary":"📊  Ringkasan Anomali","cc_tab_missing":"👤  Missing Manager ID",
-        "cc_tab_mismatch":"🔀  Data Mismatch","cc_tab_ghost":"👻  Ghost Employee",
-        "cc_tab_vacancy":"📭  Vacancy",
+        "tab_cc_title":"Compliance Check","tab_cc_sub":"Deteksi inkonsistensi data antara Employee Data dan MPP Data",
+        "cc_tab_summary":"📊  Ringkasan Isu","cc_tab_missing":"👤  Missing Manager ID",
+        "cc_tab_mismatch":"🔀  Data Tidak Konsisten","cc_tab_ghost":"🔍  Tidak Terpetakan",
+        "cc_tab_vacancy":"📋  Master MPP",
         "cc_no_mpp":"Data MPP tidak tersedia. Pastikan worksheet mpp_data sudah ada.",
-        "cc_total_anomali":"Total Anomali","cc_missing_mgr":"Missing Manager ID",
-        "cc_mismatch":"Data Mismatch","cc_ghost":"Ghost Employee","cc_vacancy":"Vacancy",
-        "cc_clean":"✅ Tidak ada anomali ditemukan pada kategori ini.",
+        "cc_total_anomali":"Total Isu Data","cc_missing_mgr":"Missing Manager ID",
+        "cc_mismatch":"Data Tidak Konsisten","cc_ghost":"Tidak Terpetakan","cc_vacancy":"Master MPP",
+        "cc_clean":"✅ Tidak ada isu ditemukan pada kategori ini.",
         "cc_field":"Field","cc_actual":"Nilai di Employee Data","cc_mpp":"Nilai di MPP Data",
         "severity_high":"High","severity_med":"Medium",
         "tab_mgr_title":"Daftar Manager",
@@ -92,14 +92,14 @@ LANG = {
         "company_warning":"⚠️ Company-wide mode displays all employees.",
         "tab_data_title":"Employee Data","tab_data_sub":"All employee data with filters and search",
         "search_name":"🔍 Search employee name","filter_all":"All",
-        "tab_cc_title":"Compliance Check","tab_cc_sub":"Data anomaly detection between Employee Data and MPP Data",
-        "cc_tab_summary":"📊  Anomaly Summary","cc_tab_missing":"👤  Missing Manager ID",
-        "cc_tab_mismatch":"🔀  Data Mismatch","cc_tab_ghost":"👻  Ghost Employee",
-        "cc_tab_vacancy":"📭  Vacancy",
+        "tab_cc_title":"Compliance Check","tab_cc_sub":"Detect data inconsistencies between Employee Data and MPP Data",
+        "cc_tab_summary":"📊  Issue Summary","cc_tab_missing":"👤  Missing Manager ID",
+        "cc_tab_mismatch":"🔀  Data Inconsistency","cc_tab_ghost":"🔍  Unmapped Employees",
+        "cc_tab_vacancy":"📋  Master MPP",
         "cc_no_mpp":"MPP data not available. Please ensure the mpp_data worksheet exists.",
-        "cc_total_anomali":"Total Anomalies","cc_missing_mgr":"Missing Manager ID",
-        "cc_mismatch":"Data Mismatch","cc_ghost":"Ghost Employee","cc_vacancy":"Vacancy",
-        "cc_clean":"✅ No anomalies found in this category.",
+        "cc_total_anomali":"Total Data Issues","cc_missing_mgr":"Missing Manager ID",
+        "cc_mismatch":"Data Inconsistency","cc_ghost":"Unmapped Employees","cc_vacancy":"Master MPP",
+        "cc_clean":"✅ No issues found in this category.",
         "cc_field":"Field","cc_actual":"Value in Employee Data","cc_mpp":"Value in MPP Data",
         "severity_high":"High","severity_med":"Medium",
         "tab_mgr_title":"Manager List",
@@ -2233,14 +2233,28 @@ elif _active == 2:
     ghost_df = checks["ghost"]
     vac_df   = checks["vacancy"]
 
-    total_anomali = len(miss_df) + len(mis_df) + len(ghost_df) + len(vac_df)
-
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric(L["cc_total_anomali"], total_anomali)
-    k2.metric(L["cc_missing_mgr"],   len(miss_df))
-    k3.metric(L["cc_mismatch"],      len(mis_df))
-    k4.metric(L["cc_ghost"],         len(ghost_df))
-    k5.metric(L["cc_vacancy"],       len(vac_df))
+    # ── KPI Cards — 4 kategori, tanpa "Total Anomali" yang misleading ──
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric(
+        L["cc_missing_mgr"],
+        len(miss_df),
+        help="Karyawan yang tidak memiliki Manager ID — perlu segera dilengkapi karena mempengaruhi struktur hierarki."
+    )
+    k2.metric(
+        L["cc_mismatch"],
+        len(mis_df),
+        help="Karyawan yang Job ID-nya cocok di Employee Data & MPP, namun ada field yang berbeda (contoh: nama divisi, career stage). Indikasi data tidak sinkron antar sistem."
+    )
+    k3.metric(
+        L["cc_ghost"],
+        len(ghost_df),
+        help="Karyawan terdaftar di Employee Data namun Job ID-nya tidak ada di MPP. Kemungkinan posisi belum di-plot di MPP atau Job ID belum diinput."
+    )
+    k4.metric(
+        L["cc_vacancy"],
+        len(vac_df),
+        help="Job ID terdaftar di Master MPP namun belum terisi di Employee Data — posisi yang direncanakan namun belum terpenuhi (open headcount)."
+    )
 
     if mpp_df.empty:
         st.warning(L["cc_no_mpp"])
@@ -2258,17 +2272,21 @@ elif _active == 2:
             st.success(L["cc_clean"])
         else:
             _all_txt = L["filter_all"]
-            col_f1, col_f2 = st.columns(2)
+            col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
             with col_f1:
                 bu_nr = st.selectbox(L["filter_bu_plain"],
                     [_all_txt] + sorted(miss_df["Business Unit"].dropna().unique().tolist()), key="cc_bu_nr")
             with col_f2:
                 _div_opts = sorted(miss_df[miss_df["Business Unit"]==bu_nr]["Division"].dropna().unique().tolist()) if bu_nr != _all_txt else sorted(miss_df["Division"].dropna().unique().tolist())
                 div_nr = st.selectbox(L["filter_div_plain"], [_all_txt] + _div_opts, key="cc_div_nr")
+            with col_f3:
+                jobid_search_nr = st.text_input("🔑 Cari Job ID", placeholder="Ketik Job ID...", key="cc_nr_jobid_search")
 
             view_miss = miss_df.copy()
             if bu_nr  != _all_txt: view_miss = view_miss[view_miss["Business Unit"] == bu_nr]
             if div_nr != _all_txt: view_miss = view_miss[view_miss["Division"] == div_nr]
+            if jobid_search_nr.strip() and "Job ID" in view_miss.columns:
+                view_miss = view_miss[view_miss["Job ID"].astype(str).str.contains(jobid_search_nr.strip(), case=False, na=False)]
 
             st.caption(f"{L['showing']} **{len(view_miss)}** {L['employees']}")
             st.dataframe(view_miss, use_container_width=True, height=400)
@@ -2282,63 +2300,119 @@ elif _active == 2:
             with c1: st.download_button(L["download_csv"], view_miss.to_csv(index=False).encode("utf-8"), "missing_manager.csv","text/csv",use_container_width=True)
             with c2: st.download_button(L["download_excel"], to_excel(view_miss),"missing_manager.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
 
-    # ── Data Mismatch ─────────────────────────────────────────────
+    # ── Data Tidak Konsisten ──────────────────────────────────────
     with cc_t2:
+        if st.session_state.lang == "id":
+            _mis_note = "Karyawan dengan Job ID yang <b>cocok</b> antara Employee Data dan MPP, namun terdapat <b>perbedaan nilai pada field tertentu</b> (contoh: Divisi di Employee Data berbeda dengan Divisi di MPP). Ini mengindikasikan data tidak sinkron — perlu direkonsiliasi."
+        else:
+            _mis_note = "Employees whose Job ID <b>matches</b> between Employee Data and MPP, but have <b>field-level differences</b> (e.g., Division in Employee Data differs from MPP). This indicates out-of-sync data that needs reconciliation."
+        st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>🔀 <b>{'Data Tidak Konsisten' if st.session_state.lang == 'id' else 'Data Inconsistency'}</b> — {_mis_note}</div>", unsafe_allow_html=True)
+
         if mis_df.empty:
             st.success(L["cc_clean"])
         else:
-            _field_opts = sorted(mis_df["Field"].unique().tolist())
-            sel_fields = st.multiselect("Filter Field", _field_opts, default=_field_opts, key="cc_mismatch_fields")
-            view_mis = mis_df[mis_df["Field"].isin(sel_fields)].copy() if sel_fields else mis_df.copy()
+            col_mf1, col_mf2, col_mf3 = st.columns([2, 2, 2])
+            with col_mf1:
+                _field_opts = sorted(mis_df["Field"].unique().tolist())
+                sel_fields = st.multiselect("Filter Field", _field_opts, default=_field_opts, key="cc_mismatch_fields")
+            with col_mf2:
+                _jobid_opts_mis = ["Semua"] + sorted(mis_df["Job ID"].dropna().unique().tolist()) if "Job ID" in mis_df.columns else ["Semua"]
+                sel_jobid_mis = st.selectbox("🔑 Filter Job ID", _jobid_opts_mis, key="cc_mis_jobid")
+            with col_mf3:
+                jobid_search_mis = st.text_input("🔍 Cari Job ID (manual)", placeholder="Ketik Job ID...", key="cc_mis_jobid_search")
 
-            st.caption(f"{L['showing']} **{len(view_mis)}** anomali")
+            view_mis = mis_df.copy()
+            if sel_fields: view_mis = view_mis[view_mis["Field"].isin(sel_fields)]
+            if "Job ID" in view_mis.columns:
+                if sel_jobid_mis != "Semua": view_mis = view_mis[view_mis["Job ID"] == sel_jobid_mis]
+                if jobid_search_mis.strip(): view_mis = view_mis[view_mis["Job ID"].astype(str).str.contains(jobid_search_mis.strip(), case=False, na=False)]
+
+            st.caption(f"{L['showing']} **{len(view_mis)}** isu")
             st.dataframe(view_mis, use_container_width=True, height=400)
 
             st.divider()
-            _bkd2_title = "Breakdown by Field"
+            _bkd2_title = "Breakdown by Field" if st.session_state.lang == "en" else "Breakdown per Field"
             st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:8px;'>{_bkd2_title}</div>", unsafe_allow_html=True)
             field_bkd = view_mis.groupby(["Field","Severity"]).size().reset_index(name="Count").sort_values("Count",ascending=False)
             st.dataframe(field_bkd, use_container_width=True, height=200)
             st.divider()
             c1, c2, _ = st.columns([1,1,3])
-            with c1: st.download_button(L["download_csv"], view_mis.to_csv(index=False).encode("utf-8"),"data_mismatch.csv","text/csv",use_container_width=True)
-            with c2: st.download_button(L["download_excel"], to_excel(view_mis),"data_mismatch.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+            with c1: st.download_button(L["download_csv"], view_mis.to_csv(index=False).encode("utf-8"),"data_inconsistency.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(view_mis),"data_inconsistency.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
 
-    # ── Ghost Employee ────────────────────────────────────────────
+    # ── Tidak Terpetakan (sebelumnya: Ghost Employee) ─────────────
     with cc_t3:
         if st.session_state.lang == "id":
-            _ghost_note = "Karyawan terdaftar di <b>Employee Data</b> namun <b>tidak memiliki Job ID yang sesuai di MPP</b>. Kemungkinan posisi belum di-plot di MPP, atau Job ID belum diinput."
+            _ghost_note = "Karyawan terdaftar di <b>Employee Data</b> namun <b>Job ID-nya tidak ditemukan di MPP</b>. Kemungkinan posisi belum di-plot di MPP, atau Job ID belum diinput di sistem."
         else:
-            _ghost_note = "Employee exists in <b>Employee Data</b> but has <b>no matching Job ID in MPP Data</b>. Position may not be plotted in MPP, or Job ID not yet entered."
-        st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>👻 <b>Ghost Employee</b> — {_ghost_note}</div>", unsafe_allow_html=True)
+            _ghost_note = "Employee exists in <b>Employee Data</b> but their <b>Job ID has no match in MPP Data</b>. Position may not be plotted in MPP, or Job ID not yet entered."
+        st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>🔍 <b>{'Karyawan Tidak Terpetakan' if st.session_state.lang == 'id' else 'Unmapped Employees'}</b> — {_ghost_note}</div>", unsafe_allow_html=True)
 
         if ghost_df.empty:
             st.success(L["cc_clean"])
         else:
-            st.caption(f"{L['showing']} **{len(ghost_df)}** {L['employees']}")
-            st.dataframe(ghost_df, use_container_width=True, height=430)
+            col_g1, col_g2, col_g3 = st.columns([2, 2, 2])
+            with col_g1:
+                _bu_g_opts = ["Semua"] + sorted(ghost_df["Business Unit"].dropna().unique().tolist()) if "Business Unit" in ghost_df.columns else ["Semua"]
+                bu_g = st.selectbox(L["filter_bu_plain"], _bu_g_opts, key="cc_ghost_bu")
+            with col_g2:
+                _jobid_opts_g = ["Semua"] + sorted(ghost_df["Job ID"].dropna().unique().tolist()) if "Job ID" in ghost_df.columns else ["Semua"]
+                sel_jobid_g = st.selectbox("🔑 Filter Job ID", _jobid_opts_g, key="cc_ghost_jobid")
+            with col_g3:
+                jobid_search_g = st.text_input("🔍 Cari Job ID (manual)", placeholder="Ketik Job ID...", key="cc_ghost_jobid_search")
+
+            view_ghost = ghost_df.copy()
+            if "Business Unit" in view_ghost.columns and bu_g != "Semua":
+                view_ghost = view_ghost[view_ghost["Business Unit"] == bu_g]
+            if "Job ID" in view_ghost.columns:
+                if sel_jobid_g != "Semua": view_ghost = view_ghost[view_ghost["Job ID"] == sel_jobid_g]
+                if jobid_search_g.strip(): view_ghost = view_ghost[view_ghost["Job ID"].astype(str).str.contains(jobid_search_g.strip(), case=False, na=False)]
+
+            st.caption(f"{L['showing']} **{len(view_ghost)}** {L['employees']}")
+            st.dataframe(view_ghost, use_container_width=True, height=430)
             st.divider()
             c1, c2, _ = st.columns([1,1,3])
-            with c1: st.download_button(L["download_csv"], ghost_df.to_csv(index=False).encode("utf-8"),"ghost_employee.csv","text/csv",use_container_width=True)
-            with c2: st.download_button(L["download_excel"], to_excel(ghost_df),"ghost_employee.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+            with c1: st.download_button(L["download_csv"], view_ghost.to_csv(index=False).encode("utf-8"),"unmapped_employees.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(view_ghost),"unmapped_employees.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
 
-    # ── Vacancy ───────────────────────────────────────────────────
+    # ── Master MPP (sebelumnya: Vacancy) ─────────────────────────
     with cc_t4:
         if st.session_state.lang == "id":
-            _vac_note = "Job ID terdaftar di <b>MPP Data</b> namun <b>belum terisi di Employee Data</b>. Posisi ini sedang kosong dan perlu diisi atau ditinjau."
+            _vac_note = "Seluruh Job ID yang terdaftar di <b>Master MPP</b>. Posisi yang <b>belum terisi</b> di Employee Data merupakan open headcount — perlu diisi rekrutmen atau ditinjau validitasnya."
         else:
-            _vac_note = "Job ID exists in <b>MPP Data</b> but is <b>not filled in Employee Data</b>. This position is open and needs to be filled or reviewed."
-        st.markdown(f"<div style='background:{T['accent_bg']};border:1px solid {T['border2']};border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['accent']};'>📭 <b>Vacancy</b> — {_vac_note}</div>", unsafe_allow_html=True)
+            _vac_note = "All Job IDs registered in <b>Master MPP</b>. Positions <b>not yet filled</b> in Employee Data are open headcount — requires recruitment action or validity review."
+        st.markdown(f"<div style='background:{T['accent_bg']};border:1px solid {T['border2']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['accent']};'>📋 <b>Master MPP</b> — {_vac_note}</div>", unsafe_allow_html=True)
 
         if vac_df.empty:
             st.success(L["cc_clean"])
         else:
-            st.caption(f"{L['showing']} **{len(vac_df)}** positions")
-            st.dataframe(vac_df, use_container_width=True, height=430)
+            col_v1, col_v2, col_v3, col_v4 = st.columns([2, 2, 2, 2])
+            with col_v1:
+                _bu_v_opts = ["Semua"] + sorted(vac_df["BU"].dropna().unique().tolist()) if "BU" in vac_df.columns else ["Semua"]
+                bu_v = st.selectbox("Filter BU", _bu_v_opts, key="cc_vac_bu")
+            with col_v2:
+                _div_v_opts = ["Semua"] + sorted(vac_df["Division"].dropna().unique().tolist()) if "Division" in vac_df.columns else ["Semua"]
+                div_v = st.selectbox("Filter Divisi", _div_v_opts, key="cc_vac_div")
+            with col_v3:
+                _status_v_opts = ["Semua"] + sorted(vac_df["Fulfillment Status"].dropna().unique().tolist()) if "Fulfillment Status" in vac_df.columns else ["Semua"]
+                status_v = st.selectbox("Filter Fulfillment Status", _status_v_opts, key="cc_vac_status")
+            with col_v4:
+                jobid_search_v = st.text_input("🔑 Cari Job ID", placeholder="Ketik Job ID atau sebagian...", key="cc_vac_jobid_search")
+
+            view_vac = vac_df.copy()
+            if "BU" in view_vac.columns and bu_v != "Semua":          view_vac = view_vac[view_vac["BU"] == bu_v]
+            if "Division" in view_vac.columns and div_v != "Semua":    view_vac = view_vac[view_vac["Division"] == div_v]
+            if "Fulfillment Status" in view_vac.columns and status_v != "Semua":
+                view_vac = view_vac[view_vac["Fulfillment Status"] == status_v]
+            if jobid_search_v.strip() and "JOBID" in view_vac.columns:
+                view_vac = view_vac[view_vac["JOBID"].astype(str).str.contains(jobid_search_v.strip(), case=False, na=False)]
+
+            st.caption(f"{L['showing']} **{len(view_vac)}** posisi MPP")
+            st.dataframe(view_vac, use_container_width=True, height=430)
             st.divider()
             c1, c2, _ = st.columns([1,1,3])
-            with c1: st.download_button(L["download_csv"], vac_df.to_csv(index=False).encode("utf-8"),"vacancy.csv","text/csv",use_container_width=True)
-            with c2: st.download_button(L["download_excel"], to_excel(vac_df),"vacancy.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+            with c1: st.download_button(L["download_csv"], view_vac.to_csv(index=False).encode("utf-8"),"master_mpp.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(view_vac),"master_mpp.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
 # ══════════════════════════════════════════════════════════════════
 # TAB 4 — DAFTAR MANAGER
 # ══════════════════════════════════════════════════════════════════
