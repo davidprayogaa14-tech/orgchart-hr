@@ -32,6 +32,193 @@ SCOPES     = [
 CHIEF_ROOT = "SLKR001"
 
 # ══════════════════════════════════════════════════════════════════
+# LANGUAGE DICTIONARY
+# ══════════════════════════════════════════════════════════════════
+LANG = {
+    "id": {
+        "nav_org":"Org Chart","nav_data":"Data Karyawan","nav_compliance":"Compliance Check",
+        "nav_manager":"Daftar Manager","nav_cr":"Change Request",
+        "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Keluar",
+        "lang_toggle":"🇬🇧 English","data_source_live":"Live · Google Sheets",
+        "data_source_local":"Lokal · CSV","auto_refresh":"Auto-refresh setiap 5 menit",
+        "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
+        "header_subtitle":"Dashboard Visualisasi Data Organisasi","header_metric":"Total Karyawan",
+        "mode_label":"MODE TAMPILAN","mode_division":"Per Divisi","mode_company":"Seluruh Perusahaan",
+        "search_label":"Cari Karyawan","search_ph":"Ketik nama karyawan...",
+        "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Divisi",
+        "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
+        "filter_all_sbu":"Semua SBU","filter_all_div":"Semua (divisi penuh)",
+        "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
+        "showing_emp":"Menampilkan","employees":"karyawan",
+        "emp_found":"Ditemukan","emp_not_found":"Tidak ada karyawan bernama",
+        "company_warning":"⚠️ Mode seluruh perusahaan menampilkan semua karyawan.",
+        "tab_data_title":"Data Karyawan","tab_data_sub":"Seluruh data karyawan dengan filter dan pencarian",
+        "search_name":"🔍 Cari nama karyawan","filter_all":"Semua",
+        "tab_cc_title":"Compliance Check","tab_cc_sub":"Deteksi anomali data antara Employee Data dan MPP Data",
+        "cc_tab_summary":"📊  Ringkasan Anomali","cc_tab_missing":"👤  Missing Manager ID",
+        "cc_tab_mismatch":"🔀  Data Mismatch","cc_tab_ghost":"👻  Ghost Employee",
+        "cc_tab_vacancy":"📭  Vacancy",
+        "cc_no_mpp":"Data MPP tidak tersedia. Pastikan worksheet mpp_data sudah ada.",
+        "cc_total_anomali":"Total Anomali","cc_missing_mgr":"Missing Manager ID",
+        "cc_mismatch":"Data Mismatch","cc_ghost":"Ghost Employee","cc_vacancy":"Vacancy",
+        "cc_clean":"✅ Tidak ada anomali ditemukan pada kategori ini.",
+        "cc_field":"Field","cc_actual":"Nilai di Employee Data","cc_mpp":"Nilai di MPP Data",
+        "severity_high":"High","severity_med":"Medium",
+        "tab_mgr_title":"Daftar Manager",
+        "tab_mgr_sub":"Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control",
+        "tab_cr_title":"Structure Change Request",
+        "tab_cr_sub":"Kelola permintaan perubahan struktur organisasi",
+        "showing":"Menampilkan","breakdown_div":"Breakdown per Divisi",
+        "download_csv":"📄 CSV","download_excel":"📊 Excel",
+        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Divisi",
+        "emp_in_div":"karyawan di divisi ini","emp_found_in":"ada di divisi ini",
+    },
+    "en": {
+        "nav_org":"Org Chart","nav_data":"Employee Data","nav_compliance":"Compliance Check",
+        "nav_manager":"Manager List","nav_cr":"Change Request",
+        "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Sign Out",
+        "lang_toggle":"🇮🇩 Bahasa","data_source_live":"Live · Google Sheets",
+        "data_source_local":"Local · CSV","auto_refresh":"Auto-refresh every 5 minutes",
+        "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
+        "header_subtitle":"Organizational Data Visualization Dashboard","header_metric":"Total Employees",
+        "mode_label":"VIEW MODE","mode_division":"By Division","mode_company":"Entire Company",
+        "search_label":"Search Employee","search_ph":"Type employee name...",
+        "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Division",
+        "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
+        "filter_all_sbu":"All SBUs","filter_all_div":"All (full division)",
+        "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
+        "showing_emp":"Showing","employees":"employees",
+        "emp_found":"Found","emp_not_found":"No employee named",
+        "company_warning":"⚠️ Company-wide mode displays all employees.",
+        "tab_data_title":"Employee Data","tab_data_sub":"All employee data with filters and search",
+        "search_name":"🔍 Search employee name","filter_all":"All",
+        "tab_cc_title":"Compliance Check","tab_cc_sub":"Data anomaly detection between Employee Data and MPP Data",
+        "cc_tab_summary":"📊  Anomaly Summary","cc_tab_missing":"👤  Missing Manager ID",
+        "cc_tab_mismatch":"🔀  Data Mismatch","cc_tab_ghost":"👻  Ghost Employee",
+        "cc_tab_vacancy":"📭  Vacancy",
+        "cc_no_mpp":"MPP data not available. Please ensure the mpp_data worksheet exists.",
+        "cc_total_anomali":"Total Anomalies","cc_missing_mgr":"Missing Manager ID",
+        "cc_mismatch":"Data Mismatch","cc_ghost":"Ghost Employee","cc_vacancy":"Vacancy",
+        "cc_clean":"✅ No anomalies found in this category.",
+        "cc_field":"Field","cc_actual":"Value in Employee Data","cc_mpp":"Value in MPP Data",
+        "severity_high":"High","severity_med":"Medium",
+        "tab_mgr_title":"Manager List",
+        "tab_mgr_sub":"All employees with direct reports and Span of Control analysis",
+        "tab_cr_title":"Structure Change Request",
+        "tab_cr_sub":"Manage organizational structure change requests",
+        "showing":"Showing","breakdown_div":"Breakdown by Division",
+        "download_csv":"📄 CSV","download_excel":"📊 Excel",
+        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Division",
+        "emp_in_div":"employees in this division","emp_found_in":"found in this division",
+    },
+}
+
+
+@st.cache_data(ttl=300)
+def load_mpp_data():
+    client = get_gspread_client()
+    if client:
+        try:
+            ws = client.open_by_key(SHEET_ID).worksheet("mpp_data")
+            df_mpp = pd.DataFrame(ws.get_all_records())
+            df_mpp.columns = df_mpp.columns.str.strip()
+            return df_mpp
+        except Exception:
+            pass
+    return pd.DataFrame()
+
+
+def run_compliance_checks(emp_df: pd.DataFrame, mpp_df: pd.DataFrame) -> dict:
+    results = {
+        "missing_manager": pd.DataFrame(),
+        "mismatch":        pd.DataFrame(),
+        "ghost":           pd.DataFrame(),
+        "vacancy":         pd.DataFrame(),
+    }
+    # 1. Missing Manager ID
+    missing = emp_df[
+        (emp_df["Manager ID"].astype(str).str.strip() == "") |
+        (emp_df["Manager ID"].isna()) |
+        (emp_df["Manager ID"].astype(str).str.strip() == "nan")
+    ][["Employee ID","Employee Name","Job Position","Division","Business Unit","SBU/Tribe","Manager ID"]].copy()
+    missing["Severity"] = "High"
+    results["missing_manager"] = missing
+
+    if mpp_df.empty:
+        return results
+
+    mpp = mpp_df.copy()
+    mpp["JOBID"] = mpp["JOBID"].astype(str).str.strip()
+    emp = emp_df.copy()
+    if "Job ID" not in emp.columns:
+        emp["Job ID"] = ""
+    emp["Job ID"] = emp["Job ID"].astype(str).str.strip()
+
+    emp_valid = emp[emp["Job ID"].notna() & (emp["Job ID"] != "") & (emp["Job ID"] != "nan")].copy()
+    mpp_valid = mpp[mpp["JOBID"].notna() & (mpp["JOBID"] != "") & (mpp["JOBID"] != "nan")].copy()
+
+    emp_ids = set(emp_valid["Job ID"].tolist())
+    mpp_ids = set(mpp_valid["JOBID"].tolist())
+
+    # Ghost: emp not in mpp
+    ghost_ids = emp_ids - mpp_ids
+    ghost_cols = [c for c in ["Employee ID","Employee Name","Job ID","Job Position","Division","Business Unit","SBU/Tribe"] if c in emp_valid.columns]
+    ghost_df = emp_valid[emp_valid["Job ID"].isin(ghost_ids)][ghost_cols].copy()
+    ghost_df["Severity"] = "Medium"
+    results["ghost"] = ghost_df
+
+    # Vacancy: mpp not in emp
+    vacancy_ids = mpp_ids - emp_ids
+    vac_cols = [c for c in ["JOBID","Job Position","MPP Career Stage","Division","BU","SBU","Primary Budget Holder","Fulfillment Status"] if c in mpp_valid.columns]
+    vacancy_df = mpp_valid[mpp_valid["JOBID"].isin(vacancy_ids)][vac_cols].copy()
+    vacancy_df["Severity"] = "Medium"
+    results["vacancy"] = vacancy_df
+
+    # Mismatch cross-sheet
+    merged = emp_valid.merge(mpp_valid, left_on="Job ID", right_on="JOBID", how="inner", suffixes=("_emp","_mpp"))
+
+    FIELD_MAP = [
+        ("Business Unit",  "Business Unit",   "BU",                   "High"),
+        ("Division",       "Division_emp",    "Division_mpp",          "High"),
+        ("SBU/Tribe",      "SBU/Tribe",       "Tribe/Squad/Function",  "Medium"),
+        ("Job Position",   "Job Position_emp","Job Position_mpp",      "High"),
+        ("Career Stage",   "Career Stage",    "MPP Career Stage",      "Medium"),
+    ]
+    mismatch_rows = []
+    for label, ec, mc, sev in FIELD_MAP:
+        # fallback col names without suffix if suffix not applied
+        if ec not in merged.columns:
+            ec = label if label in merged.columns else None
+        if mc not in merged.columns:
+            mc = None
+        if not ec or not mc:
+            continue
+        diff = merged[
+            merged[ec].astype(str).str.strip().str.lower() !=
+            merged[mc].astype(str).str.strip().str.lower()
+        ]
+        if diff.empty:
+            continue
+        eid_col = "Employee ID" if "Employee ID" in diff.columns else "Employee ID_emp"
+        enm_col = "Employee Name" if "Employee Name" in diff.columns else "Employee Name_emp"
+        for _, row in diff.iterrows():
+            mismatch_rows.append({
+                "Employee ID":   row.get(eid_col,""),
+                "Employee Name": row.get(enm_col,""),
+                "Job ID":        row.get("Job ID",""),
+                "Field":         label,
+                "Nilai di Employee Data": str(row.get(ec,"")).strip(),
+                "Nilai di MPP":  str(row.get(mc,"")).strip(),
+                "Severity":      sev,
+            })
+
+    results["mismatch"] = pd.DataFrame(mismatch_rows) if mismatch_rows else pd.DataFrame(
+        columns=["Employee ID","Employee Name","Job ID","Field","Nilai di Employee Data","Nilai di MPP","Severity"]
+    )
+    return results
+
+
+# ══════════════════════════════════════════════════════════════════
 # RBAC MODULE — Access Control List
 # ══════════════════════════════════════════════════════════════════
 
@@ -1216,8 +1403,12 @@ _is_cxo    = _user_role in ("admin", "cxo")
 
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
+if "lang" not in st.session_state:
+    st.session_state.lang = "id"
 if "nav_filter" not in st.session_state:
     st.session_state.nav_filter = {}
+
+L = LANG[st.session_state.lang]
 
 df, data_source = load_data()
 
@@ -1590,7 +1781,7 @@ hr {{ border: none !important; border-top: 1px solid {T["outline"]} !important; 
 with st.sidebar:
     toggle_icon  = "☀️" if dm else "🌙"
     status_dot   = "🟢" if data_source == "google_sheets" else "🟡"
-    status_txt   = "Live · Google Sheets" if data_source == "google_sheets" else "Lokal · CSV"
+    status_txt   = L["data_source_live"] if data_source == "google_sheets" else L["data_source_local"]
     total_karyawan = len(df)
     total_bu       = df["Business Unit"].nunique()
     total_div      = df["Division"].nunique()
@@ -1622,7 +1813,7 @@ with st.sidebar:
                 <div style="font-size:20px;font-weight:800;color:{T['sidebar_active']};
                     font-family:'Manrope',sans-serif;letter-spacing:-0.03em;">{total_karyawan:,}</div>
                 <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:600;
-                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Karyawan</div>
+                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">{L["header_metric"]}</div>
             </div>
             <div style="background:rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;text-align:center;">
                 <div style="font-size:20px;font-weight:800;color:{T['sidebar_active']};
@@ -1647,7 +1838,7 @@ with st.sidebar:
     <div style="padding:8px 20px;margin-bottom:4px;"><div style="height:1px;background:{T['outline']};"></div></div>
     <div style="padding:4px 20px 8px 20px;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.09em;color:{T['sidebar_text2']};">Menu</div>
+            letter-spacing:0.09em;color:{T['sidebar_text2']};">{L["menu_label"]}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1682,11 +1873,11 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     nav_items = [
-        ("🌳", "Org Chart",          0),
-        ("👥", "Data Karyawan",      1),
-        ("⚠️", "Manager ID Hilang",  2),
-        ("👔", "Daftar Manager",     3),
-        ("📝", "Change Request",     4),
+        ("🌳", L["nav_org"],         0),
+        ("👥", L["nav_data"],        1),
+        ("🔍", L["nav_compliance"],  2),
+        ("👔", L["nav_manager"],     3),
+        ("📝", L["nav_cr"],          4),
     ]
     active_idx = st.session_state.active_tab
     for icon_nav, label_nav, tab_idx in nav_items:
@@ -1702,22 +1893,27 @@ with st.sidebar:
 
     col_sb1, col_sb2 = st.columns(2)
     with col_sb1:
-        if st.button("🔄 Refresh", use_container_width=True, key="refresh_btn"):
+        if st.button(L["btn_refresh"], use_container_width=True, key="refresh_btn"):
             st.cache_data.clear(); st.rerun()
     with col_sb2:
-        if st.button(f"{toggle_icon} Mode", use_container_width=True, key="toggle_btn"):
+        if st.button(f"{toggle_icon} {L['btn_mode']}", use_container_width=True, key="toggle_btn"):
             st.session_state.dark_mode = not st.session_state.dark_mode; st.rerun()
+
+    # Language toggle
+    if st.button(L["lang_toggle"], use_container_width=True, key="lang_btn"):
+        st.session_state.lang = "en" if st.session_state.lang == "id" else "id"
+        st.rerun()
 
     # Logout button
     st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
-    if st.button("🚪  Keluar", use_container_width=True, key="logout_btn"):
+    if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
         for k in ["authenticated","user_email","user_info","active_tab"]:
             st.session_state.pop(k, None)
         st.rerun()
 
     st.markdown(f"""
     <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
-        Auto-refresh setiap 5 menit
+        {L["auto_refresh"]}
     </div>
     """, unsafe_allow_html=True)
 
@@ -1730,18 +1926,18 @@ st.markdown(f"""
     display:flex;align-items:flex-end;justify-content:space-between;">
     <div>
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">People</div>
+            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">{L["header_supra"]}</div>
         <div style="font-size:32px;font-weight:800;color:{T['text']};
-            font-family:'Manrope',sans-serif;line-height:1.1;letter-spacing:-0.03em;">Organization Dashboard</div>
+            font-family:'Manrope',sans-serif;line-height:1.1;letter-spacing:-0.03em;">{L["header_title"]}</div>
         <div style="font-size:14px;color:{T['text_variant']};margin-top:6px;font-weight:400;line-height:1.6;">
-            Dashboard Visualisasi Data Organisasi
+            {L["header_subtitle"]}
         </div>
     </div>
     <div style="background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
         border-radius:14px;padding:12px 20px;text-align:right;
         box-shadow:0 4px 20px rgba(66,52,182,0.3);min-width:140px;">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.07em;color:rgba(255,255,255,0.7);margin-bottom:4px;">Total Karyawan</div>
+            letter-spacing:0.07em;color:rgba(255,255,255,0.7);margin-bottom:4px;">{L["header_metric"]}</div>
         <div style="font-size:28px;font-weight:800;color:white;
             font-family:'Manrope',sans-serif;letter-spacing:-0.03em;line-height:1.1;">{len(df):,}</div>
     </div>
@@ -2006,59 +2202,132 @@ elif _active == 1:
 
 
 # ══════════════════════════════════════════════════════════════════
-# TAB 3 — MANAGER ID HILANG
+# TAB 3 — COMPLIANCE CHECK
 # ══════════════════════════════════════════════════════════════════
 elif _active == 2:
+    _title_cc = L["tab_cc_title"]
+    _sub_cc   = L["tab_cc_sub"]
     st.markdown(f"""
     <div style="margin-bottom:20px;">
-        <div style="font-size:20px;font-weight:700;color:{T['text']};">Manager ID Hilang</div>
-        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
-            Karyawan yang Manager ID-nya kosong atau tidak terdaftar — perlu diperbaiki di backend
-        </div>
+        <div style="font-size:20px;font-weight:700;color:{T['text']};">{_title_cc}</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">{_sub_cc}</div>
     </div>
     """, unsafe_allow_html=True)
 
-    missing_mgr_df = df[
-        (df["Manager ID"] == "") | (df["Manager ID"].isna()) | (df["Manager ID"] == "nan")
-    ].copy()
+    mpp_df = load_mpp_data()
+    checks = run_compliance_checks(df, mpp_df)
 
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("⚠️ Total Data Bermasalah", len(missing_mgr_df))
-    m2.metric("🏢 Tersebar di BU", missing_mgr_df["Business Unit"].nunique())
-    m3.metric("📁 Tersebar di Divisi", missing_mgr_df["Division"].nunique())
-    m4.metric("📊 % dari Total", f"{len(missing_mgr_df)/len(df)*100:.1f}%")
+    miss_df  = checks["missing_manager"]
+    mis_df   = checks["mismatch"]
+    ghost_df = checks["ghost"]
+    vac_df   = checks["vacancy"]
+
+    total_anomali = len(miss_df) + len(mis_df) + len(ghost_df) + len(vac_df)
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    k1.metric(L["cc_total_anomali"], total_anomali)
+    k2.metric(L["cc_missing_mgr"],   len(miss_df))
+    k3.metric(L["cc_mismatch"],      len(mis_df))
+    k4.metric(L["cc_ghost"],         len(ghost_df))
+    k5.metric(L["cc_vacancy"],       len(vac_df))
+
+    if mpp_df.empty:
+        st.warning(L["cc_no_mpp"])
+
     st.divider()
 
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        bu_nr = st.selectbox("Filter Business Unit",
-                             ["Semua"] + sorted(missing_mgr_df["Business Unit"].dropna().unique().tolist()), key="bu_nr")
-    with col_f2:
-        div_opts_nr = (sorted(missing_mgr_df[missing_mgr_df["Business Unit"] == bu_nr]["Division"].dropna().unique().tolist())
-                       if bu_nr != "Semua" else sorted(missing_mgr_df["Division"].dropna().unique().tolist()))
-        div_nr = st.selectbox("Filter Divisi", ["Semua"] + div_opts_nr, key="div_nr")
+    cc_t1, cc_t2, cc_t3, cc_t4 = st.tabs([
+        L["cc_tab_missing"], L["cc_tab_mismatch"],
+        L["cc_tab_ghost"],   L["cc_tab_vacancy"],
+    ])
 
-    view_nr = missing_mgr_df.copy()
-    if bu_nr != "Semua": view_nr = view_nr[view_nr["Business Unit"] == bu_nr]
-    if div_nr != "Semua": view_nr = view_nr[view_nr["Division"] == div_nr]
+    # ── Missing Manager ID ────────────────────────────────────────
+    with cc_t1:
+        if miss_df.empty:
+            st.success(L["cc_clean"])
+        else:
+            _all_txt = L["filter_all"]
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                bu_nr = st.selectbox(L["filter_bu_plain"],
+                    [_all_txt] + sorted(miss_df["Business Unit"].dropna().unique().tolist()), key="cc_bu_nr")
+            with col_f2:
+                _div_opts = sorted(miss_df[miss_df["Business Unit"]==bu_nr]["Division"].dropna().unique().tolist()) if bu_nr != _all_txt else sorted(miss_df["Division"].dropna().unique().tolist())
+                div_nr = st.selectbox(L["filter_div_plain"], [_all_txt] + _div_opts, key="cc_div_nr")
 
-    st.caption(f"Menampilkan **{len(view_nr)}** karyawan dengan Manager ID kosong")
-    display_cols = ["Employee ID", "Employee Name", "Job Position", "Division", "Business Unit", "SBU/Tribe", "Manager ID"]
-    st.dataframe(view_nr[display_cols], use_container_width=True, height=450)
-    st.divider()
-    st.markdown(f"""<div style="font-size:15px;font-weight:700;color:{T['text']};margin-bottom:12px;">Breakdown per Divisi</div>""", unsafe_allow_html=True)
-    breakdown = view_nr.groupby(["Business Unit", "Division"]).size().reset_index(name="Jumlah").sort_values("Jumlah", ascending=False)
-    st.dataframe(breakdown, use_container_width=True, height=250)
-    st.divider()
-    col_d1, col_d2, _ = st.columns([1, 1, 3])
-    with col_d1:
-        st.download_button("📄 CSV", view_nr.to_csv(index=False).encode("utf-8"),
-                           "missing_manager_id.csv", "text/csv", use_container_width=True)
-    with col_d2:
-        st.download_button("📊 Excel", to_excel(view_nr), "missing_manager_id.xlsx",
-                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            view_miss = miss_df.copy()
+            if bu_nr  != _all_txt: view_miss = view_miss[view_miss["Business Unit"] == bu_nr]
+            if div_nr != _all_txt: view_miss = view_miss[view_miss["Division"] == div_nr]
 
+            st.caption(f"{L['showing']} **{len(view_miss)}** {L['employees']}")
+            st.dataframe(view_miss, use_container_width=True, height=400)
 
+            _bkd_title = L["breakdown_div"]
+            st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin:16px 0 8px 0;'>{_bkd_title}</div>", unsafe_allow_html=True)
+            bkd = view_miss.groupby(["Business Unit","Division"]).size().reset_index(name="Count").sort_values("Count",ascending=False)
+            st.dataframe(bkd, use_container_width=True, height=220)
+            st.divider()
+            c1, c2, _ = st.columns([1,1,3])
+            with c1: st.download_button(L["download_csv"], view_miss.to_csv(index=False).encode("utf-8"), "missing_manager.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(view_miss),"missing_manager.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+
+    # ── Data Mismatch ─────────────────────────────────────────────
+    with cc_t2:
+        if mis_df.empty:
+            st.success(L["cc_clean"])
+        else:
+            _field_opts = sorted(mis_df["Field"].unique().tolist())
+            sel_fields = st.multiselect("Filter Field", _field_opts, default=_field_opts, key="cc_mismatch_fields")
+            view_mis = mis_df[mis_df["Field"].isin(sel_fields)].copy() if sel_fields else mis_df.copy()
+
+            st.caption(f"{L['showing']} **{len(view_mis)}** anomali")
+            st.dataframe(view_mis, use_container_width=True, height=400)
+
+            st.divider()
+            _bkd2_title = "Breakdown by Field"
+            st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:8px;'>{_bkd2_title}</div>", unsafe_allow_html=True)
+            field_bkd = view_mis.groupby(["Field","Severity"]).size().reset_index(name="Count").sort_values("Count",ascending=False)
+            st.dataframe(field_bkd, use_container_width=True, height=200)
+            st.divider()
+            c1, c2, _ = st.columns([1,1,3])
+            with c1: st.download_button(L["download_csv"], view_mis.to_csv(index=False).encode("utf-8"),"data_mismatch.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(view_mis),"data_mismatch.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+
+    # ── Ghost Employee ────────────────────────────────────────────
+    with cc_t3:
+        if st.session_state.lang == "id":
+            _ghost_note = "Karyawan terdaftar di <b>Employee Data</b> namun <b>tidak memiliki Job ID yang sesuai di MPP</b>. Kemungkinan posisi belum di-plot di MPP, atau Job ID belum diinput."
+        else:
+            _ghost_note = "Employee exists in <b>Employee Data</b> but has <b>no matching Job ID in MPP Data</b>. Position may not be plotted in MPP, or Job ID not yet entered."
+        st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>👻 <b>Ghost Employee</b> — {_ghost_note}</div>", unsafe_allow_html=True)
+
+        if ghost_df.empty:
+            st.success(L["cc_clean"])
+        else:
+            st.caption(f"{L['showing']} **{len(ghost_df)}** {L['employees']}")
+            st.dataframe(ghost_df, use_container_width=True, height=430)
+            st.divider()
+            c1, c2, _ = st.columns([1,1,3])
+            with c1: st.download_button(L["download_csv"], ghost_df.to_csv(index=False).encode("utf-8"),"ghost_employee.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(ghost_df),"ghost_employee.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+
+    # ── Vacancy ───────────────────────────────────────────────────
+    with cc_t4:
+        if st.session_state.lang == "id":
+            _vac_note = "Job ID terdaftar di <b>MPP Data</b> namun <b>belum terisi di Employee Data</b>. Posisi ini sedang kosong dan perlu diisi atau ditinjau."
+        else:
+            _vac_note = "Job ID exists in <b>MPP Data</b> but is <b>not filled in Employee Data</b>. This position is open and needs to be filled or reviewed."
+        st.markdown(f"<div style='background:{T['accent_bg']};border:1px solid {T['border2']};border-radius:12px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['accent']};'>📭 <b>Vacancy</b> — {_vac_note}</div>", unsafe_allow_html=True)
+
+        if vac_df.empty:
+            st.success(L["cc_clean"])
+        else:
+            st.caption(f"{L['showing']} **{len(vac_df)}** positions")
+            st.dataframe(vac_df, use_container_width=True, height=430)
+            st.divider()
+            c1, c2, _ = st.columns([1,1,3])
+            with c1: st.download_button(L["download_csv"], vac_df.to_csv(index=False).encode("utf-8"),"vacancy.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(vac_df),"vacancy.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
 # ══════════════════════════════════════════════════════════════════
 # TAB 4 — DAFTAR MANAGER
 # ══════════════════════════════════════════════════════════════════
