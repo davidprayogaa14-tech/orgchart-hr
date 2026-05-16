@@ -31,6 +31,9 @@ SCOPES     = [
 ]
 CHIEF_ROOT = "SLKR001"
 
+# ── Logo Mekari (base64 encoded) ─────────────────────────────
+_MEKARI_LOGO_B64 = "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"
+
 # ══════════════════════════════════════════════════════════════════
 # LANGUAGE DICTIONARY
 # ══════════════════════════════════════════════════════════════════
@@ -1285,7 +1288,7 @@ if (!highlightId) {{ setTimeout(fitView, 300); }}
 # ══════════════════════════════════════════════════════════════════
 # STREAMLIT PAGE CONFIG
 # ══════════════════════════════════════════════════════════════════
-st.set_page_config(page_title="Mekari", layout="wide", page_icon="🏢", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Mekari", layout="wide", page_icon="⭐", initial_sidebar_state="expanded")
 
 # ══════════════════════════════════════════════════════════════════
 # AUTH GATE — Login Page
@@ -1801,9 +1804,10 @@ with st.sidebar:
     <div style="padding:24px 18px 18px 18px; border-bottom:1px solid {T['outline']}; margin-bottom:4px;">
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
             <div style="width:40px;height:40px;border-radius:8px;
-                background:{T['primary']};
-                display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;
-                box-shadow:0 2px 12px rgba(142,148,242,0.35);">🏢</div>
+                background:#ffffff;
+                display:flex;align-items:center;justify-content:center;flex-shrink:0;
+                box-shadow:0 2px 12px rgba(142,148,242,0.25);overflow:hidden;padding:4px;">
+                <img src="data:image/png;base64,{_MEKARI_LOGO_B64}" style="width:100%;height:100%;object-fit:contain;" /></div>
             <div>
                 <div style="font-size:15px;font-weight:700;color:{T['sidebar_active']};
                     font-family:'Inter',sans-serif;line-height:1.2;letter-spacing:-0.02em;">Mekari</div>
