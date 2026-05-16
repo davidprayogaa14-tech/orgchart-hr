@@ -1117,19 +1117,19 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
     return f"""
 <!DOCTYPE html><html><head><meta charset="UTF-8">
 <style>
-  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ background: {bg}; font-family: 'DM Sans', sans-serif; overflow: hidden; width: 100%; height: {chart_height}px; }}
+  body {{ background: {bg}; font-family: 'Inter', sans-serif; overflow: hidden; width: 100%; height: {chart_height}px; }}
   .toolbar {{ position: fixed; top: 12px; right: 16px; display: flex; flex-direction: column; gap: 6px; z-index: 100; }}
-  .tb-btn {{ width: 34px; height: 34px; background: {tb_bg}; border: 1.5px solid {tb_border}; border-radius: 10px; color: {tb_color}; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; user-select: none; box-shadow: 0 2px 8px rgba(91,79,207,0.08); }}
-  .tb-btn:hover {{ background: {node_in_bg}; border-color: {node_in_bdr}; box-shadow: 0 4px 16px rgba(91,79,207,0.16); transform: translateY(-1px); }}
-  .zoom-label {{ background: {tb_bg}; border: 1.5px solid {tb_border}; border-radius: 8px; color: {hint_color}; font-size: 10px; font-weight: 700; text-align: center; padding: 4px 0; letter-spacing: 0.04em; }}
+  .tb-btn {{ width: 34px; height: 34px; background: {tb_bg}; border: 1px solid {tb_border}; border-radius: 8px; color: {tb_color}; font-size: 15px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; user-select: none; box-shadow: 0 1px 4px rgba(142,148,242,0.08); }}
+  .tb-btn:hover {{ background: {node_in_bg}; border-color: {node_in_bdr}; box-shadow: 0 2px 12px rgba(142,148,242,0.16); transform: translateY(-1px); }}
+  .zoom-label {{ background: {tb_bg}; border: 1px solid {tb_border}; border-radius: 6px; color: {hint_color}; font-size: 10px; font-weight: 600; text-align: center; padding: 4px 0; letter-spacing: 0.04em; }}
   #canvas {{ width: 100%; height: 100%; overflow: hidden; cursor: grab; position: relative; }}
   #canvas:active {{ cursor: grabbing; }}
   #tree-root {{ position: absolute; top: 40px; left: 50%; transform-origin: top center; display: flex; flex-direction: row; gap: 24px; align-items: flex-start; }}
   .node-wrapper {{ display: flex; flex-direction: column; align-items: center; }}
-  .node-box {{ padding: 12px 16px; border-radius: 14px; text-align: center; min-width: 160px; max-width: 210px; cursor: pointer; border: 1.5px solid transparent; transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1); position: relative; user-select: none; box-shadow: 0 2px 12px rgba(91,79,207,0.08); }}
-  .node-box:hover {{ transform: translateY(-3px) scale(1.02); box-shadow: 0 12px 32px rgba(91,79,207,0.18); }}
+  .node-box {{ padding: 12px 16px; border-radius: 8px; text-align: center; min-width: 160px; max-width: 210px; cursor: pointer; border: 1px solid transparent; transition: all 0.18s ease; position: relative; user-select: none; box-shadow: 0 1px 8px rgba(142,148,242,0.08); }}
+  .node-box:hover {{ transform: translateY(-2px); box-shadow: 0 6px 20px rgba(142,148,242,0.18); }}
   .node-box.in-div {{ background: {node_in_bg}; border-color: {node_in_bdr}; color: {node_in_txt}; }}
   .node-box.out-div {{ background: {node_out_bg}; border-color: {node_out_bdr}; color: {node_out_txt}; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }}
   .node-box.company-mode {{ background: linear-gradient(135deg,#5b4fcf,#7c6fcd); border-color: #4a3fb8; color: white; box-shadow: 0 4px 20px rgba(91,79,207,0.3); }}
@@ -1162,7 +1162,7 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
   .single-child::before {{ display: none !important; }}
   .child-col {{ display: flex; flex-direction: column; align-items: center; padding: 0 10px; }}
   .collapsed-hint {{ font-size: 10px; color: {hint_color}; margin-top: 4px; text-align: center; font-weight: 500; }}
-  .legend {{ position: fixed; bottom: 16px; left: 16px; display: flex; gap: 16px; font-size: 11px; color: {hint_color}; background: {tb_bg}; padding: 8px 14px; border-radius: 10px; border: 1px solid {tb_border}; box-shadow: 0 2px 12px rgba(66,52,182,0.10); }}
+  .legend {{ position: fixed; bottom: 16px; left: 16px; display: flex; gap: 16px; font-size: 11px; color: {hint_color}; background: {tb_bg}; padding: 8px 14px; border-radius: 8px; border: 1px solid {tb_border}; box-shadow: 0 1px 8px rgba(142,148,242,0.10); }}
   .legend-item {{ display: flex; align-items: center; gap: 6px; }}
   .legend-dot {{ width: 12px; height: 12px; border-radius: 3px; }}
 </style></head><body>
@@ -1294,33 +1294,51 @@ st.set_page_config(page_title="Mekari", layout="wide", page_icon="🏢", initial
 def _render_login_page():
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
-    html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif !important; }
-    .stApp { background: #faf8ff !important; }
-    .block-container { max-width: 440px !important; padding-top: 10vh !important; margin: 0 auto !important; }
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
+    .stApp { background: #f5f5ff !important; }
+    .block-container { max-width: 420px !important; padding-top: 12vh !important; margin: 0 auto !important; }
     header, #MainMenu, footer { visibility: hidden !important; }
     [data-testid="stTextInput"] input {
-        background: #ffffff !important; border: 1.5px solid rgba(200,196,214,0.5) !important;
-        border-radius: 12px !important; font-size: 14px !important; padding: 12px 16px !important;
-        color: #1a1b21 !important;
+        background: #ffffff !important;
+        border: 1.5px solid #e0e0f0 !important;
+        border-radius: 8px !important; font-size: 14px !important; padding: 12px 16px !important;
+        color: #1a1a2e !important; font-family: 'Inter', sans-serif !important;
+        box-shadow: 0 1px 4px rgba(142,148,242,0.08) !important;
     }
-    [data-testid="stTextInput"] input:focus { border-color: #4234b6 !important; box-shadow: 0 0 0 3px #e4dfff !important; outline: none !important; }
+    [data-testid="stTextInput"] input:focus {
+        border-color: #8E94F2 !important;
+        box-shadow: 0 0 0 3px rgba(142,148,242,0.18) !important;
+        outline: none !important;
+    }
     [data-testid="stFormSubmitButton"] button {
-        background: linear-gradient(135deg, #4234b6, #5b4fcf) !important;
-        color: white !important; border: none !important; border-radius: 9999px !important;
-        font-weight: 700 !important; font-size: 14px !important; padding: 14px 28px !important;
-        width: 100% !important; box-shadow: 0 4px 20px rgba(66,52,182,0.3) !important;
+        background: #8E94F2 !important;
+        color: white !important; border: none !important; border-radius: 8px !important;
+        font-weight: 600 !important; font-size: 14px !important; padding: 14px 28px !important;
+        width: 100% !important;
+        box-shadow: 0 4px 16px rgba(142,148,242,0.35) !important;
+        font-family: 'Inter', sans-serif !important;
+        letter-spacing: 0.01em !important;
+        transition: all 0.2s ease !important;
     }
-    [data-testid="stWidgetLabel"] p { color: #36364a !important; font-size: 13px !important; font-weight: 600 !important; }
+    [data-testid="stFormSubmitButton"] button:hover {
+        background: #7a80e8 !important;
+        box-shadow: 0 6px 24px rgba(142,148,242,0.45) !important;
+        transform: translateY(-1px) !important;
+    }
+    [data-testid="stWidgetLabel"] p {
+        color: #3d3d5c !important; font-size: 13px !important;
+        font-weight: 500 !important; font-family: 'Inter', sans-serif !important;
+    }
     </style>
     """, unsafe_allow_html=True)
     st.markdown("""
     <div style="text-align:center; margin-bottom:40px;">
-        <div style="width:56px;height:56px;border-radius:16px;background:linear-gradient(135deg,#4234b6,#5b4fcf);
-            display:flex;align-items:center;justify-content:center;font-size:28px;margin:0 auto 16px;
-            box-shadow:0 8px 32px rgba(66,52,182,0.35);">&#127962;</div>
-        <div style="font-size:26px;font-weight:800;color:#1a1b21;font-family:'Manrope',sans-serif;letter-spacing:-0.03em;">Mekari</div>
-        <div style="font-size:13px;color:#5a5a6a;margin-top:4px;font-weight:500;letter-spacing:0.04em;text-transform:uppercase;">People Dashboard</div>
+        <div style="width:52px;height:52px;border-radius:14px;background:#8E94F2;
+            display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 20px;
+            box-shadow:0 6px 24px rgba(142,148,242,0.4);">&#127962;</div>
+        <div style="font-size:24px;font-weight:700;color:#1a1a2e;font-family:'Inter',sans-serif;letter-spacing:-0.02em;">Mekari</div>
+        <div style="font-size:12px;color:#7b7b9d;margin-top:6px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;">People Dashboard</div>
     </div>
     """, unsafe_allow_html=True)
     with st.form("login_form", clear_on_submit=False):
@@ -1424,70 +1442,81 @@ df = apply_rbac_filter(df, _user_info)
 # THEME
 # ══════════════════════════════════════════════════════════════════
 dm = st.session_state.dark_mode
+# ── Design System: PRD "Mekari HR Platform" ──────────────────────
+# Primary: Periwinkle #8E94F2 | Background: White | Accent: Soft Lavender/Indigo
+# Typography: Inter | Components: ROUND_EIGHT (border-radius 8px)
 T = {
-    "bg":              "#0f1117"   if dm else "#faf8ff",
-    "surface_low":     "#1a1d2e"   if dm else "#f4f3fb",
-    "surface_lowest":  "#252840"   if dm else "#ffffff",
-    "surface_highest": "#2e3255"   if dm else "#e2e2e9",
-    "primary":         "#7c6fcd"   if dm else "#4234b6",
-    "primary_cont":    "#9b8fef"   if dm else "#5b4fcf",
-    "primary_fixed":   "#1e1a3a"   if dm else "#e4dfff",
+    # Core backgrounds — light: white-led, dark: deep navy
+    "bg":              "#111827"   if dm else "#ffffff",
+    "surface_low":     "#1e2536"   if dm else "#f7f7ff",
+    "surface_lowest":  "#28304a"   if dm else "#ffffff",
+    "surface_highest": "#343d60"   if dm else "#eeecfc",
+    # Periwinkle primary system
+    "primary":         "#a5aaf5"   if dm else "#8E94F2",
+    "primary_cont":    "#bcc0f8"   if dm else "#7a80e8",
+    "primary_fixed":   "#1e2036"   if dm else "#ebebff",
     "on_primary":      "#ffffff"   if dm else "#ffffff",
-    "text":            "#e8e6ff"   if dm else "#1a1b21",
-    "text_variant":    "#9e9ec8"   if dm else "#36364a",
-    "text3":           "#6b6b9e"   if dm else "#5a5a6a",
-    "outline":         "rgba(200,196,214,0.20)" if dm else "rgba(200,196,214,0.35)",
-    "outline_hover":   "rgba(200,196,214,0.60)" if dm else "rgba(66,52,182,0.40)",
-    "sidebar_bg":      "#13151f"   if dm else "#CCCCFF",
-    "sidebar_text":    "#c4b5fd"   if dm else "#1a1040",
-    "sidebar_text2":   "#6b5fa0"   if dm else "#4a3fa0",
-    "sidebar_active":  "#ffffff"   if dm else "#1a1040",
-    "sidebar_pill":    "#252840"   if dm else "#ffffff",
-    "success_bg":      "#0f2a1a"   if dm else "#f0fff4",
-    "success_bdr":     "#166534"   if dm else "#86efac",
-    "success_txt":     "#86efac"   if dm else "#166534",
-    "warn_bg":         "#2a1f00"   if dm else "#fffbeb",
-    "warn_bdr":        "#92400e"   if dm else "#fde68a",
-    "warn_txt":        "#fde68a"   if dm else "#92400e",
-    "node_in_bg":      "linear-gradient(135deg,#2a2060,#3d2f8a)" if dm else "linear-gradient(135deg,#ede9fe,#ddd6fe)",
-    "node_in_txt":     "#e0d8ff"   if dm else "#2e1a6e",
-    "node_in_bdr":     "#5b4fcf"   if dm else "#c4b5fd",
-    "node_out_bg":     "#1a1d2e"   if dm else "#ffffff",
-    "node_out_txt":    "#9e9ec8"   if dm else "#4b5563",
-    "node_out_bdr":    "#2d3160"   if dm else "#e5e7eb",
-    "connector":       "#2d3160"   if dm else "#ddd6fe",
-    "badge_bg":        "#7c6fcd"   if dm else "#4234b6",
-    "chart_bg":        "#0f1117"   if dm else "#faf8ff",
-    "tb_bg":           "#1a1d2e"   if dm else "#ffffff",
-    "tb_color":        "#9b8fef"   if dm else "#4234b6",
-    "tb_border":       "#2d3160"   if dm else "#ede9fe",
-    "bg2":             "#1a1d2e"   if dm else "#ffffff",
-    "bg3":             "#252840"   if dm else "#f4f3fb",
-    "border":          "rgba(200,196,214,0.25)" if dm else "rgba(200,196,214,0.40)",
-    "border2":         "#3d4180"   if dm else "#c4b5fd",
-    "accent":          "#7c6fcd"   if dm else "#4234b6",
-    "accent2":         "#9b8fef"   if dm else "#5b4fcf",
-    "accent_bg":       "#1e1a3a"   if dm else "#e4dfff",
-    "metric_shadow":   "rgba(66,52,182,0.18)"  if dm else "rgba(66,52,182,0.07)",
-    "dl_btn_bg":       "#1a1d2e"   if dm else "#ffffff",
-    "dl_btn_color":    "#9b8fef"   if dm else "#4234b6",
-    "input_bg":        "#1a1d2e"   if dm else "#ffffff",
-    "tab_active":      "#9b8fef"   if dm else "#4234b6",
-    "tab_inactive":    "#4a4a7a"   if dm else "#4a4a60",
-    "divider":         "rgba(200,196,214,0.20)" if dm else "rgba(200,196,214,0.30)",
-    "radio_txt":       "#c4b5fd"   if dm else "#1a1b21",
-    "label_txt":       "#6b6b9e"   if dm else "#36364a",
+    # Text scale — WCAG compliant
+    "text":            "#f0f0ff"   if dm else "#1a1a2e",
+    "text_variant":    "#a0a0c8"   if dm else "#3d3d5c",
+    "text3":           "#6868a0"   if dm else "#7b7b9d",
+    # Borders
+    "outline":         "rgba(162,168,240,0.15)" if dm else "rgba(142,148,242,0.18)",
+    "outline_hover":   "rgba(162,168,240,0.40)" if dm else "rgba(142,148,242,0.40)",
+    # Sidebar — soft lavender in light mode (PRD spec), deep navy dark mode
+    "sidebar_bg":      "#161929"   if dm else "#eeeeff",
+    "sidebar_text":    "#b0b4f4"   if dm else "#2a2a6e",
+    "sidebar_text2":   "#5a5e8c"   if dm else "#5a5e9e",
+    "sidebar_active":  "#ffffff"   if dm else "#1a1a2e",
+    "sidebar_pill":    "#28304a"   if dm else "#ffffff",
+    # Status colors
+    "success_bg":      "#0d2218"   if dm else "#f0fdf4",
+    "success_bdr":     "#15803d"   if dm else "#86efac",
+    "success_txt":     "#86efac"   if dm else "#15803d",
+    "warn_bg":         "#231b00"   if dm else "#fffbeb",
+    "warn_bdr":        "#854d0e"   if dm else "#fde68a",
+    "warn_txt":        "#fde68a"   if dm else "#854d0e",
+    # Org chart node colors — periwinkle theme
+    "node_in_bg":      "linear-gradient(135deg,#1e2654,#2c3478)" if dm else "linear-gradient(135deg,#ebebff,#dcdeff)",
+    "node_in_txt":     "#d8dcff"   if dm else "#2a2e7e",
+    "node_in_bdr":     "#5a60c8"   if dm else "#b0b4f0",
+    "node_out_bg":     "#1e2536"   if dm else "#ffffff",
+    "node_out_txt":    "#8888b8"   if dm else "#4b5563",
+    "node_out_bdr":    "#2a3058"   if dm else "#e5e7eb",
+    "connector":       "#2a3058"   if dm else "#c8caee",
+    "badge_bg":        "#8E94F2"   if dm else "#8E94F2",
+    "chart_bg":        "#111827"   if dm else "#f7f7ff",
+    "tb_bg":           "#1e2536"   if dm else "#ffffff",
+    "tb_color":        "#a5aaf5"   if dm else "#8E94F2",
+    "tb_border":       "#2a3058"   if dm else "#ebebff",
+    # Component surfaces
+    "bg2":             "#1e2536"   if dm else "#ffffff",
+    "bg3":             "#28304a"   if dm else "#f7f7ff",
+    "border":          "rgba(162,168,240,0.18)" if dm else "rgba(142,148,242,0.20)",
+    "border2":         "#4a50a8"   if dm else "#b0b4f0",
+    "accent":          "#a5aaf5"   if dm else "#8E94F2",
+    "accent2":         "#bcc0f8"   if dm else "#7a80e8",
+    "accent_bg":       "#1e2036"   if dm else "#ebebff",
+    "metric_shadow":   "rgba(142,148,242,0.15)" if dm else "rgba(142,148,242,0.08)",
+    "dl_btn_bg":       "#1e2536"   if dm else "#ffffff",
+    "dl_btn_color":    "#a5aaf5"   if dm else "#8E94F2",
+    "input_bg":        "#1e2536"   if dm else "#ffffff",
+    "tab_active":      "#a5aaf5"   if dm else "#8E94F2",
+    "tab_inactive":    "#4a4a7a"   if dm else "#6868a0",
+    "divider":         "rgba(162,168,240,0.15)" if dm else "rgba(142,148,242,0.18)",
+    "radio_txt":       "#b0b4f4"   if dm else "#1a1a2e",
+    "label_txt":       "#6868a0"   if dm else "#3d3d5c",
 }
 
 CHART_COLORS = {
-    "primary":   "#4234b6",
-    "secondary": "#5b4fcf",
+    "primary":   "#8E94F2",
+    "secondary": "#7a80e8",
     "success":   "#059669",
     "warning":   "#d97706",
     "danger":    "#dc2626",
-    "info":      "#0284c7",
-    "scale":     ["#dc2626","#f59e0b","#6b7280","#3b82f6","#059669"],  
-    "bars":      ["#4234b6","#5b4fcf","#7c6fcd","#9b8fef","#c4b5fd","#e4dfff","#ddd6fe","#ede9fe"],
+    "info":      "#6366f1",
+    "scale":     ["#dc2626","#f59e0b","#6b7280","#6366f1","#059669"],
+    "bars":      ["#8E94F2","#7a80e8","#a5aaf5","#bcc0f8","#d4d6fc","#e8e9fe","#c7c9f8","#f0f0ff"],
 }
 
 
@@ -1496,15 +1525,16 @@ CHART_COLORS = {
 # ══════════════════════════════════════════════════════════════════
 st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 *, *::before, *::after {{ box-sizing: border-box; }}
 html, body, [class*="css"] {{
-    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    font-family: 'Inter', sans-serif !important;
     color: {T["text"]} !important;
     -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
 }}
-.stApp {{ background-color: {T["bg"]} !important; transition: background-color 0.35s ease, color 0.35s ease; }}
+.stApp {{ background-color: {T["bg"]} !important; transition: background-color 0.3s ease, color 0.3s ease; }}
 #MainMenu, footer {{ visibility: hidden !important; }}
 header {{ visibility: hidden !important; }}
 [data-testid="stToolbar"] {{ display: none !important; }}
@@ -1518,261 +1548,242 @@ header {{ visibility: hidden !important; }}
 [data-testid="stSidebar"] {{
     background: {T["sidebar_bg"]} !important;
     border-right: none !important;
-    box-shadow: 4px 0 32px rgba(66,52,182,0.10) !important;
-    transition: background 0.35s ease !important;
+    box-shadow: 1px 0 0 0 {T["outline"]} !important;
+    transition: background 0.3s ease !important;
 }}
 [data-testid="stSidebar"] .block-container {{ padding: 0 !important; background: transparent !important; }}
-[data-testid="stSidebar"] * {{ color: {T["sidebar_text"]} !important; font-family: 'Plus Jakarta Sans', sans-serif !important; }}
+[data-testid="stSidebar"] * {{ color: {T["sidebar_text"]} !important; font-family: 'Inter', sans-serif !important; }}
 [data-testid="stSidebar"] label {{
     font-size: 11px !important; font-weight: 600 !important;
-    text-transform: uppercase !important; letter-spacing: 0.07em !important;
+    text-transform: uppercase !important; letter-spacing: 0.08em !important;
     color: {T["sidebar_text2"]} !important;
 }}
-h1, h2, h3 {{ font-family: 'Manrope', sans-serif !important; color: {T["text"]} !important; letter-spacing: -0.02em !important; }}
+h1, h2, h3 {{ font-family: 'Inter', sans-serif !important; color: {T["text"]} !important; letter-spacing: -0.02em !important; font-weight: 700 !important; }}
 
 /* TABS */
 [data-testid="stTabs"] {{ background: transparent !important; border-bottom: 1px solid {T["outline"]} !important; }}
 [data-testid="stTabs"] button {{
-    font-family: 'Plus Jakarta Sans', sans-serif !important; font-weight: 600 !important;
+    font-family: 'Inter', sans-serif !important; font-weight: 500 !important;
     font-size: 13.5px !important; color: {T["tab_inactive"]} !important;
-    border-radius: 0 !important; padding: 12px 22px !important;
-    background: transparent !important; transition: color 0.2s, background 0.2s !important;
+    border-radius: 0 !important; padding: 12px 20px !important;
+    background: transparent !important; transition: color 0.2s !important;
 }}
 [data-testid="stTabs"] button[aria-selected="true"] {{
-    color: {T["primary"]} !important; border-bottom: 2.5px solid {T["primary"]} !important; font-weight: 700 !important;
+    color: {T["primary"]} !important; border-bottom: 2px solid {T["primary"]} !important; font-weight: 600 !important;
 }}
-[data-testid="stTabs"] button:hover {{ color: {T["primary"]} !important; background: {T["primary_fixed"]} !important; }}
-[data-testid="stTabs"] [data-testid="stTabs"] button {{ font-size: 12.5px !important; padding: 8px 16px !important; }}
+[data-testid="stTabs"] button:hover {{ color: {T["primary"]} !important; background: {T["primary_fixed"]} !important; border-radius: 6px 6px 0 0 !important; }}
+[data-testid="stTabs"] [data-testid="stTabs"] button {{ font-size: 12.5px !important; padding: 8px 14px !important; }}
 
-/* METRIC CARDS */
+/* METRIC CARDS — layered surface, ROUND_EIGHT 8px */
 div[data-testid="stMetric"] {{
-    background: {T["surface_lowest"]} !important; border-radius: 16px !important;
-    padding: 22px 24px !important; border: none !important;
-    box-shadow: 0 2px 24px {T["metric_shadow"]}, 0 0 0 1px {T["outline"]} !important;
-    transition: box-shadow 0.25s ease, transform 0.25s ease !important;
+    background: {T["surface_lowest"]} !important; border-radius: 8px !important;
+    padding: 20px 22px !important; border: none !important;
+    box-shadow: 0 1px 0 0 {T["outline"]}, 0 2px 16px {T["metric_shadow"]} !important;
+    transition: box-shadow 0.2s ease, transform 0.2s ease !important;
     position: relative !important; overflow: hidden !important;
 }}
 div[data-testid="stMetric"]::before {{
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-    background: linear-gradient(90deg, {T["primary"]}, {T["primary_cont"]}); opacity: 0.7;
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: {T["primary"]}; opacity: 0.5;
 }}
 div[data-testid="stMetric"]:hover {{
-    box-shadow: 0 8px 40px {T["metric_shadow"]}, 0 0 0 1px {T["outline_hover"]} !important;
-    transform: translateY(-2px) scale(1.01) !important;
+    box-shadow: 0 1px 0 0 {T["outline"]}, 0 4px 24px {T["metric_shadow"]} !important;
+    transform: translateY(-1px) !important;
 }}
 div[data-testid="stMetric"] label {{
-    font-family: 'Plus Jakarta Sans', sans-serif !important; font-size: 11px !important;
-    font-weight: 700 !important; text-transform: uppercase !important;
-    letter-spacing: 0.07em !important; color: {T["text3"]} !important;
+    font-size: 11px !important; font-weight: 600 !important; text-transform: uppercase !important;
+    letter-spacing: 0.08em !important; color: {T["text3"]} !important;
 }}
 div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
-    font-family: 'Manrope', sans-serif !important; font-size: 34px !important;
-    font-weight: 800 !important; color: {T["primary"]} !important;
-    letter-spacing: -0.03em !important; line-height: 1.1 !important;
+    font-size: 26px !important; font-weight: 700 !important;
+    color: {T["text"]} !important; letter-spacing: -0.02em !important;
 }}
 
-/* BUTTONS */
+/* BUTTONS — ROUND_EIGHT */
 [data-testid="stButton"] button {{
-    background: linear-gradient(135deg, {T["primary"]}, {T["primary_cont"]}) !important;
-    color: {T["on_primary"]} !important; border: none !important; border-radius: 9999px !important;
-    font-weight: 600 !important; font-size: 13px !important; padding: 8px 20px !important;
-    transition: all 0.2s ease !important; letter-spacing: 0.01em !important;
-    box-shadow: 0 2px 12px rgba(66,52,182,0.25) !important;
+    font-family: 'Inter', sans-serif !important; font-weight: 500 !important;
+    border-radius: 8px !important; font-size: 13.5px !important;
+    transition: all 0.2s ease !important;
 }}
-[data-testid="stButton"] button:hover {{
-    transform: scale(1.02) !important; box-shadow: 0 6px 24px rgba(66,52,182,0.35) !important;
-    filter: brightness(1.08) !important;
+[data-testid="stButton"] button[kind="secondary"] {{
+    background: transparent !important; color: {T["text_variant"]} !important;
+    border: 1px solid {T["outline"]} !important;
+}}
+[data-testid="stButton"] button[kind="secondary"]:hover {{
+    border-color: {T["primary"]} !important; color: {T["primary"]} !important;
+    background: {T["primary_fixed"]} !important;
 }}
 [data-testid="stSidebar"] [data-testid="stButton"] button {{
-    background: transparent !important; color: {T["sidebar_text"]} !important;
-    border: none !important; border-radius: 9999px !important; text-align: left !important;
-    font-size: 13.5px !important; font-weight: 500 !important; padding: 10px 18px !important;
-    box-shadow: none !important; margin-bottom: 2px !important; width: 100% !important;
-    transition: all 0.18s ease !important; font-family: 'Plus Jakarta Sans', sans-serif !important;
+    background: rgba(255,255,255,0.06) !important; color: {T["sidebar_text"]} !important;
+    border: none !important; border-radius: 8px !important;
+    font-size: 13px !important; font-weight: 500 !important; padding: 10px 16px !important;
+    text-align: left !important; transform: none !important; box-shadow: none !important;
 }}
 [data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
-    background: {T["sidebar_pill"]} !important; color: {T["sidebar_active"]} !important;
-    transform: none !important; box-shadow: 0 2px 16px rgba(66,52,182,0.15) !important;
+    background: rgba(142,148,242,0.15) !important; color: {T["sidebar_active"]} !important;
 }}
 [data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {{
     background: {T["sidebar_pill"]} !important; color: {T["sidebar_active"]} !important;
-    border: none !important; border-radius: 9999px !important;
-    font-size: 13.5px !important; font-weight: 700 !important; padding: 10px 18px !important;
-    box-shadow: 0 2px 16px rgba(66,52,182,0.20) !important;
+    border: none !important; border-radius: 8px !important;
+    font-size: 13px !important; font-weight: 600 !important; padding: 10px 16px !important;
+    box-shadow: 0 1px 0 0 rgba(142,148,242,0.12) !important;
     transform: none !important; filter: none !important;
 }}
 [data-testid="stDownloadButton"] button {{
     background: transparent !important; color: {T["primary"]} !important;
-    border: 1.5px solid {T["outline"]} !important; border-radius: 9999px !important;
-    font-weight: 600 !important; font-size: 13px !important;
+    border: 1px solid {T["outline"]} !important; border-radius: 8px !important;
+    font-weight: 500 !important; font-size: 13px !important;
     transition: all 0.2s !important; box-shadow: none !important;
 }}
 [data-testid="stDownloadButton"] button:hover {{
-    border-color: {T["primary"]} !important; background: {T["primary_fixed"]} !important; transform: scale(1.02) !important;
+    border-color: {T["primary"]} !important; background: {T["primary_fixed"]} !important;
 }}
 [data-testid="stFormSubmitButton"] button {{
-    background: linear-gradient(135deg, {T["primary"]}, {T["primary_cont"]}) !important;
-    color: white !important; border: none !important; border-radius: 9999px !important;
-    font-weight: 700 !important; font-size: 14px !important; padding: 14px 28px !important;
+    background: {T["primary"]} !important;
+    color: white !important; border: none !important; border-radius: 8px !important;
+    font-weight: 600 !important; font-size: 14px !important; padding: 12px 28px !important;
     width: 100% !important; transition: all 0.2s !important;
-    box-shadow: 0 4px 20px rgba(66,52,182,0.3) !important;
+    box-shadow: 0 2px 12px rgba(142,148,242,0.3) !important;
 }}
 [data-testid="stFormSubmitButton"] button:hover {{
-    transform: scale(1.02) !important; box-shadow: 0 8px 32px rgba(66,52,182,0.4) !important;
+    background: {T["primary_cont"]} !important; box-shadow: 0 4px 20px rgba(142,148,242,0.4) !important;
 }}
 
-/* INPUTS */
+/* INPUTS — ROUND_EIGHT */
 [data-testid="stSelectbox"] > div > div {{
-    background: {T["surface_lowest"]} !important; border: 1.5px solid {T["outline"]} !important;
-    border-radius: 12px !important; font-size: 13.5px !important; color: {T["text"]} !important;
+    background: {T["surface_lowest"]} !important; border: 1px solid {T["outline"]} !important;
+    border-radius: 8px !important; font-size: 13.5px !important; color: {T["text"]} !important;
     transition: border-color 0.2s, box-shadow 0.2s !important;
-    box-shadow: 0 1px 8px {T["metric_shadow"]} !important;
+    box-shadow: 0 1px 4px {T["metric_shadow"]} !important;
 }}
 [data-testid="stSelectbox"] > div > div:focus-within {{
     border-color: {T["primary"]} !important;
-    box-shadow: 0 0 0 3px {T["primary_fixed"]}, 0 1px 8px {T["metric_shadow"]} !important;
+    box-shadow: 0 0 0 3px {T["primary_fixed"]}, 0 1px 4px {T["metric_shadow"]} !important;
 }}
 [data-testid="stSelectbox"] svg {{ fill: {T["text_variant"]} !important; }}
 div[data-baseweb="popover"] ul, div[data-baseweb="menu"] {{
     background: {T["surface_lowest"]} !important; border: none !important;
-    border-radius: 14px !important;
-    box-shadow: 0 8px 40px rgba(66,52,182,0.15), 0 0 0 1px {T["outline"]} !important;
-    backdrop-filter: blur(12px) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 24px rgba(142,148,242,0.15), 0 0 0 1px {T["outline"]} !important;
 }}
 div[data-baseweb="popover"] li, [role="option"] {{
     background: transparent !important; color: {T["text"]} !important;
-    font-family: 'Plus Jakarta Sans', sans-serif !important; font-size: 13.5px !important;
-    border-radius: 8px !important; margin: 2px 6px !important;
+    font-family: 'Inter', sans-serif !important; font-size: 13.5px !important;
+    border-radius: 6px !important; margin: 2px 4px !important;
 }}
 div[data-baseweb="popover"] li:hover, [role="option"]:hover {{
     background: {T["primary_fixed"]} !important; color: {T["primary"]} !important;
 }}
 div[data-baseweb="popover"] {{ background: transparent !important; }}
 [data-testid="stTextInput"] input {{
-    background: {T["surface_lowest"]} !important; border: 1.5px solid {T["outline"]} !important;
-    border-radius: 12px !important; font-size: 13.5px !important; color: {T["text"]} !important;
+    background: {T["surface_lowest"]} !important; border: 1px solid {T["outline"]} !important;
+    border-radius: 8px !important; font-size: 13.5px !important; color: {T["text"]} !important;
     padding: 10px 14px !important; transition: border-color 0.2s, box-shadow 0.2s !important;
+    font-family: 'Inter', sans-serif !important;
 }}
 [data-testid="stTextInput"] input:focus {{
     border-color: {T["primary"]} !important; box-shadow: 0 0 0 3px {T["primary_fixed"]} !important; outline: none !important;
 }}
 [data-testid="stTextInput"] input::placeholder {{ color: {T["text3"]} !important; }}
 [data-testid="stTextArea"] textarea {{
-    background: {T["surface_lowest"]} !important; border: 1.5px solid {T["outline"]} !important;
-    border-radius: 12px !important; font-size: 13.5px !important; color: {T["text"]} !important;
-    font-family: 'Plus Jakarta Sans', sans-serif !important; transition: border-color 0.2s, box-shadow 0.2s !important;
+    background: {T["surface_lowest"]} !important; border: 1px solid {T["outline"]} !important;
+    border-radius: 8px !important; font-size: 13.5px !important; color: {T["text"]} !important;
+    font-family: 'Inter', sans-serif !important; transition: border-color 0.2s, box-shadow 0.2s !important;
 }}
 [data-testid="stTextArea"] textarea:focus {{
     border-color: {T["primary"]} !important; box-shadow: 0 0 0 3px {T["primary_fixed"]} !important;
 }}
 [data-testid="stTextArea"] textarea::placeholder {{ color: {T["text3"]} !important; }}
 [data-testid="stNumberInput"] input {{
-    background: {T["surface_lowest"]} !important; border: 1.5px solid {T["outline"]} !important;
-    border-radius: 12px !important; color: {T["text"]} !important; font-size: 13.5px !important;
+    background: {T["surface_lowest"]} !important; border: 1px solid {T["outline"]} !important;
+    border-radius: 8px !important; color: {T["text"]} !important; font-size: 13.5px !important;
 }}
 [data-testid="stNumberInput"] button {{
     background: {T["surface_low"]} !important; border: none !important;
-    color: {T["text_variant"]} !important; border-radius: 8px !important;
+    color: {T["text_variant"]} !important; border-radius: 6px !important;
 }}
 [data-testid="stDateInput"] > div > div {{
-    background: {T["surface_lowest"]} !important; border: 1.5px solid {T["outline"]} !important; border-radius: 12px !important;
+    background: {T["surface_lowest"]} !important; border: 1px solid {T["outline"]} !important; border-radius: 8px !important;
 }}
 [data-testid="stDateInput"] input {{ color: {T["text"]} !important; background: transparent !important; }}
 
-/* DATAFRAME */
+/* DATAFRAME — layered surface */
 [data-testid="stDataFrame"] {{
-    border-radius: 14px !important; overflow: hidden !important; border: none !important;
-    box-shadow: 0 2px 20px {T["metric_shadow"]}, 0 0 0 1px {T["outline"]} !important;
+    border-radius: 8px !important; overflow: hidden !important; border: none !important;
+    box-shadow: 0 1px 0 0 {T["outline"]}, 0 2px 12px {T["metric_shadow"]} !important;
 }}
 [data-testid="stDataFrame"] th {{
     background: {T["surface_low"]} !important; color: {T["text3"]} !important;
-    font-family: 'Plus Jakarta Sans', sans-serif !important; font-size: 11px !important;
-    font-weight: 700 !important; text-transform: uppercase !important;
+    font-family: 'Inter', sans-serif !important; font-size: 11px !important;
+    font-weight: 600 !important; text-transform: uppercase !important;
     letter-spacing: 0.07em !important; border: none !important;
 }}
 [data-testid="stDataFrame"] td {{
     background: {T["surface_lowest"]} !important; color: {T["text"]} !important;
     border: none !important; font-size: 13px !important;
+    font-family: 'Inter', sans-serif !important;
 }}
 
-/* FORM & EXPANDER */
+/* FORM & EXPANDER — ROUND_EIGHT */
 [data-testid="stForm"] {{
     background: {T["surface_low"]} !important; border: none !important;
-    border-radius: 20px !important; padding: 28px !important;
-    box-shadow: 0 2px 20px {T["metric_shadow"]}, 0 0 0 1px {T["outline"]} !important;
+    border-radius: 8px !important; padding: 24px !important;
+    box-shadow: 0 1px 0 0 {T["outline"]}, 0 2px 12px {T["metric_shadow"]} !important;
 }}
 [data-testid="stExpander"] {{
     background: {T["surface_lowest"]} !important; border: none !important;
-    border-radius: 14px !important; margin-bottom: 8px !important;
-    box-shadow: 0 1px 12px {T["metric_shadow"]}, 0 0 0 1px {T["outline"]} !important;
+    border-radius: 8px !important; margin-bottom: 6px !important;
+    box-shadow: 0 1px 0 0 {T["outline"]} !important;
 }}
 [data-testid="stExpander"] summary {{
-    color: {T["text"]} !important; font-weight: 600 !important;
-    font-family: 'Plus Jakarta Sans', sans-serif !important;
+    color: {T["text"]} !important; font-weight: 500 !important;
+    font-family: 'Inter', sans-serif !important;
 }}
 
-/* ALERTS & MISC */
+/* ALERTS */
 [data-testid="stAlert"] {{
-    border-radius: 14px !important; font-size: 13px !important;
+    border-radius: 8px !important; font-size: 13px !important;
     background: {T["surface_lowest"]} !important; border: none !important;
     box-shadow: 0 0 0 1px {T["outline"]} !important;
 }}
-[data-testid="stAlert"] p {{ color: {T["text"]} !important; }}
+[data-testid="stAlert"] p {{ color: {T["text"]} !important; font-family: 'Inter', sans-serif !important; }}
 [data-testid="stCaptionContainer"] p {{ color: {T["text_variant"]} !important; font-size: 12px !important; }}
 small {{ color: {T["text_variant"]} !important; }}
 
-/* WIDGET LABELS — selectbox, text_input, radio, semua */
+/* WIDGET LABELS */
 [data-testid="stWidgetLabel"] {{
-    color: {T["text"]} !important; font-size: 13px !important; font-weight: 600 !important;
+    color: {T["text"]} !important; font-size: 13px !important; font-weight: 500 !important;
 }}
 [data-testid="stWidgetLabel"] p {{
-    color: {T["text"]} !important; font-size: 13px !important; font-weight: 600 !important;
+    color: {T["text"]} !important; font-size: 13px !important; font-weight: 500 !important;
 }}
 label, .stSelectbox label, .stTextInput label, .stTextArea label,
 .stNumberInput label, .stDateInput label, .stSlider label {{
-    color: {T["text"]} !important; font-weight: 600 !important; font-size: 13px !important;
+    color: {T["text"]} !important; font-weight: 500 !important; font-size: 13px !important;
+    font-family: 'Inter', sans-serif !important;
 }}
 
-/* MARKDOWN TEXT */
-[data-testid="stMarkdownContainer"] p {{
-    color: {T["text"]} !important;
-}}
-[data-testid="stMarkdownContainer"] li {{
-    color: {T["text"]} !important;
-}}
+/* MARKDOWN */
+[data-testid="stMarkdownContainer"] p {{ color: {T["text"]} !important; font-family: 'Inter', sans-serif !important; }}
+[data-testid="stMarkdownContainer"] li {{ color: {T["text"]} !important; }}
 
 /* RADIO */
-[data-testid="stRadio"] label {{
-    font-size: 13.5px !important; font-weight: 600 !important; color: {T["text"]} !important;
-}}
-[data-testid="stRadio"] div[role="radiogroup"] label p {{
-    color: {T["text"]} !important; font-weight: 600 !important;
-}}
-[data-testid="stRadio"] > label {{
-    color: {T["text"]} !important;
-}}
+[data-testid="stRadio"] label {{ font-size: 13.5px !important; font-weight: 500 !important; color: {T["text"]} !important; }}
+[data-testid="stRadio"] div[role="radiogroup"] label p {{ color: {T["text"]} !important; font-weight: 500 !important; }}
+[data-testid="stRadio"] > label {{ color: {T["text"]} !important; }}
 
 /* CHECKBOX */
-[data-testid="stCheckbox"] label {{
-    font-size: 13.5px !important; color: {T["text"]} !important; font-weight: 500 !important;
-}}
-[data-testid="stCheckbox"] label p {{
-    color: {T["text"]} !important;
-}}
+[data-testid="stCheckbox"] label {{ font-size: 13.5px !important; color: {T["text"]} !important; font-weight: 400 !important; }}
+[data-testid="stCheckbox"] label p {{ color: {T["text"]} !important; }}
 
-/* SELECT OPTIONS in dropdown */
-[data-baseweb="select"] span {{
-    color: {T["text"]} !important;
-}}
-
-/* HELP TOOLTIP ICON */
-[data-testid="stTooltipIcon"] {{
-    color: {T["text_variant"]} !important;
-}}
+/* SELECT OPTIONS */
+[data-baseweb="select"] span {{ color: {T["text"]} !important; }}
+[data-testid="stTooltipIcon"] {{ color: {T["text_variant"]} !important; }}
 
 hr {{ border: none !important; border-top: 1px solid {T["outline"]} !important; }}
 </style>
 """, unsafe_allow_html=True)
+
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1788,56 +1799,56 @@ with st.sidebar:
     total_mgr      = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
 
     st.markdown(f"""
-    <div style="padding:28px 20px 20px 20px; border-bottom:1px solid {T['outline']}; margin-bottom:8px;">
-        <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
-            <div style="width:44px;height:44px;border-radius:14px;
-                background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
-                display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;
-                box-shadow:0 4px 20px rgba(66,52,182,0.35);">🏢</div>
+    <div style="padding:24px 18px 18px 18px; border-bottom:1px solid {T['outline']}; margin-bottom:4px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+            <div style="width:40px;height:40px;border-radius:8px;
+                background:{T['primary']};
+                display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;
+                box-shadow:0 2px 12px rgba(142,148,242,0.35);">🏢</div>
             <div>
-                <div style="font-size:16px;font-weight:800;color:{T['sidebar_active']};
-                    font-family:'Manrope',sans-serif;line-height:1.2;letter-spacing:-0.02em;">Mekari</div>
-                <div style="font-size:11px;color:{T['sidebar_text2']};font-weight:500;
-                    letter-spacing:0.04em;text-transform:uppercase;margin-top:2px;">People Dashboard</div>
+                <div style="font-size:15px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;line-height:1.2;letter-spacing:-0.02em;">Mekari</div>
+                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
+                    letter-spacing:0.06em;text-transform:uppercase;margin-top:2px;">People Dashboard</div>
             </div>
         </div>
-        <div style="background:rgba(255,255,255,0.15);border-radius:8px;padding:7px 12px;
-            display:flex;align-items:center;gap:7px;">
-            <span style="font-size:9px;">{status_dot}</span>
+        <div style="background:rgba(142,148,242,0.12);border-radius:6px;padding:6px 10px;
+            display:flex;align-items:center;gap:6px;">
+            <span style="font-size:8px;">{status_dot}</span>
             <span style="font-size:11px;color:{T['sidebar_text2']};font-weight:500;">{status_txt}</span>
         </div>
     </div>
-    <div style="padding:14px 20px 10px 20px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-            <div style="background:rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;text-align:center;">
-                <div style="font-size:20px;font-weight:800;color:{T['sidebar_active']};
-                    font-family:'Manrope',sans-serif;letter-spacing:-0.03em;">{total_karyawan:,}</div>
-                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:600;
+    <div style="padding:12px 18px 8px 18px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
+                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_karyawan:,}</div>
+                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
                     text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">{L["header_metric"]}</div>
             </div>
-            <div style="background:rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;text-align:center;">
-                <div style="font-size:20px;font-weight:800;color:{T['sidebar_active']};
-                    font-family:'Manrope',sans-serif;letter-spacing:-0.03em;">{total_mgr}</div>
-                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:600;
+            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
+                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_mgr}</div>
+                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
                     text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Manager</div>
             </div>
-            <div style="background:rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;text-align:center;">
-                <div style="font-size:20px;font-weight:800;color:{T['sidebar_active']};
-                    font-family:'Manrope',sans-serif;letter-spacing:-0.03em;">{total_bu}</div>
-                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:600;
+            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
+                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_bu}</div>
+                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
                     text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Business Unit</div>
             </div>
-            <div style="background:rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;text-align:center;">
-                <div style="font-size:20px;font-weight:800;color:{T['sidebar_active']};
-                    font-family:'Manrope',sans-serif;letter-spacing:-0.03em;">{total_div}</div>
-                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:600;
+            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
+                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_div}</div>
+                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
                     text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Divisi</div>
             </div>
         </div>
     </div>
-    <div style="padding:8px 20px;margin-bottom:4px;"><div style="height:1px;background:{T['outline']};"></div></div>
-    <div style="padding:4px 20px 8px 20px;">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;
+    <div style="padding:6px 18px;margin-bottom:2px;"><div style="height:1px;background:{T['outline']};"></div></div>
+    <div style="padding:4px 18px 6px 18px;">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;
             letter-spacing:0.09em;color:{T['sidebar_text2']};">{L["menu_label"]}</div>
     </div>
     """, unsafe_allow_html=True)
@@ -1849,23 +1860,23 @@ with st.sidebar:
     _uname    = _user_info.get("name", "User")
     _uemail   = st.session_state.get("user_email", "")
     _urole    = _user_role.upper()
-    _role_colors = {"ADMIN": "#4234b6", "CXO": "#059669", "LEADER": "#d97706", "EMPLOYEE": "#64748b"}
+    _role_colors = {"ADMIN": "#8E94F2", "CXO": "#059669", "LEADER": "#d97706", "EMPLOYEE": "#64748b"}
     _role_color  = _role_colors.get(_urole, "#64748b")
     _initials    = "".join([w[0].upper() for w in _uname.split()[:2]])
     st.markdown(f"""
-    <div style="padding:10px 18px 14px 18px;">
+    <div style="padding:8px 18px 12px 18px;">
         <div style="display:flex;align-items:center;gap:10px;
-            background:rgba(255,255,255,0.12);border-radius:12px;padding:10px 12px;">
-            <div style="width:34px;height:34px;border-radius:50%;
-                background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
+            background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;">
+            <div style="width:32px;height:32px;border-radius:50%;
+                background:{T['primary']};
                 display:flex;align-items:center;justify-content:center;
-                font-size:13px;font-weight:700;color:white;flex-shrink:0;">{_initials}</div>
+                font-size:12px;font-weight:600;color:white;flex-shrink:0;font-family:'Inter',sans-serif;">{_initials}</div>
             <div style="min-width:0;">
-                <div style="font-size:13px;font-weight:700;color:{T['sidebar_active']};
-                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{_uname}</div>
-                <div style="display:flex;align-items:center;gap:5px;margin-top:2px;">
-                    <span style="font-size:9px;font-weight:700;padding:2px 7px;border-radius:999px;
-                        background:{_role_color};color:white;letter-spacing:0.06em;">{_urole}</span>
+                <div style="font-size:13px;font-weight:600;color:{T['sidebar_active']};
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Inter',sans-serif;">{_uname}</div>
+                <div style="display:flex;align-items:center;gap:5px;margin-top:3px;">
+                    <span style="font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;
+                        background:{_role_color};color:white;letter-spacing:0.05em;">{_urole}</span>
                 </div>
             </div>
         </div>
@@ -1922,24 +1933,24 @@ with st.sidebar:
 # MAIN HEADER
 # ══════════════════════════════════════════════════════════════════
 st.markdown(f"""
-<div style="padding:0 0 28px 0;margin-bottom:32px;border-bottom:1px solid {T['outline']};
+<div style="padding:0 0 24px 0;margin-bottom:28px;border-bottom:1px solid {T['outline']};
     display:flex;align-items:flex-end;justify-content:space-between;">
     <div>
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;">{L["header_supra"]}</div>
-        <div style="font-size:32px;font-weight:800;color:{T['text']};
-            font-family:'Manrope',sans-serif;line-height:1.1;letter-spacing:-0.03em;">{L["header_title"]}</div>
-        <div style="font-size:14px;color:{T['text_variant']};margin-top:6px;font-weight:400;line-height:1.6;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;
+            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;font-family:'Inter',sans-serif;">{L["header_supra"]}</div>
+        <div style="font-size:28px;font-weight:700;color:{T['text']};
+            font-family:'Inter',sans-serif;line-height:1.15;letter-spacing:-0.025em;">{L["header_title"]}</div>
+        <div style="font-size:13.5px;color:{T['text_variant']};margin-top:6px;font-weight:400;line-height:1.6;font-family:'Inter',sans-serif;">
             {L["header_subtitle"]}
         </div>
     </div>
-    <div style="background:linear-gradient(135deg,{T['primary']},{T['primary_cont']});
-        border-radius:14px;padding:12px 20px;text-align:right;
-        box-shadow:0 4px 20px rgba(66,52,182,0.3);min-width:140px;">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.07em;color:rgba(255,255,255,0.7);margin-bottom:4px;">{L["header_metric"]}</div>
-        <div style="font-size:28px;font-weight:800;color:white;
-            font-family:'Manrope',sans-serif;letter-spacing:-0.03em;line-height:1.1;">{len(df):,}</div>
+    <div style="background:{T['primary']};
+        border-radius:8px;padding:12px 20px;text-align:right;
+        box-shadow:0 2px 16px rgba(142,148,242,0.3);min-width:140px;">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;
+            letter-spacing:0.08em;color:rgba(255,255,255,0.75);margin-bottom:4px;font-family:'Inter',sans-serif;">{L["header_metric"]}</div>
+        <div style="font-size:26px;font-weight:700;color:white;
+            font-family:'Inter',sans-serif;letter-spacing:-0.03em;line-height:1.1;">{len(df):,}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
