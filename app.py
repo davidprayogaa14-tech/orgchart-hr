@@ -169,9 +169,8 @@ def run_compliance_checks(emp_df: pd.DataFrame, mpp_df: pd.DataFrame) -> dict:
 
     # Vacancy: mpp not in emp
     vacancy_ids = mpp_ids - emp_ids
-    vac_cols = [c for c in ["JOBID","Job Position","MPP Career Stage","Division","BU","SBU","Primary Budget Holder","Fulfillment Status"] if c in mpp_valid.columns]
+    vac_cols = [c for c in ["MPP Status 2026","JOBID","Job Position","MPP Career Stage","Division","BU","SBU","Primary Budget Holder","Fulfillment Status"] if c in mpp_valid.columns]
     vacancy_df = mpp_valid[mpp_valid["JOBID"].isin(vacancy_ids)][vac_cols].copy()
-    vacancy_df["Severity"] = "Medium"
     results["vacancy"] = vacancy_df
 
     # Mismatch cross-sheet
