@@ -221,37 +221,57 @@ def run_compliance_checks(emp_df: pd.DataFrame, mpp_df: pd.DataFrame) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════════
-# RBAC MODULE — Access Control List
+# RBAC MODULE — Email-Based Access Control List
+# ══════════════════════════════════════════════════════════════════
+#
+# ROLE HIERARCHY & TAB VISIBILITY:
+#   admin    → Org Chart + semua tab operasional + Admin Panel
+#   cxo      → Org Chart only (full data, no filter)
+#   leader   → Org Chart only (filtered by allowed_bus / allowed_sbus)
+#   employee → Org Chart only (subtree C-1 dari manager mereka)
+#
+# ACL dikelola sepenuhnya oleh Super Admin (OD Tim) via Admin Panel.
+# User login hanya menggunakan EMAIL + PASSWORD yang di-assign admin.
+# Primary key: email (lowercase). Password disimpan plaintext di Sheets
+# (acceptable untuk fase 1 internal tool; upgrade ke hashed di fase 2).
+#
+# Google Sheets worksheet: 'app_users'
+# Kolom: email | name | role | password | allowed_bus | allowed_sbus |
+#         employee_id | is_active | scope_note | created_at | updated_at
 # ══════════════════════════════════════════════════════════════════
 
-# Fallback ACL jika worksheet app_users belum dibuat di Sheets
+_ACL_COLS = [
+    "email", "name", "role", "password",
+    "allowed_bus", "allowed_sbus", "employee_id",
+    "is_active", "scope_note", "created_at", "updated_at",
+]
+
+# Bootstrap fallback — digunakan HANYA ketika worksheet app_users belum ada.
+# Hapus atau nonaktifkan setelah ACL di-seed via Admin Panel.
 _ACL_FALLBACK = {
     "od_admin@mekari.com": {
-        "employee_id": "",
-        "name": "OD Admin",
-        "role": "admin",
-        "allowed_bus": "*",
-        "allowed_divs": "*",
-        "allowed_sbus": "*",
-        "is_active": True,
-    },
-    "hr_team@mekari.com": {
-        "employee_id": "",
-        "name": "Tim HR",
-        "role": "cxo",
-        "allowed_bus": "*",
-        "allowed_divs": "*",
-        "allowed_sbus": "*",
-        "is_active": True,
+        "name": "OD Admin", "role": "admin", "password": "mekari_od_2026",
+        "allowed_bus": "*", "allowed_sbus": "*", "employee_id": "",
+        "is_active": True, "scope_note": "Bootstrap admin",
     },
 }
 
-# Kolom worksheet app_users
-_ACL_COLS = [
-    "email", "employee_id", "name", "role",
-    "allowed_bus", "allowed_divs", "allowed_sbus",
-    "is_active", "created_at", "updated_at",
-]
+# Role → tab access mapping
+# admin   : semua tab (0=OrgChart, 1=Data, 2=Compliance, 3=Manager, 4=CR, 99=AdminPanel)
+# cxo     : hanya tab 0
+# leader  : hanya tab 0
+# employee: hanya tab 0
+_ROLE_TAB_ACCESS = {
+    "admin":    {0, 1, 2, 3, 4, 99},
+    "cxo":      {0},
+    "leader":   {0},
+    "employee": {0},
+}
+
+
+def _can_access_tab(role: str, tab_idx: int) -> bool:
+    """Return True jika role boleh mengakses tab_idx."""
+    return tab_idx in _ROLE_TAB_ACCESS.get(role, {0})
 
 
 @st.cache_data(ttl=120)
@@ -259,7 +279,7 @@ def load_acl_table() -> dict:
     """
     Load ACL dari worksheet 'app_users' di Google Sheets.
     Return dict keyed by email (lowercase).
-    Fallback ke _ACL_FALLBACK jika sheet belum ada.
+    Fallback ke _ACL_FALLBACK jika sheet belum ada / kosong.
     """
     client = get_gspread_client()
     if not client:
@@ -275,13 +295,14 @@ def load_acl_table() -> dict:
             if not email_key:
                 continue
             acl[email_key] = {
-                "employee_id": str(r.get("employee_id", "")).strip(),
                 "name":        str(r.get("name", "")).strip(),
                 "role":        str(r.get("role", "employee")).strip().lower(),
-                "allowed_bus": str(r.get("allowed_bus", "")).strip(),
-                "allowed_divs":str(r.get("allowed_divs","*")).strip(),
-                "allowed_sbus":str(r.get("allowed_sbus","*")).strip(),
-                "is_active":   str(r.get("is_active","TRUE")).strip().upper() in ("TRUE","1","YES"),
+                "password":    str(r.get("password", "")).strip(),
+                "allowed_bus": str(r.get("allowed_bus", "*")).strip(),
+                "allowed_sbus":str(r.get("allowed_sbus", "*")).strip(),
+                "employee_id": str(r.get("employee_id", "")).strip(),
+                "is_active":   str(r.get("is_active", "TRUE")).strip().upper() in ("TRUE", "1", "YES"),
+                "scope_note":  str(r.get("scope_note", "")).strip(),
             }
         return acl if acl else _ACL_FALLBACK
     except Exception:
@@ -289,7 +310,9 @@ def load_acl_table() -> dict:
 
 
 def get_acl_sheet():
-    """Return worksheet 'app_users' handle, or None."""
+    """
+    Return worksheet 'app_users'. Buat otomatis jika belum ada.
+    """
     client = get_gspread_client()
     if not client:
         return None
@@ -297,9 +320,8 @@ def get_acl_sheet():
         return client.open_by_key(SHEET_ID).worksheet("app_users")
     except Exception:
         try:
-            # Buat worksheet baru kalau belum ada
             sh = client.open_by_key(SHEET_ID)
-            ws = sh.add_worksheet(title="app_users", rows=200, cols=len(_ACL_COLS))
+            ws = sh.add_worksheet(title="app_users", rows=500, cols=len(_ACL_COLS))
             ws.append_row(_ACL_COLS, value_input_option="USER_ENTERED")
             return ws
         except Exception:
@@ -308,8 +330,8 @@ def get_acl_sheet():
 
 def get_user_info(email: str) -> dict | None:
     """
-    Lookup user by email from ACL table.
-    Returns user dict or None if not found / inactive.
+    Lookup user by email. Returns user dict atau None jika tidak
+    ditemukan / tidak aktif.
     """
     acl = load_acl_table()
     user = acl.get(email.strip().lower())
@@ -318,102 +340,172 @@ def get_user_info(email: str) -> dict | None:
     return None
 
 
+def authenticate_user(email: str, password: str) -> dict | None:
+    """
+    Verifikasi email + password. Return user dict atau None.
+    Urutan lookup:
+    1. Streamlit Secrets [auth][users] (production)
+    2. Google Sheets app_users (primary ACL)
+    3. _ACL_FALLBACK (bootstrap only)
+    """
+    email_lower = email.strip().lower()
+
+    # 1. Streamlit Secrets (production override)
+    if "auth" in st.secrets and "users" in st.secrets.get("auth", {}):
+        users_secret = st.secrets["auth"]["users"]
+        # Key format: email dengan . dan @ diganti _
+        email_key = email_lower.replace(".", "_").replace("@", "_at_")
+        if email_key in users_secret:
+            sec = users_secret[email_key]
+            if sec.get("password") == password:
+                return {
+                    "name":        sec.get("name", email_lower),
+                    "role":        sec.get("role", "employee").lower(),
+                    "allowed_bus": sec.get("allowed_bus", "*"),
+                    "allowed_sbus":sec.get("allowed_sbus", "*"),
+                    "employee_id": sec.get("employee_id", ""),
+                    "is_active":   True,
+                    "scope_note":  "Via Streamlit Secrets",
+                }
+
+    # 2. Google Sheets ACL
+    acl = load_acl_table()
+    user = acl.get(email_lower)
+    if user and user.get("is_active", True):
+        stored_pw = user.get("password", "").strip()
+        if stored_pw and stored_pw == password:
+            return user
+
+    return None
+
+
 def apply_rbac_filter(df: pd.DataFrame, user_info: dict) -> pd.DataFrame:
     """
-    Row-Level Security filter.
+    Row-Level Security — filter DataFrame berdasarkan role & scope user.
+
+    Mapping:
     - admin / cxo   → full access, no filter
-    - leader        → filter by allowed_bus, optionally allowed_divs & allowed_sbus
-    - employee      → only subtree below their direct manager (C-1)
-    Returns filtered copy of df.
+    - leader        → filter by allowed_bus + allowed_sbus
+    - employee      → subtree C-1 (direct reports of their manager only)
+
+    PENTING: fungsi ini hanya dipanggil SETELAH auth berhasil.
+    df yang dikembalikan adalah satu-satunya data yang boleh dilihat user.
     """
     role = user_info.get("role", "employee")
 
+    # ── Full access ───────────────────────────────────────────────
     if role in ("admin", "cxo"):
         return df
 
+    # ── Leader: BU + SBU scope ────────────────────────────────────
     if role == "leader":
-        allowed_bus  = [b.strip() for b in user_info.get("allowed_bus", "").split(",") if b.strip()]
-        allowed_divs = user_info.get("allowed_divs", "*").strip()
-        allowed_sbus = user_info.get("allowed_sbus", "*").strip()
+        raw_bus  = user_info.get("allowed_bus", "*").strip()
+        raw_sbus = user_info.get("allowed_sbus", "*").strip()
 
-        filtered = df[df["Business Unit"].isin(allowed_bus)].copy() if allowed_bus else df.copy()
+        # Parse comma-separated, handle wildcard
+        allowed_bus  = [] if raw_bus  == "*" else [b.strip() for b in raw_bus.split(",")  if b.strip()]
+        allowed_sbus = [] if raw_sbus == "*" else [s.strip() for s in raw_sbus.split(",") if s.strip()]
 
-        if allowed_divs and allowed_divs != "*":
-            divs = [d.strip() for d in allowed_divs.split(",") if d.strip()]
-            filtered = filtered[filtered["Division"].isin(divs)]
+        filtered = df.copy()
 
-        if allowed_sbus and allowed_sbus != "*":
-            sbus = [s.strip() for s in allowed_sbus.split(",") if s.strip()]
-            filtered = filtered[filtered["SBU/Tribe"].isin(sbus)]
+        if allowed_bus:  # non-empty = restricted
+            if "Business Unit" in filtered.columns:
+                filtered = filtered[filtered["Business Unit"].isin(allowed_bus)]
+
+        if allowed_sbus:
+            if "SBU/Tribe" in filtered.columns:
+                # Tetap tampilkan node tanpa SBU (atasan lintas unit tetap visible)
+                sbu_mask = (
+                    filtered["SBU/Tribe"].isin(allowed_sbus) |
+                    filtered["SBU/Tribe"].isin(["", "nan"]) |
+                    filtered["SBU/Tribe"].isna()
+                )
+                filtered = filtered[sbu_mask]
 
         return filtered
 
-    # role == "employee" → subtree below direct manager
+    # ── Employee: subtree C-1 (hanya bawahan dari manager mereka) ──
     emp_id = user_info.get("employee_id", "").strip()
-    if not emp_id:
-        return df.iloc[0:0]  # empty — no EID mapped
+    if not emp_id or emp_id == "nan":
+        return df.iloc[0:0]  # deny: tidak ada EID → empty
 
-    manager_ids = df[df["Employee ID"] == emp_id]["Manager ID"].values
-    if not len(manager_ids) or not manager_ids[0]:
+    user_row = df[df["Employee ID"] == emp_id]
+    if user_row.empty:
         return df.iloc[0:0]
 
-    manager_id = manager_ids[0]
-    # BFS downward from manager
-    subtree = set()
-    queue   = [manager_id]
-    while queue:
-        curr = queue.pop(0)
-        subtree.add(curr)
-        children = df[df["Manager ID"] == curr]["Employee ID"].tolist()
-        queue.extend(children)
+    manager_id = str(user_row.iloc[0].get("Manager ID", "")).strip()
+    if not manager_id or manager_id in ("", "nan"):
+        return df.iloc[0:0]
 
-    return df[df["Employee ID"].isin(subtree)].copy()
+    # BFS downward dari manager (max depth 1 = hanya direct reports)
+    children_map = (
+        df[df["Manager ID"].notna() & (df["Manager ID"] != "")]
+        .groupby("Manager ID")["Employee ID"]
+        .apply(list)
+        .to_dict()
+    )
+    visible = set()
+    queue   = [(manager_id, 0)]
+    while queue:
+        node, depth = queue.pop(0)
+        if node in visible or depth > 1:
+            continue
+        visible.add(node)
+        if depth < 1:
+            for child in children_map.get(node, []):
+                queue.append((child, depth + 1))
+
+    return df[df["Employee ID"].isin(visible)].copy()
 
 
 def save_acl_user(user_data: dict) -> bool:
-    """Append or update a user row in app_users worksheet."""
+    """
+    Upsert user di worksheet app_users.
+    Jika email sudah ada → update row. Jika baru → append.
+    """
     ws = get_acl_sheet()
     if not ws:
         return False
     try:
-        # Cek apakah email sudah ada (update)
+        email_clean = user_data["email"].strip().lower()
+        now_str     = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        row_vals = [
+            email_clean,
+            user_data.get("name", ""),
+            user_data.get("role", "employee"),
+            user_data.get("password", ""),
+            user_data.get("allowed_bus", "*"),
+            user_data.get("allowed_sbus", "*"),
+            user_data.get("employee_id", ""),
+            "TRUE" if user_data.get("is_active", True) else "FALSE",
+            user_data.get("scope_note", ""),
+            user_data.get("created_at", now_str),
+            now_str,  # updated_at always = now
+        ]
+
+        # Cek apakah email sudah ada di sheet
         cell = None
         try:
-            cell = ws.find(user_data["email"].strip().lower())
+            cell = ws.find(email_clean)
         except Exception:
             pass
 
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        row_vals = [
-            user_data["email"].strip().lower(),
-            user_data.get("employee_id", ""),
-            user_data.get("name", ""),
-            user_data.get("role", "employee"),
-            user_data.get("allowed_bus", ""),
-            user_data.get("allowed_divs", "*"),
-            user_data.get("allowed_sbus", "*"),
-            "TRUE" if user_data.get("is_active", True) else "FALSE",
-            user_data.get("created_at", now_str),
-            now_str,
-        ]
-
         if cell:
-            # Update baris existing
             ws.update(f"A{cell.row}", [row_vals])
         else:
-            # Append baru
-            row_vals[8] = now_str  # created_at = now
+            row_vals[9] = now_str  # created_at = now untuk baris baru
             ws.append_row(row_vals, value_input_option="USER_ENTERED")
 
-        load_acl_table.clear()  # invalidate cache
+        load_acl_table.clear()
         return True
     except Exception as e:
-        st.error(f"Gagal simpan ACL: {e}")
+        st.error(f"Gagal simpan user: {e}")
         return False
 
 
-def delete_acl_user(email: str) -> bool:
-    """Deactivate (soft delete) a user by toggling is_active=FALSE."""
+def toggle_acl_user_status(email: str, new_status: bool) -> bool:
+    """Aktifkan / nonaktifkan user (soft delete). Tidak hapus row."""
     ws = get_acl_sheet()
     if not ws:
         return False
@@ -421,13 +513,31 @@ def delete_acl_user(email: str) -> bool:
         cell = ws.find(email.strip().lower())
         if not cell:
             return False
-        # Column 8 = is_active (1-indexed)
-        ws.update_cell(cell.row, 8, "FALSE")
-        ws.update_cell(cell.row, 10, datetime.now().strftime("%Y-%m-%d %H:%M"))
+        # Col 8 = is_active, Col 11 = updated_at (1-indexed)
+        ws.update_cell(cell.row, 8, "TRUE" if new_status else "FALSE")
+        ws.update_cell(cell.row, 11, datetime.now().strftime("%Y-%m-%d %H:%M"))
         load_acl_table.clear()
         return True
     except Exception as e:
-        st.error(f"Gagal nonaktifkan user: {e}")
+        st.error(f"Gagal update status: {e}")
+        return False
+
+
+def reset_user_password(email: str, new_password: str) -> bool:
+    """Reset password user oleh admin."""
+    ws = get_acl_sheet()
+    if not ws:
+        return False
+    try:
+        cell = ws.find(email.strip().lower())
+        if not cell:
+            return False
+        ws.update_cell(cell.row, 4, new_password)   # Col 4 = password
+        ws.update_cell(cell.row, 11, datetime.now().strftime("%Y-%m-%d %H:%M"))
+        load_acl_table.clear()
+        return True
+    except Exception as e:
+        st.error(f"Gagal reset password: {e}")
         return False
 
 
@@ -1294,6 +1404,14 @@ st.set_page_config(page_title="Mekari", layout="wide", page_icon="⭐", initial_
 # AUTH GATE — Login Page
 # ══════════════════════════════════════════════════════════════════
 def _render_login_page():
+    """
+    Login page — Email + Password.
+    Password di-assign oleh Super Admin (OD Tim) via Admin Panel.
+    Autentikasi via authenticate_user() yang mengecek:
+      1. Streamlit Secrets (production)
+      2. Google Sheets app_users (primary ACL)
+      3. _ACL_FALLBACK (bootstrap)
+    """
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -1334,6 +1452,7 @@ def _render_login_page():
     }
     </style>
     """, unsafe_allow_html=True)
+
     st.markdown("""
     <div style="text-align:center; margin-bottom:40px;">
         <div style="width:52px;height:52px;border-radius:14px;background:#8E94F2;
@@ -1343,71 +1462,31 @@ def _render_login_page():
         <div style="font-size:12px;color:#7b7b9d;margin-top:6px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;">People Dashboard</div>
     </div>
     """, unsafe_allow_html=True)
+
     with st.form("login_form", clear_on_submit=False):
         email_input = st.text_input("Email", placeholder="nama@mekari.com")
         pass_input  = st.text_input("Password", type="password", placeholder="Kata sandi")
         submitted   = st.form_submit_button("Masuk", use_container_width=True)
+
     if submitted:
         if not email_input.strip() or not pass_input.strip():
             st.error("Email dan password tidak boleh kosong.")
             st.stop()
-        user_info = None
-        # Cek Streamlit Secrets terlebih dahulu
-        if "auth" in st.secrets and "users" in st.secrets.get("auth", {}):
-            users_secret = st.secrets["auth"]["users"]
-            email_key    = email_input.strip().lower().replace(".", "_").replace("@", "_at_")
-            if email_key in users_secret:
-                sec = users_secret[email_key]
-                if sec.get("password") == pass_input:
-                    user_info = {
-                        "employee_id": sec.get("employee_id", ""),
-                        "name":        sec.get("name", email_input),
-                        "role":        sec.get("role", "employee"),
-                        "allowed_bus": sec.get("allowed_bus", "*"),
-                        "allowed_divs":sec.get("allowed_divs","*"),
-                        "allowed_sbus":sec.get("allowed_sbus","*"),
-                        "is_active":   True,
-                    }
-        else:
-            # Dev fallback credentials
-            _DEV_CREDS = {
-                "od_admin@mekari.com":  ("mekari_od_2026", "admin"),
-                "hr_team@mekari.com":   ("hr_team_2026",   "cxo"),
-                "tech_lead@mekari.com": ("tech_lead_2026", "leader"),
-                "fin_lead@mekari.com":  ("fin_lead_2026",  "leader"),
-            }
-            _DEV_BUS = {
-                "tech_lead@mekari.com": "Technology",
-                "fin_lead@mekari.com":  "Corporate & Finance Management",
-            }
-            email_lower = email_input.strip().lower()
-            if email_lower in _DEV_CREDS:
-                expected_pass, role = _DEV_CREDS[email_lower]
-                if expected_pass == pass_input:
-                    acl_entry = get_user_info(email_lower)
-                    if acl_entry:
-                        user_info = acl_entry
-                    else:
-                        user_info = {
-                            "employee_id": "",
-                            "name": email_lower.split("@")[0].replace("_"," ").title(),
-                            "role": role,
-                            "allowed_bus": _DEV_BUS.get(email_lower, "*"),
-                            "allowed_divs": "*",
-                            "allowed_sbus": "*",
-                            "is_active": True,
-                        }
+
+        user_info = authenticate_user(email_input.strip(), pass_input.strip())
+
         if user_info and user_info.get("is_active", True):
             st.session_state.authenticated = True
             st.session_state.user_email    = email_input.strip().lower()
             st.session_state.user_info     = user_info
             st.rerun()
         else:
-            st.error("Email atau password salah, atau akun tidak aktif.")
+            st.error("Email atau password salah, atau akun Anda tidak aktif. Hubungi OD Admin.")
             st.stop()
+
     st.markdown("""
     <div style="text-align:center;margin-top:24px;font-size:11px;color:#9e9ea0;">
-        Hubungi OD Admin untuk akses &middot; Mekari People Analytics
+        Akses dikelola oleh OD Team &middot; Mekari People Analytics
     </div>
     """, unsafe_allow_html=True)
     st.stop()
@@ -1416,7 +1495,10 @@ def _render_login_page():
 if not st.session_state.get("authenticated", False):
     _render_login_page()
 
-_user_info = st.session_state.get("user_info", {"role": "admin", "allowed_bus": "*", "allowed_divs": "*", "allowed_sbus": "*", "name": "User", "employee_id": ""})
+_user_info = st.session_state.get("user_info", {
+    "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
+    "name": "User", "employee_id": "",
+})
 _user_role = _user_info.get("role", "employee")
 _is_admin  = _user_role == "admin"
 _is_cxo    = _user_role in ("admin", "cxo")
@@ -1893,8 +1975,22 @@ with st.sidebar:
         ("👔", L["nav_manager"],     3),
         ("📝", L["nav_cr"],          4),
     ]
+    # Admin Panel — hanya tampil jika role == admin
+    if _is_admin:
+        nav_items.append(("⚙️", "Admin Panel", 99))
+
     active_idx = st.session_state.active_tab
+
+    # Pastikan tab aktif masih boleh diakses role ini
+    # (misal setelah role berubah via session lama)
+    if not _can_access_tab(_user_role, active_idx):
+        st.session_state.active_tab = 0
+        active_idx = 0
+
     for icon_nav, label_nav, tab_idx in nav_items:
+        # Render hanya tab yang boleh diakses role ini
+        if not _can_access_tab(_user_role, tab_idx):
+            continue
         is_active = (active_idx == tab_idx)
         if st.button(f"{icon_nav}  {label_nav}", key=f"nav_{tab_idx}",
                      use_container_width=True, type="primary" if is_active else "secondary"):
@@ -2841,5 +2937,272 @@ elif _active == 4:
 
 
 # ══════════════════════════════════════════════════════════════════
-# TAB 6 — ADMIN PANEL (role=admin only)
+# TAB 99 — ADMIN PANEL (role=admin only)
+# Diakses via tab_idx=99, hanya muncul di navigasi untuk admin.
 # ══════════════════════════════════════════════════════════════════
+elif _active == 99:
+    # Gate keamanan: double-check role di sini, bukan hanya di nav
+    if not _is_admin:
+        st.error("🚫 Akses ditolak — fitur ini hanya untuk Admin.")
+        st.stop()
+
+    admin_email = st.session_state.get("user_email", "system")
+
+    st.markdown(f"""
+    <div style="margin-bottom:24px;">
+        <div style="font-size:20px;font-weight:700;color:{T['text']};">⚙️ Admin Panel — Manajemen Akses</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
+            Kelola hak akses user dashboard · Perubahan berlaku dalam 2 menit (cache TTL)
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    ap_tab1, ap_tab2, ap_tab3 = st.tabs(["👥  Daftar User", "➕  Tambah / Edit User", "🔒  Reset Password"])
+
+    # Reload ACL fresh untuk admin panel
+    acl_dict = load_acl_table()
+    acl_rows = []
+    for em, info in acl_dict.items():
+        acl_rows.append({
+            "Email":       em,
+            "Nama":        info.get("name", ""),
+            "Role":        info.get("role", "employee"),
+            "Allowed BU":  info.get("allowed_bus", "*"),
+            "Allowed SBU": info.get("allowed_sbus", "*"),
+            "Employee ID": info.get("employee_id", ""),
+            "Status":      "✅ Aktif" if info.get("is_active", True) else "🔴 Nonaktif",
+            "Scope Note":  info.get("scope_note", ""),
+        })
+    acl_display_df = pd.DataFrame(acl_rows) if acl_rows else pd.DataFrame(
+        columns=["Email","Nama","Role","Allowed BU","Allowed SBU","Employee ID","Status","Scope Note"]
+    )
+
+    # ── Tab 1: Daftar User ────────────────────────────────────────
+    with ap_tab1:
+        col_ap_m1, col_ap_m2, col_ap_m3, col_ap_m4 = st.columns(4)
+        col_ap_m1.metric("Total User", len(acl_display_df))
+        col_ap_m2.metric("Aktif", len(acl_display_df[acl_display_df["Status"] == "✅ Aktif"]) if not acl_display_df.empty else 0)
+        col_ap_m3.metric("Admin",  len(acl_display_df[acl_display_df["Role"] == "admin"])  if not acl_display_df.empty else 0)
+        col_ap_m4.metric("Nonaktif", len(acl_display_df[acl_display_df["Status"] == "🔴 Nonaktif"]) if not acl_display_df.empty else 0)
+
+        st.markdown("---")
+
+        if not acl_display_df.empty:
+            col_af1, col_af2, col_af3 = st.columns(3)
+            with col_af1:
+                f_role_ap = st.selectbox("Filter Role", ["Semua", "admin", "cxo", "leader", "employee"], key="ap_f_role")
+            with col_af2:
+                f_status_ap = st.selectbox("Filter Status", ["Semua", "✅ Aktif", "🔴 Nonaktif"], key="ap_f_status")
+            with col_af3:
+                f_search_ap = st.text_input("Cari Email / Nama", placeholder="Ketik...", key="ap_search")
+
+            view_acl = acl_display_df.copy()
+            if f_role_ap   != "Semua": view_acl = view_acl[view_acl["Role"]   == f_role_ap]
+            if f_status_ap != "Semua": view_acl = view_acl[view_acl["Status"] == f_status_ap]
+            if f_search_ap.strip():
+                q = f_search_ap.lower()
+                view_acl = view_acl[
+                    view_acl["Email"].str.lower().str.contains(q) |
+                    view_acl["Nama"].str.lower().str.contains(q)
+                ]
+
+            st.caption(f"Menampilkan **{len(view_acl)}** dari **{len(acl_display_df)}** user")
+            st.dataframe(view_acl, use_container_width=True, height=380)
+        else:
+            st.info("Belum ada user di ACL. Tambahkan user pertama di tab 'Tambah / Edit User'.")
+
+        # Quick actions
+        st.markdown("---")
+        st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:12px;'>Aksi Cepat</div>", unsafe_allow_html=True)
+        col_qa1, col_qa2, col_qa3 = st.columns(3)
+        with col_qa1:
+            target_deact = st.text_input("Email untuk Nonaktifkan", key="qa_deact", placeholder="user@mekari.com")
+        with col_qa2:
+            target_react = st.text_input("Email untuk Aktifkan", key="qa_react", placeholder="user@mekari.com")
+        with col_qa3:
+            st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+
+        col_btn_d, col_btn_r, _ = st.columns([1, 1, 2])
+        with col_btn_d:
+            if st.button("🔴 Nonaktifkan", use_container_width=True, key="btn_deact_ap"):
+                if target_deact.strip():
+                    if toggle_acl_user_status(target_deact.strip(), False):
+                        st.success(f"✅ {target_deact} dinonaktifkan."); st.rerun()
+                    else:
+                        st.error("Email tidak ditemukan di ACL.")
+        with col_btn_r:
+            if st.button("✅ Aktifkan", use_container_width=True, key="btn_react_ap"):
+                if target_react.strip():
+                    if toggle_acl_user_status(target_react.strip(), True):
+                        st.success(f"✅ {target_react} diaktifkan kembali."); st.rerun()
+                    else:
+                        st.error("Email tidak ditemukan di ACL.")
+
+    # ── Tab 2: Tambah / Edit User ─────────────────────────────────
+    with ap_tab2:
+        st.markdown(f"""
+        <div style="background:{T['accent_bg']};border:1px solid {T['border2']};border-radius:8px;
+            padding:12px 16px;margin-bottom:20px;font-size:13px;color:{T['text_variant']};">
+            💡 <b>Cara kerja:</b> Masukkan email user → isi data & role → set password sementara →
+            user langsung bisa login. Untuk edit user yang sudah ada, centang "Edit existing user"
+            dan pilih emailnya.
+        </div>
+        """, unsafe_allow_html=True)
+
+        is_edit_mode = st.checkbox("✏️ Edit user yang sudah ada", value=False, key="ap_edit_mode")
+
+        prefill = {}
+        edit_target_email = None
+        if is_edit_mode and not acl_display_df.empty:
+            edit_choice = st.selectbox(
+                "Pilih email user yang akan diedit",
+                ["— pilih —"] + acl_display_df["Email"].tolist(),
+                key="ap_edit_choice"
+            )
+            if edit_choice != "— pilih —":
+                edit_target_email = edit_choice
+                prefill = acl_dict.get(edit_choice, {})
+
+        VALID_ROLES_AP = ["employee", "leader", "cxo", "admin"]
+
+        # Get BU & SBU options from live data
+        all_bus_ap  = sorted(df["Business Unit"].dropna().unique().tolist()) if df is not None else []
+        all_sbus_ap = sorted([s for s in df["SBU/Tribe"].dropna().unique().tolist()
+                              if str(s).strip() not in ("", "nan")]) if df is not None else []
+
+        with st.form("ap_upsert_form", clear_on_submit=not is_edit_mode):
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                f_email_ap  = st.text_input("Email *",
+                                            value=edit_target_email or "",
+                                            placeholder="user@mekari.com",
+                                            disabled=is_edit_mode,
+                                            key="ap_f_email")
+                f_name_ap   = st.text_input("Nama Lengkap *",
+                                            value=prefill.get("name", ""),
+                                            placeholder="Nama lengkap user",
+                                            key="ap_f_name")
+                f_role_ap_f = st.selectbox("Role *", VALID_ROLES_AP,
+                                           index=VALID_ROLES_AP.index(prefill.get("role", "employee"))
+                                           if prefill.get("role") in VALID_ROLES_AP else 0,
+                                           key="ap_f_role_form",
+                                           help="admin=full access | cxo=org chart full | leader=org chart per BU | employee=org chart C-1")
+                f_eid_ap    = st.text_input("Employee ID (opsional, wajib untuk role 'employee')",
+                                            value=prefill.get("employee_id", ""),
+                                            placeholder="SLKRXXX",
+                                            key="ap_f_eid")
+
+            with col_f2:
+                f_bus_ap   = st.multiselect(
+                    "Allowed Business Unit",
+                    options=["*"] + all_bus_ap,
+                    default=(prefill.get("allowed_bus", "*").split(",")
+                             if prefill.get("allowed_bus") and prefill.get("allowed_bus") != "*"
+                             else ["*"]),
+                    key="ap_f_bus",
+                    help="Pilih '*' untuk semua BU. Hanya relevan untuk role 'leader'."
+                )
+                f_sbus_ap  = st.multiselect(
+                    "Allowed SBU / Tribe",
+                    options=["*"] + all_sbus_ap,
+                    default=(prefill.get("allowed_sbus", "*").split(",")
+                             if prefill.get("allowed_sbus") and prefill.get("allowed_sbus") != "*"
+                             else ["*"]),
+                    key="ap_f_sbus",
+                    help="Pilih '*' untuk semua SBU."
+                )
+                f_note_ap  = st.text_area("Scope Note (wajib diisi, untuk audit trail) *",
+                                          value=prefill.get("scope_note", ""),
+                                          placeholder="Contoh: Leader Technology BU, cross-functional access untuk Q2 OKR review",
+                                          height=90,
+                                          key="ap_f_note")
+                if not is_edit_mode:
+                    f_pass_ap = st.text_input("Password Awal *",
+                                              placeholder="Password sementara untuk user ini",
+                                              type="password",
+                                              key="ap_f_pass")
+                else:
+                    f_pass_ap = prefill.get("password", "")  # preserve existing if editing
+                    st.caption("🔒 Gunakan tab 'Reset Password' untuk mengubah password user ini.")
+
+            submitted_ap = st.form_submit_button(
+                "💾 Simpan Perubahan" if is_edit_mode else "➕ Tambah User",
+                use_container_width=True
+            )
+
+        if submitted_ap:
+            errors_ap = []
+            email_clean_ap = (edit_target_email or f_email_ap.strip()).lower()
+            if not email_clean_ap or "@" not in email_clean_ap:
+                errors_ap.append("Email tidak valid")
+            if not f_name_ap.strip():
+                errors_ap.append("Nama lengkap harus diisi")
+            if not f_note_ap.strip():
+                errors_ap.append("Scope Note wajib diisi untuk audit trail")
+            if not is_edit_mode and not f_pass_ap.strip():
+                errors_ap.append("Password awal harus diisi")
+            if f_role_ap_f == "employee" and not f_eid_ap.strip():
+                errors_ap.append("Employee ID wajib untuk role 'employee' agar RLS bisa berjalan")
+            if f_role_ap_f in ("admin", "cxo") and "*" not in f_bus_ap:
+                errors_ap.append("Role admin dan cxo harus memiliki BU scope '*' (full access)")
+
+            if errors_ap:
+                for e in errors_ap:
+                    st.error(f"❌ {e}")
+            else:
+                bus_val  = "*" if "*" in f_bus_ap  else ",".join(f_bus_ap)
+                sbus_val = "*" if "*" in f_sbus_ap else ",".join(f_sbus_ap)
+
+                user_payload = {
+                    "email":       email_clean_ap,
+                    "name":        f_name_ap.strip(),
+                    "role":        f_role_ap_f,
+                    "password":    f_pass_ap.strip() if f_pass_ap else prefill.get("password", ""),
+                    "allowed_bus": bus_val,
+                    "allowed_sbus":sbus_val,
+                    "employee_id": f_eid_ap.strip(),
+                    "is_active":   True,
+                    "scope_note":  f_note_ap.strip(),
+                    "created_at":  prefill.get("created_at", ""),  # preserve jika edit
+                }
+                if save_acl_user(user_payload):
+                    action = "diperbarui" if is_edit_mode else "ditambahkan"
+                    st.success(f"✅ User **{email_clean_ap}** berhasil {action}.")
+                    st.rerun()
+
+    # ── Tab 3: Reset Password ─────────────────────────────────────
+    with ap_tab3:
+        st.markdown(f"""
+        <div style="background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;
+            padding:12px 16px;margin-bottom:20px;font-size:13px;color:{T['warn_txt']};">
+            ⚠️ <b>Perhatian:</b> Reset password akan langsung berlaku. Informasikan password baru
+            ke user yang bersangkutan secara aman (misalnya via DM atau email terenkripsi).
+            Password disimpan di Google Sheets — pastikan akses ke sheet dibatasi hanya untuk tim OD.
+        </div>
+        """, unsafe_allow_html=True)
+
+        if acl_display_df.empty:
+            st.info("Belum ada user di ACL.")
+        else:
+            active_users = acl_display_df[acl_display_df["Status"] == "✅ Aktif"]["Email"].tolist()
+            with st.form("ap_reset_pw_form", clear_on_submit=True):
+                rp_email    = st.selectbox("Pilih User *", ["— pilih —"] + active_users, key="rp_email")
+                rp_pass_new = st.text_input("Password Baru *", type="password",
+                                            placeholder="Minimal 8 karakter", key="rp_pass")
+                rp_confirm  = st.text_input("Konfirmasi Password *", type="password",
+                                            placeholder="Ulangi password baru", key="rp_confirm")
+                rp_submit   = st.form_submit_button("🔑 Reset Password", use_container_width=True)
+
+            if rp_submit:
+                errors_rp = []
+                if rp_email == "— pilih —":   errors_rp.append("Pilih user terlebih dahulu")
+                if len(rp_pass_new) < 8:       errors_rp.append("Password minimal 8 karakter")
+                if rp_pass_new != rp_confirm:  errors_rp.append("Konfirmasi password tidak cocok")
+
+                if errors_rp:
+                    for e in errors_rp: st.error(f"❌ {e}")
+                else:
+                    if reset_user_password(rp_email, rp_pass_new):
+                        st.success(f"✅ Password **{rp_email}** berhasil direset. Informasikan ke user.")
+                    else:
+                        st.error("Gagal reset password. Pastikan koneksi ke Google Sheets aktif.")
