@@ -42,6 +42,8 @@ LANG = {
         "nav_org":"Org Chart","nav_data":"Data Karyawan","nav_compliance":"Compliance Check",
         "nav_manager":"Daftar Manager","nav_cr":"Change Request",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Keluar",
+        "btn_sync":"Sync Data","btn_user_setting":"User Setting",
+        "nav_settings":"Settings","settings_group":"Pengaturan",
         "lang_toggle":"🇬🇧 English","data_source_live":"Live · Google Sheets",
         "data_source_local":"Lokal · CSV","auto_refresh":"Auto-refresh setiap 5 menit",
         "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
@@ -80,6 +82,8 @@ LANG = {
         "nav_org":"Org Chart","nav_data":"Employee Data","nav_compliance":"Compliance Check",
         "nav_manager":"Manager List","nav_cr":"Change Request",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Sign Out",
+        "btn_sync":"Sync Data","btn_user_setting":"User Setting",
+        "nav_settings":"Settings","settings_group":"Settings",
         "lang_toggle":"🇮🇩 Bahasa","data_source_live":"Live · Google Sheets",
         "data_source_local":"Local · CSV","auto_refresh":"Auto-refresh every 5 minutes",
         "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
@@ -1882,92 +1886,103 @@ with st.sidebar:
     total_div      = df["Division"].nunique()
     total_mgr      = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
 
+    # ── Brand Header ───────────────────────────────────────────────
     st.markdown(f"""
-    <div style="padding:24px 18px 18px 18px; border-bottom:1px solid {T['outline']}; margin-bottom:4px;">
-        <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
-            <div style="width:40px;height:40px;border-radius:8px;
-                background:#ffffff;
+    <div style="padding:20px 16px 14px 16px; border-bottom:1px solid {T['outline']};">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+            <div style="width:36px;height:36px;border-radius:8px;background:#ffffff;
                 display:flex;align-items:center;justify-content:center;flex-shrink:0;
-                box-shadow:0 2px 12px rgba(142,148,242,0.25);overflow:hidden;padding:4px;">
-                <img src="data:image/png;base64,{_MEKARI_LOGO_B64}" style="width:100%;height:100%;object-fit:contain;" /></div>
+                box-shadow:0 2px 8px rgba(142,148,242,0.2);overflow:hidden;padding:3px;">
+                <img src="data:image/png;base64,{_MEKARI_LOGO_B64}"
+                    style="width:100%;height:100%;object-fit:contain;" />
+            </div>
             <div>
-                <div style="font-size:15px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;line-height:1.2;letter-spacing:-0.02em;">Mekari</div>
+                <div style="font-size:14px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">Mekari</div>
                 <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
-                    letter-spacing:0.06em;text-transform:uppercase;margin-top:2px;">People Dashboard</div>
+                    letter-spacing:0.05em;text-transform:uppercase;">People Dashboard</div>
             </div>
         </div>
-        <div style="background:rgba(142,148,242,0.12);border-radius:6px;padding:6px 10px;
-            display:flex;align-items:center;gap:6px;">
-            <span style="font-size:8px;">{status_dot}</span>
+        <div style="display:flex;align-items:center;gap:6px;background:rgba(142,148,242,0.10);
+            border-radius:6px;padding:5px 10px;">
+            <span style="font-size:7px;">{status_dot}</span>
             <span style="font-size:11px;color:{T['sidebar_text2']};font-weight:500;">{status_txt}</span>
         </div>
     </div>
-    <div style="padding:12px 18px 8px 18px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
-            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
-                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_karyawan:,}</div>
-                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
-                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">{L["header_metric"]}</div>
+    """, unsafe_allow_html=True)
+
+    # ── Stats Grid ─────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style="padding:12px 16px 10px 16px;border-bottom:1px solid {T['outline']};">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+            <div style="background:rgba(142,148,242,0.08);border-radius:6px;padding:8px 10px;text-align:center;">
+                <div style="font-size:17px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">{total_karyawan:,}</div>
+                <div style="font-size:9px;color:{T['sidebar_text2']};font-weight:600;
+                    text-transform:uppercase;letter-spacing:0.06em;margin-top:1px;">{L["header_metric"]}</div>
             </div>
-            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
-                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_mgr}</div>
-                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
-                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Manager</div>
+            <div style="background:rgba(142,148,242,0.08);border-radius:6px;padding:8px 10px;text-align:center;">
+                <div style="font-size:17px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">{total_mgr}</div>
+                <div style="font-size:9px;color:{T['sidebar_text2']};font-weight:600;
+                    text-transform:uppercase;letter-spacing:0.06em;margin-top:1px;">Manager</div>
             </div>
-            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
-                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_bu}</div>
-                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
-                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Business Unit</div>
+            <div style="background:rgba(142,148,242,0.08);border-radius:6px;padding:8px 10px;text-align:center;">
+                <div style="font-size:17px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">{total_bu}</div>
+                <div style="font-size:9px;color:{T['sidebar_text2']};font-weight:600;
+                    text-transform:uppercase;letter-spacing:0.06em;margin-top:1px;">Business Unit</div>
             </div>
-            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
-                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_div}</div>
-                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
-                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Divisi</div>
+            <div style="background:rgba(142,148,242,0.08);border-radius:6px;padding:8px 10px;text-align:center;">
+                <div style="font-size:17px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">{total_div}</div>
+                <div style="font-size:9px;color:{T['sidebar_text2']};font-weight:600;
+                    text-transform:uppercase;letter-spacing:0.06em;margin-top:1px;">Divisi</div>
             </div>
         </div>
     </div>
-    <div style="padding:6px 18px;margin-bottom:2px;"><div style="height:1px;background:{T['outline']};"></div></div>
-    <div style="padding:4px 18px 6px 18px;">
-        <div style="font-size:10px;font-weight:600;text-transform:uppercase;
-            letter-spacing:0.09em;color:{T['sidebar_text2']};">{L["menu_label"]}</div>
-    </div>
     """, unsafe_allow_html=True)
 
+    # ── User Identity ──────────────────────────────────────────────
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = 0
 
-    # User identity card
     _uname    = _user_info.get("name", "User")
     _uemail   = st.session_state.get("user_email", "")
     _urole    = _user_role.upper()
     _role_colors = {"ADMIN": "#8E94F2", "CXO": "#059669", "LEADER": "#d97706", "EMPLOYEE": "#64748b"}
     _role_color  = _role_colors.get(_urole, "#64748b")
     _initials    = "".join([w[0].upper() for w in _uname.split()[:2]])
+
     st.markdown(f"""
-    <div style="padding:8px 18px 12px 18px;">
-        <div style="display:flex;align-items:center;gap:10px;
-            background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;">
-            <div style="width:32px;height:32px;border-radius:50%;
-                background:{T['primary']};
+    <div style="padding:10px 16px 8px 16px;border-bottom:1px solid {T['outline']};">
+        <div style="display:flex;align-items:center;gap:9px;
+            background:rgba(142,148,242,0.08);border-radius:8px;padding:8px 10px;">
+            <div style="width:30px;height:30px;border-radius:50%;background:{T['primary']};
                 display:flex;align-items:center;justify-content:center;
-                font-size:12px;font-weight:600;color:white;flex-shrink:0;font-family:'Inter',sans-serif;">{_initials}</div>
-            <div style="min-width:0;">
-                <div style="font-size:13px;font-weight:600;color:{T['sidebar_active']};
-                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Inter',sans-serif;">{_uname}</div>
-                <div style="display:flex;align-items:center;gap:5px;margin-top:3px;">
-                    <span style="font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;
-                        background:{_role_color};color:white;letter-spacing:0.05em;">{_urole}</span>
-                </div>
+                font-size:11px;font-weight:700;color:white;flex-shrink:0;
+                font-family:'Inter',sans-serif;">{_initials}</div>
+            <div style="min-width:0;flex:1;">
+                <div style="font-size:12px;font-weight:600;color:{T['sidebar_active']};
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+                    font-family:'Inter',sans-serif;line-height:1.3;">{_uname}</div>
+                <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:3px;
+                    background:{_role_color};color:white;letter-spacing:0.04em;
+                    display:inline-block;margin-top:2px;">{_urole}</span>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
+    # ── Navigation Section Label ───────────────────────────────────
+    st.markdown(f"""
+    <div style="padding:10px 16px 4px 16px;">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;
+            letter-spacing:0.10em;color:{T['sidebar_text2']};">Menu</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Main Nav Items ─────────────────────────────────────────────
     nav_items = [
         ("🌳", L["nav_org"],         0),
         ("👥", L["nav_data"],        1),
@@ -1975,20 +1990,53 @@ with st.sidebar:
         ("👔", L["nav_manager"],     3),
         ("📝", L["nav_cr"],          4),
     ]
-    # Admin Panel — hanya tampil jika role == admin
-    if _is_admin:
-        nav_items.append(("⚙️", "Admin Panel", 99))
 
     active_idx = st.session_state.active_tab
-
-    # Pastikan tab aktif masih boleh diakses role ini
-    # (misal setelah role berubah via session lama)
     if not _can_access_tab(_user_role, active_idx):
         st.session_state.active_tab = 0
         active_idx = 0
 
+    # Inject nav button CSS override for icon+label layout
+    st.markdown(f"""
+    <style>
+    /* Nav buttons — icon left, label 12px Inter */
+    [data-testid="stSidebar"] [data-testid="stButton"] button {{
+        display: flex !important;
+        align-items: center !important;
+        gap: 10px !important;
+        padding: 9px 12px !important;
+        font-size: 12.5px !important;
+        font-weight: 500 !important;
+        font-family: 'Inter', sans-serif !important;
+        border-radius: 7px !important;
+        text-align: left !important;
+        color: {T['sidebar_text']} !important;
+        background: transparent !important;
+        border: none !important;
+        transition: background 0.15s, color 0.15s !important;
+        letter-spacing: -0.01em !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
+        background: rgba(142,148,242,0.12) !important;
+        color: {T['sidebar_active']} !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {{
+        background: {"rgba(142,148,242,0.18)" if not dm else "rgba(142,148,242,0.22)"} !important;
+        color: {T['sidebar_active']} !important;
+        font-weight: 600 !important;
+        border: none !important;
+        box-shadow: none !important;
+    }}
+    /* Settings sub-items — slightly smaller */
+    .sb-settings-btn [data-testid="stButton"] button {{
+        font-size: 12px !important;
+        color: {T['sidebar_text2']} !important;
+        padding: 7px 10px !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
+
     for icon_nav, label_nav, tab_idx in nav_items:
-        # Render hanya tab yang boleh diakses role ini
         if not _can_access_tab(_user_role, tab_idx):
             continue
         is_active = (active_idx == tab_idx)
@@ -1997,32 +2045,56 @@ with st.sidebar:
             st.session_state.active_tab = tab_idx
             st.rerun()
 
+    # ── Settings Group ─────────────────────────────────────────────
     st.markdown(f"""
-    <div style="padding:8px 20px;margin:4px 0;"><div style="height:1px;background:{T['outline']};"></div></div>
+    <div style="padding:10px 16px 4px 16px;margin-top:4px;border-top:1px solid {T['outline']};">
+        <div style="font-size:9px;font-weight:700;text-transform:uppercase;
+            letter-spacing:0.10em;color:{T['sidebar_text2']};">Settings</div>
+    </div>
     """, unsafe_allow_html=True)
 
-    col_sb1, col_sb2 = st.columns(2)
-    with col_sb1:
-        if st.button(L["btn_refresh"], use_container_width=True, key="refresh_btn"):
-            st.cache_data.clear(); st.rerun()
-    with col_sb2:
-        if st.button(f"{toggle_icon} {L['btn_mode']}", use_container_width=True, key="toggle_btn"):
-            st.session_state.dark_mode = not st.session_state.dark_mode; st.rerun()
+    # Settings: User Setting (admin only, renamed from Admin Panel)
+    if _is_admin:
+        is_admin_active = (active_idx == 99)
+        if st.button(f"⚙️  {L['btn_user_setting']}", key="nav_99",
+                     use_container_width=True, type="primary" if is_admin_active else "secondary"):
+            st.session_state.active_tab = 99
+            st.rerun()
 
-    # Language toggle
-    if st.button(L["lang_toggle"], use_container_width=True, key="lang_btn"):
-        st.session_state.lang = "en" if st.session_state.lang == "id" else "id"
+    # Settings: Sync Data (renamed from Refresh)
+    if st.button(f"🔄  {L['btn_sync']}", use_container_width=True, key="refresh_btn"):
+        st.cache_data.clear()
         st.rerun()
 
-    # Logout button
-    st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
+    # Settings: Mode toggle + Language toggle side by side
+    col_mode, col_lang = st.columns([3, 1])
+    with col_mode:
+        if st.button(f"{toggle_icon}  {L['btn_mode']}", use_container_width=True, key="toggle_btn"):
+            st.session_state.dark_mode = not st.session_state.dark_mode
+            st.rerun()
+    with col_lang:
+        # Language: icon only (ID/EN flag)
+        _lang_icon = "🇬🇧" if st.session_state.lang == "id" else "🇮🇩"
+        if st.button(_lang_icon, use_container_width=True, key="lang_btn",
+                     help="Switch language / Ganti bahasa"):
+            st.session_state.lang = "en" if st.session_state.lang == "id" else "id"
+            st.rerun()
+
+    # ── Logout ─────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style="padding:6px 16px 0 16px;">
+        <div style="height:1px;background:{T['outline']};"></div>
+    </div>
+    """, unsafe_allow_html=True)
+
     if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
-        for k in ["authenticated","user_email","user_info","active_tab"]:
+        for k in ["authenticated", "user_email", "user_info", "active_tab"]:
             st.session_state.pop(k, None)
         st.rerun()
 
     st.markdown(f"""
-    <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
+    <div style="padding:8px 16px 12px 16px;font-size:10px;color:{T['sidebar_text2']};
+        text-align:center;letter-spacing:0.02em;">
         {L["auto_refresh"]}
     </div>
     """, unsafe_allow_html=True)
@@ -2950,7 +3022,7 @@ elif _active == 99:
 
     st.markdown(f"""
     <div style="margin-bottom:24px;">
-        <div style="font-size:20px;font-weight:700;color:{T['text']};">⚙️ Admin Panel — Manajemen Akses</div>
+        <div style="font-size:20px;font-weight:700;color:{T['text']};">⚙️ User Setting — Manajemen Akses</div>
         <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
             Kelola hak akses user dashboard · Perubahan berlaku dalam 2 menit (cache TTL)
         </div>
