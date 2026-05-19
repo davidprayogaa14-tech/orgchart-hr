@@ -807,7 +807,7 @@ def _draw_pdf_footer(c, page_w, downloaded_at):
     c.line(36, 28, page_w - 36, 28)
     c.setFillColor(PDF_TEXT_MUTED)
     c.setFont("Helvetica", 7)
-    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Dashboard")
+    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari Organization Dashboard")
     c.drawRightString(page_w - 36, 18, "HR Organization Dashboard")
 
 
