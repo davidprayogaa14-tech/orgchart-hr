@@ -136,7 +136,7 @@ LANG = {
         "search_not_found":"No employee named",
         "search_found_one":"Found:","search_found_many":"Found",
         "filter_all_leader":"Full division","filter_all_sbu_label":"All SBUs",
-        "breakdown_field":L["breakdown_field"],
+        "breakdown_field":"Breakdown by Field",
         "mgr_count_label":"manager","req_count_label":"request","user_count_label":"user",
     },
 }
