@@ -48,13 +48,19 @@ LANG = {
         "data_source_local":"Lokal · CSV","auto_refresh":"Auto-refresh setiap 5 menit",
         "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
         "header_subtitle":"Dashboard Visualisasi Data Organisasi","header_metric":"Total Karyawan",
+        "filter_all":"Semua","filter_all_bu":"Semua BU","filter_all_div":"Semua Divisi",
+        "filter_all_sbu":"Semua SBU","filter_all_level":"Semua Level",
+        "filter_bu":"🏢 Business Unit","filter_div":"📁 Divisi","filter_sbu":"🗂 SBU/Tribe",
+        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Divisi",
+        "filter_level":"🎯 Filter Level Hierarki","filter_search_name":"🔍 Cari Nama",
+        "showing_emp":"Menampilkan","employees":"karyawan","positions":"posisi",
+        "showing":"Menampilkan","breakdown_div":"Breakdown per Divisi",
+        "download_csv":"⬇ CSV","download_excel":"⬇ Excel",
         "mode_label":"MODE TAMPILAN","mode_division":"Per Divisi","mode_company":"Seluruh Perusahaan",
         "search_label":"Cari Karyawan","search_ph":"Ketik nama karyawan...",
         "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Divisi",
         "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
-        "filter_all_sbu":"Semua SBU","filter_all_div":"Semua (divisi penuh)",
         "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
-        "showing_emp":"Menampilkan","employees":"karyawan",
         "emp_found":"Ditemukan","emp_not_found":"Tidak ada karyawan bernama",
         "company_warning":"⚠️ Mode seluruh perusahaan menampilkan semua karyawan.",
         "tab_data_title":"Data Karyawan","tab_data_sub":"Seluruh data karyawan dengan filter dan pencarian",
@@ -73,9 +79,6 @@ LANG = {
         "tab_mgr_sub":"Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control",
         "tab_cr_title":"Structure Change Request",
         "tab_cr_sub":"Kelola permintaan perubahan struktur organisasi",
-        "showing":"Menampilkan","breakdown_div":"Breakdown per Divisi",
-        "download_csv":"📄 CSV","download_excel":"📊 Excel",
-        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Divisi",
         "emp_in_div":"karyawan di divisi ini","emp_found_in":"ada di divisi ini",
     },
     "en": {
@@ -88,17 +91,23 @@ LANG = {
         "data_source_local":"Local · CSV","auto_refresh":"Auto-refresh every 5 minutes",
         "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
         "header_subtitle":"Organizational Data Visualization Dashboard","header_metric":"Total Employees",
+        "filter_all":"All","filter_all_bu":"All BUs","filter_all_div":"All Divisions",
+        "filter_all_sbu":"All SBUs","filter_all_level":"All Levels",
+        "filter_bu":"🏢 Business Unit","filter_div":"📁 Division","filter_sbu":"🗂 SBU/Tribe",
+        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Division",
+        "filter_level":"🎯 Filter Hierarchy Level","filter_search_name":"🔍 Search Name",
+        "showing_emp":"Showing","employees":"employees","positions":"positions",
+        "showing":"Showing","breakdown_div":"Breakdown by Division",
+        "download_csv":"⬇ CSV","download_excel":"⬇ Excel",
         "mode_label":"VIEW MODE","mode_division":"By Division","mode_company":"Entire Company",
         "search_label":"Search Employee","search_ph":"Type employee name...",
-        "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Division",
-        "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
-        "filter_all_sbu":"All SBUs","filter_all_div":"All (full division)",
+        "filter_label":"Filter","filter_leader":"👤 Filter by Leader",
+        "filter_all_div_full":"All (full division)",
         "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
-        "showing_emp":"Showing","employees":"employees",
         "emp_found":"Found","emp_not_found":"No employee named",
         "company_warning":"⚠️ Company-wide mode displays all employees.",
         "tab_data_title":"Employee Data","tab_data_sub":"All employee data with filters and search",
-        "search_name":"🔍 Search employee name","filter_all":"All",
+        "search_name":"🔍 Search employee name",
         "tab_cc_title":"Compliance Check","tab_cc_sub":"Detect data inconsistencies between Employee Data and MPP Data",
         "cc_tab_summary":"📊  Issue Summary","cc_tab_missing":"👤  Missing Manager ID",
         "cc_tab_mismatch":"🔀  Data Inconsistency","cc_tab_ghost":"🔍  Unmapped Employees",
@@ -113,9 +122,6 @@ LANG = {
         "tab_mgr_sub":"All employees with direct reports and Span of Control analysis",
         "tab_cr_title":"Structure Change Request",
         "tab_cr_sub":"Manage organizational structure change requests",
-        "showing":"Showing","breakdown_div":"Breakdown by Division",
-        "download_csv":"📄 CSV","download_excel":"📊 Excel",
-        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Division",
         "emp_in_div":"employees in this division","emp_found_in":"found in this division",
     },
 }
@@ -1996,25 +2002,31 @@ with st.sidebar:
         st.session_state.active_tab = 0
         active_idx = 0
 
-    # Inject nav button CSS override for icon+label layout
+    # Inject nav button CSS override for icon+label layout — rata kiri
     st.markdown(f"""
     <style>
-    /* Nav buttons — icon left, label 12px Inter */
+    /* Nav buttons — rata kiri, icon + label 12.5px Inter */
     [data-testid="stSidebar"] [data-testid="stButton"] button {{
         display: flex !important;
         align-items: center !important;
+        justify-content: flex-start !important;
         gap: 10px !important;
-        padding: 9px 12px !important;
+        padding: 9px 14px !important;
         font-size: 12.5px !important;
         font-weight: 500 !important;
         font-family: 'Inter', sans-serif !important;
         border-radius: 7px !important;
         text-align: left !important;
+        width: 100% !important;
         color: {T['sidebar_text']} !important;
         background: transparent !important;
         border: none !important;
         transition: background 0.15s, color 0.15s !important;
         letter-spacing: -0.01em !important;
+    }}
+    [data-testid="stSidebar"] [data-testid="stButton"] button p {{
+        text-align: left !important;
+        margin: 0 !important;
     }}
     [data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
         background: rgba(142,148,242,0.12) !important;
@@ -2027,11 +2039,11 @@ with st.sidebar:
         border: none !important;
         box-shadow: none !important;
     }}
-    /* Settings sub-items — slightly smaller */
-    .sb-settings-btn [data-testid="stButton"] button {{
-        font-size: 12px !important;
-        color: {T['sidebar_text2']} !important;
-        padding: 7px 10px !important;
+    /* Icon-only buttons (mode + lang) — square, centered */
+    [data-testid="stSidebar"] .icon-btn-col [data-testid="stButton"] button {{
+        justify-content: center !important;
+        padding: 9px 6px !important;
+        font-size: 16px !important;
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -2066,10 +2078,13 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    # Settings: Mode toggle + Language toggle side by side
-    col_mode, col_lang = st.columns([3, 1])
+    # Settings: Mode icon + Language icon — side by side, equal width
+    col_mode, col_lang = st.columns(2)
     with col_mode:
-        if st.button(f"{toggle_icon}  {L['btn_mode']}", use_container_width=True, key="toggle_btn"):
+        # Mode: icon only — toggle dark/light
+        _mode_icon = "☀️" if dm else "🌙"
+        if st.button(_mode_icon, use_container_width=True, key="toggle_btn",
+                     help="Dark / Light mode"):
             st.session_state.dark_mode = not st.session_state.dark_mode
             st.rerun()
     with col_lang:
@@ -2259,9 +2274,9 @@ if _active == 0:
         with col_info:
             if search_highlight_id and search_highlight_id in filtered["Employee ID"].values:
                 _emp_name_hl = selected_emp_row["Employee Name"]
-                st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan — 🎯 **{_emp_name_hl}** ada di divisi ini")
+                st.caption(f"📊 {L['showing_emp']} **{len(filtered)}** {L['employees']} — 🎯 **{_emp_name_hl}** {L['emp_found_in']}")
             else:
-                st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan di divisi ini")
+                st.caption(f"📊 {L['showing_emp']} **{len(filtered)}** {L['employees']} {L['emp_in_div']}")
 
         selected_level  = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt]
         all_ids_needed  = get_all_managers(filtered["Employee ID"].tolist(), df)
@@ -2305,7 +2320,7 @@ if _active == 0:
         with col_lv2:
             level_opt2 = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"], key="lv2")
         with col_inf2:
-            st.caption(f"📊 Menampilkan **{len(df)}** karyawan")
+            st.caption(f"📊 {L['showing_emp']} **{len(df)}** {L['employees']}")
 
         selected_level2 = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt2]
         # Mode perusahaan: tampilkan seluruh tree (search sudah auto-switch ke Per Divisi)
@@ -2351,17 +2366,17 @@ elif _active == 1:
 
     c1, c2, c3, c4 = st.columns(4)
     with c1: search = st.text_input("🔍 Cari nama karyawan")
-    with c2: bu_f   = st.selectbox("Filter BU", ["Semua"] + sorted(df["Business Unit"].unique().tolist()), key="t2bu")
+    with c2: bu_f   = st.selectbox(L["filter_bu_plain"], [L["filter_all"]] + sorted(df["Business Unit"].unique().tolist()), key="t2bu")
     with c3:
         div_opts = ["Semua"] + sorted(
-            df[df["Business Unit"] == bu_f]["Division"].unique().tolist() if bu_f != "Semua"
+            df[df["Business Unit"] == bu_f]["Division"].unique().tolist() if bu_f != L["filter_all"]
             else df["Division"].unique().tolist()
         )
-        div_f = st.selectbox("Filter Divisi", div_opts, key="t2div")
+        div_f = st.selectbox(L["filter_div_plain"], div_opts, key="t2div")
     with c4:
         sbu_src = df.copy()
         if bu_f != "Semua": sbu_src = sbu_src[sbu_src["Business Unit"] == bu_f]
-        if div_f != "Semua": sbu_src = sbu_src[sbu_src["Division"] == div_f]
+        if div_f != L["filter_all"]: sbu_src = sbu_src[sbu_src["Division"] == div_f]
         sbu_opts_t2 = ["Semua"] + sorted([s for s in sbu_src["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""])
         sbu_f = st.selectbox("Filter SBU/Tribe", sbu_opts_t2, key="t2sbu")
 
@@ -2369,9 +2384,9 @@ elif _active == 1:
     if search:       data_view = data_view[data_view["Employee Name"].str.contains(search, case=False, na=False)]
     if bu_f  != "Semua": data_view = data_view[data_view["Business Unit"] == bu_f]
     if div_f != "Semua": data_view = data_view[data_view["Division"] == div_f]
-    if sbu_f != "Semua": data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
+    if sbu_f != L["filter_all"]: data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
 
-    st.caption(f"Menampilkan **{len(data_view)}** karyawan")
+    st.caption(f"{L['showing_emp']} **{len(data_view)}** {L['employees']}")
     st.dataframe(data_view, use_container_width=True, height=480)
 
     col_dl7, col_dl8, _ = st.columns([1, 1, 3])
@@ -2560,10 +2575,10 @@ elif _active == 2:
             col_v1, col_v2, col_v3, col_v4 = st.columns([2, 2, 2, 2])
             with col_v1:
                 _bu_v_opts = ["Semua"] + sorted(vac_df["BU"].dropna().unique().tolist()) if "BU" in vac_df.columns else ["Semua"]
-                bu_v = st.selectbox("Filter BU", _bu_v_opts, key="cc_vac_bu")
+                bu_v = st.selectbox(L["filter_bu_plain"], _bu_v_opts, key="cc_vac_bu")
             with col_v2:
                 _div_v_opts = ["Semua"] + sorted(vac_df["Division"].dropna().unique().tolist()) if "Division" in vac_df.columns else ["Semua"]
-                div_v = st.selectbox("Filter Divisi", _div_v_opts, key="cc_vac_div")
+                div_v = st.selectbox(L["filter_div_plain"], _div_v_opts, key="cc_vac_div")
             with col_v3:
                 _status_v_opts = ["Semua"] + sorted(vac_df["Fulfillment Status"].dropna().unique().tolist()) if "Fulfillment Status" in vac_df.columns else ["Semua"]
                 status_v = st.selectbox("Filter Fulfillment Status", _status_v_opts, key="cc_vac_status")
@@ -2578,7 +2593,7 @@ elif _active == 2:
             if jobid_search_v.strip() and "JOBID" in view_vac.columns:
                 view_vac = view_vac[view_vac["JOBID"].astype(str).str.contains(jobid_search_v.strip(), case=False, na=False)]
 
-            st.caption(f"{L['showing']} **{len(view_vac)}** posisi MPP")
+            st.caption(f"{L['showing']} **{len(view_vac)}** {L['positions']} MPP")
             st.dataframe(view_vac, use_container_width=True, height=430)
             st.divider()
             c1, c2, _ = st.columns([1,1,3])
@@ -2656,14 +2671,14 @@ elif _active == 3:
     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
     with col_m1: search_mgr = st.text_input("🔍 Cari nama manager", key="search_mgr")
     with col_m2:
-        bu_mgr = st.selectbox("Filter BU",
-                              ["Semua"] + sorted(mgr_df["Business Unit"].dropna().unique().tolist()), key="bu_mgr")
+        bu_mgr = st.selectbox(L["filter_bu_plain"],
+                              [L["filter_all"]] + sorted(mgr_df["Business Unit"].dropna().unique().tolist()), key="bu_mgr")
     with col_m3:
         div_mgr_opts = (["Semua"] + sorted(mgr_df[mgr_df["Business Unit"] == bu_mgr]["Division"].dropna().unique().tolist())
-                        if bu_mgr != "Semua" else ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist()))
-        div_mgr = st.selectbox("Filter Divisi", div_mgr_opts, key="div_mgr")
+                        if bu_mgr != L["filter_all"] else ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist()))
+        div_mgr = st.selectbox(L["filter_div_plain"], div_mgr_opts, key="div_mgr")
     with col_m4:
-        level_filter = st.selectbox("🎯 Filter Level Hierarki", ["Semua", "Chief", "C-1", "C-2"], key="level_mgr",
+        level_filter = st.selectbox(L["filter_level"], [L["filter_all"], "Chief", "C-1", "C-2"], key="level_mgr",
                                     help="Chief = bawahan langsung SLKR001 | C-1 = 1 tingkat di bawah Chief | C-2 = 2 tingkat di bawah Chief")
 
     hide_level0 = st.checkbox("🚫 Sembunyikan manager yang memiliki bawahan Career Stage Level 0",
@@ -2688,7 +2703,7 @@ elif _active == 3:
         </div>
         """, unsafe_allow_html=True)
 
-    st.caption(f"Menampilkan **{len(view_mgr)}** manager")
+    st.caption(f"{L['showing_emp']} **{len(view_mgr)}** manager")
     
     display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division",
                         "Business Unit", "SBU/Tribe", "Level Hierarki", "Bawahan Langsung", "Total Span (Semua Bawahan)"]
@@ -2996,7 +3011,7 @@ elif _active == 4:
                                 "employee_name","employee_id","data_lama","data_baru",
                                 "status","reviewed_by","reviewed_date","catatan"]
                 available_cols = [c for c in display_cols if c in view_hist.columns]
-                st.caption(f"Menampilkan **{len(view_hist)}** request")
+                st.caption(f"{L['showing_emp']} **{len(view_hist)}** request")
                 st.dataframe(view_hist[available_cols].reset_index(drop=True), use_container_width=True, height=480)
                 st.divider()
                 col_hd1, col_hd2, _ = st.columns([1,1,3])
@@ -3078,7 +3093,7 @@ elif _active == 99:
                     view_acl["Nama"].str.lower().str.contains(q)
                 ]
 
-            st.caption(f"Menampilkan **{len(view_acl)}** dari **{len(acl_display_df)}** user")
+            st.caption(f"{L['showing_emp']} **{len(view_acl)}** dari **{len(acl_display_df)}** user")
             st.dataframe(view_acl, use_container_width=True, height=380)
         else:
             st.info("Belum ada user di ACL. Tambahkan user pertama di tab 'Tambah / Edit User'.")
