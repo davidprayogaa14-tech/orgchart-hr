@@ -80,6 +80,14 @@ LANG = {
         "tab_cr_title":"Structure Change Request",
         "tab_cr_sub":"Kelola permintaan perubahan struktur organisasi",
         "emp_in_div":"karyawan di divisi ini","emp_found_in":"ada di divisi ini",
+        "emp_select_ph":"— Pilih karyawan —","emp_select_label":"Pilih karyawan:",
+        "emp_more":"lainnya","emp_pick_below":"Pilih salah satu di bawah.",
+        "search_not_found":"Tidak ada karyawan bernama",
+        "search_found_one":"Ditemukan:","search_found_many":"Ditemukan",
+        "filter_all_leader":"Semua (divisi penuh)",
+        "filter_all_sbu_label":"Semua SBU",
+        "breakdown_field":"Breakdown per Field",
+        "mgr_count_label":"manager","req_count_label":"request","user_count_label":"user",
     },
     "en": {
         "nav_org":"Org Chart","nav_data":"Employee Data","nav_compliance":"Compliance Check",
@@ -123,6 +131,13 @@ LANG = {
         "tab_cr_title":"Structure Change Request",
         "tab_cr_sub":"Manage organizational structure change requests",
         "emp_in_div":"employees in this division","emp_found_in":"found in this division",
+        "emp_select_ph":"— Select employee —","emp_select_label":"Select employee:",
+        "emp_more":"more","emp_pick_below":"Select one below.",
+        "search_not_found":"No employee named",
+        "search_found_one":"Found:","search_found_many":"Found",
+        "filter_all_leader":"Full division","filter_all_sbu_label":"All SBUs",
+        "breakdown_field":L["breakdown_field"],
+        "mgr_count_label":"manager","req_count_label":"request","user_count_label":"user",
     },
 }
 
@@ -807,7 +822,7 @@ def _draw_pdf_footer(c, page_w, downloaded_at):
     c.line(36, 28, page_w - 36, 28)
     c.setFillColor(PDF_TEXT_MUTED)
     c.setFont("Helvetica", 7)
-    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari Organization Dashboard")
+    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Dashboard")
     c.drawRightString(page_w - 36, 18, "HR Organization Dashboard")
 
 
@@ -2078,22 +2093,51 @@ with st.sidebar:
         st.cache_data.clear()
         st.rerun()
 
-    # Settings: Mode icon + Language icon — side by side, equal width
+    # Settings: Mode icon + Language compact label — 2 equal columns, no gap
+    _mode_icon  = "☀️" if dm else "🌙"
+    _lang_label = "EN" if st.session_state.lang == "id" else "ID"
+    _lang_help  = "Switch to English" if st.session_state.lang == "id" else "Ganti ke Bahasa Indonesia"
+
     col_mode, col_lang = st.columns(2)
     with col_mode:
-        # Mode: icon only — toggle dark/light
-        _mode_icon = "☀️" if dm else "🌙"
         if st.button(_mode_icon, use_container_width=True, key="toggle_btn",
                      help="Dark / Light mode"):
             st.session_state.dark_mode = not st.session_state.dark_mode
             st.rerun()
     with col_lang:
-        # Language: icon only (ID/EN flag)
-        _lang_icon = "🇬🇧" if st.session_state.lang == "id" else "🇮🇩"
-        if st.button(_lang_icon, use_container_width=True, key="lang_btn",
-                     help="Switch language / Ganti bahasa"):
+        if st.button(_lang_label, use_container_width=True, key="lang_btn", help=_lang_help):
             st.session_state.lang = "en" if st.session_state.lang == "id" else "id"
             st.rerun()
+
+    # CSS: tight 2-column icon+label buttons — no gap, centered, bordered
+    st.markdown(f"""
+    <style>
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] {{
+        gap: 4px !important;
+    }}
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] div[data-testid="column"] {{
+        padding: 0 !important;
+        min-width: 0 !important;
+    }}
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] [data-testid="stButton"] button {{
+        justify-content: center !important;
+        font-size: 13px !important;
+        font-weight: 600 !important;
+        padding: 8px 4px !important;
+        letter-spacing: 0.04em !important;
+        background: transparent !important;
+        border: 1px solid {T['outline']} !important;
+        color: {T['sidebar_text']} !important;
+        border-radius: 7px !important;
+        width: 100% !important;
+    }}
+    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] [data-testid="stButton"] button:hover {{
+        background: rgba(142,148,242,0.15) !important;
+        border-color: {T['primary']} !important;
+        color: {T['sidebar_active']} !important;
+    }}
+    </style>
+    """, unsafe_allow_html=True)
 
     # ── Logout ─────────────────────────────────────────────────────
     st.markdown(f"""
@@ -2151,21 +2195,21 @@ _active = st.session_state.get("active_tab", 0)
 if _active == 0:
     st.markdown(f"""
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;
-        letter-spacing:0.09em;color:{T['text3']};margin-bottom:10px;">MODE TAMPILAN</div>
+        letter-spacing:0.09em;color:{T['text3']};margin-bottom:10px;">{L['mode_label']}</div>
     """, unsafe_allow_html=True)
-    view_mode = st.radio("", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True, label_visibility="collapsed")
+    view_mode = st.radio("", [L["mode_division"], L["mode_company"]], horizontal=True, label_visibility="collapsed")
 
     # ── Search Name ──────────────────────────────────────────────
     # [FIX] Search sekarang cari di seluruh df, auto-set filter BU/Divisi
     st.markdown(f"""
     <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-        letter-spacing:0.06em;margin:16px 0 8px 0;">Cari Karyawan</div>
+        letter-spacing:0.06em;margin:16px 0 8px 0;">{L['search_label']}</div>
     """, unsafe_allow_html=True)
 
     col_search, col_search_info = st.columns([3, 5])
     with col_search:
         name_search = st.text_input(
-            "🔍 Search Name", placeholder="Ketik nama karyawan...",
+            L["search_label"], placeholder=L["search_ph"],
             key="org_name_search", label_visibility="collapsed"
         )
 
@@ -2181,33 +2225,32 @@ if _active == 0:
             if len(matched_global) == 0:
                 st.markdown(f"""<div style="padding:8px 12px;background:#fee2e2;border-radius:8px;
                     font-size:12px;color:#991b1b;margin-top:4px;">
-                    ❌ Tidak ada karyawan bernama "<b>{name_search}</b>"</div>""",
+                    ❌ {L['search_not_found']} "<b>{name_search}</b>"</div>""",
                     unsafe_allow_html=True)
             elif len(matched_global) == 1:
                 emp = matched_global.iloc[0]
                 st.markdown(f"""<div style="padding:8px 12px;background:#dcfce7;border-radius:8px;
                     font-size:12px;color:#166534;margin-top:4px;">
-                    ✅ Ditemukan: <b>{emp['Employee Name']}</b> — {emp.get('Job Position','')},
+                    ✅ {L['search_found_one']} <b>{emp['Employee Name']}</b> — {emp.get('Job Position','')},
                     <b>{emp.get('Division','')}</b> ({emp.get('Business Unit','')})</div>""",
                     unsafe_allow_html=True)
             else:
                 names_list = ", ".join(matched_global["Employee Name"].tolist()[:4])
-                suffix = f" +{len(matched_global)-4} lainnya" if len(matched_global) > 4 else ""
+                suffix = f" +{len(matched_global)-4} {L['emp_more']}" if len(matched_global) > 4 else ""
                 st.markdown(f"""<div style="padding:8px 12px;background:#fef9c3;border-radius:8px;
                     font-size:12px;color:#854d0e;margin-top:4px;">
-                    ⚠️ Ditemukan <b>{len(matched_global)}</b> karyawan: {names_list}{suffix}.
-                    Pilih salah satu di bawah.</div>""", unsafe_allow_html=True)
+                    ⚠️ {L['search_found_many']} <b>{len(matched_global)}</b> {L['employees']}: {names_list}{suffix}. {L['emp_pick_below']}</div>""", unsafe_allow_html=True)
 
     # Jika >1 hasil → selectbox pilih karyawan spesifik
     selected_emp_row = None
     if len(matched_global) > 1:
-        emp_choices = ["— Pilih karyawan —"] + [
+        emp_choices = [L["emp_select_ph"]] + [
             f"{r['Employee Name']}  ·  {r.get('Division','')}  ·  {r.get('Business Unit','')}"
             for _, r in matched_global.iterrows()
         ]
-        chosen_emp = st.selectbox("Pilih karyawan:", emp_choices,
+        chosen_emp = st.selectbox(L["emp_select_label"], emp_choices,
                                   key="search_emp_choice", label_visibility="collapsed")
-        if chosen_emp != "— Pilih karyawan —":
+        if chosen_emp != L["emp_select_ph"]:
             idx_c = emp_choices.index(chosen_emp) - 1
             selected_emp_row = matched_global.iloc[idx_c]
     elif len(matched_global) == 1:
@@ -2223,39 +2266,39 @@ if _active == 0:
         _div_list_for = sorted(df[df["Business Unit"] == _tbu]["Division"].dropna().unique().tolist())
         if _tdiv in _div_list_for:
             st.session_state["sel_div"] = _tdiv
-        st.session_state["sel_sbu"]    = "Semua SBU"
-        st.session_state["sel_leader"] = "Semua (divisi penuh)"
+        st.session_state["sel_sbu"]    = L["filter_all_sbu_label"]
+        st.session_state["sel_leader"] = L["filter_all_leader"]
 
     # ID karyawan target untuk highlight di tree
     search_highlight_id = str(selected_emp_row.get("Employee ID", "")) if selected_emp_row is not None else None
-    if view_mode == "Per Divisi":
+    if view_mode == L["mode_division"]:
         st.markdown(f"""
         <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-            letter-spacing:0.06em;margin:16px 0 10px 0;">Filter</div>
+            letter-spacing:0.06em;margin:16px 0 10px 0;">{L['filter_label']}</div>
         """, unsafe_allow_html=True)
         col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
         with col_a:
             bu_list    = sorted(df["Business Unit"].dropna().unique().tolist())
-            selected_bu = st.selectbox("🏢 Business Unit", bu_list, key="sel_bu")
+            selected_bu = st.selectbox(L["filter_bu"], bu_list, key="sel_bu")
         with col_b:
             div_list    = sorted(df[df["Business Unit"] == selected_bu]["Division"].dropna().unique().tolist())
-            selected_div = st.selectbox("📁 Divisi", div_list, key="sel_div")
+            selected_div = st.selectbox(L["filter_div"], div_list, key="sel_div")
         with col_c:
             sbu_opts_raw = [s for s in df[
                 (df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)
             ]["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""]
-            selected_sbu = st.selectbox("🏷️ SBU/Tribe", ["Semua SBU"] + sorted(sbu_opts_raw), key="sel_sbu")
+            selected_sbu = st.selectbox(L["filter_sbu"], [L["filter_all_sbu_label"]] + sorted(sbu_opts_raw), key="sel_sbu")
 
         filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
-        if selected_sbu != "Semua SBU":
+        if selected_sbu != L["filter_all_sbu_label"]:
             filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
 
         all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
         with col_d:
-            selected_leader = st.selectbox("👤 Filter by Leader",
-                                           ["Semua (divisi penuh)"] + sorted(all_leaders), key="sel_leader")
+            selected_leader = st.selectbox(L["filter_leader"],
+                                           [L["filter_all_leader"]] + sorted(all_leaders), key="sel_leader")
 
-        if selected_leader != "Semua (divisi penuh)":
+        if selected_leader != L["filter_all_leader"]:
             leader_id = filtered[filtered["Employee Name"] == selected_leader]["Employee ID"].values
             if len(leader_id) > 0:
                 lid      = leader_id[0]
@@ -2517,7 +2560,7 @@ elif _active == 2:
             st.dataframe(view_mis, use_container_width=True, height=400)
 
             st.divider()
-            _bkd2_title = "Breakdown by Field" if st.session_state.lang == "en" else "Breakdown per Field"
+            _bkd2_title = L["breakdown_field"] if st.session_state.lang == "en" else "Breakdown per Field"
             st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:8px;'>{_bkd2_title}</div>", unsafe_allow_html=True)
             field_bkd = view_mis.groupby(["Field","Severity"]).size().reset_index(name="Count").sort_values("Count",ascending=False)
             st.dataframe(field_bkd, use_container_width=True, height=200)
@@ -2703,7 +2746,7 @@ elif _active == 3:
         </div>
         """, unsafe_allow_html=True)
 
-    st.caption(f"{L['showing_emp']} **{len(view_mgr)}** manager")
+    st.caption(f"{L['showing_emp']} **{len(view_mgr)}** {L['mgr_count_label']}")
     
     display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division",
                         "Business Unit", "SBU/Tribe", "Level Hierarki", "Bawahan Langsung", "Total Span (Semua Bawahan)"]
@@ -3011,7 +3054,7 @@ elif _active == 4:
                                 "employee_name","employee_id","data_lama","data_baru",
                                 "status","reviewed_by","reviewed_date","catatan"]
                 available_cols = [c for c in display_cols if c in view_hist.columns]
-                st.caption(f"{L['showing_emp']} **{len(view_hist)}** request")
+                st.caption(f"{L['showing_emp']} **{len(view_hist)}** {L['req_count_label']}")
                 st.dataframe(view_hist[available_cols].reset_index(drop=True), use_container_width=True, height=480)
                 st.divider()
                 col_hd1, col_hd2, _ = st.columns([1,1,3])
@@ -3093,7 +3136,7 @@ elif _active == 99:
                     view_acl["Nama"].str.lower().str.contains(q)
                 ]
 
-            st.caption(f"{L['showing_emp']} **{len(view_acl)}** dari **{len(acl_display_df)}** user")
+            st.caption(f"{L['showing_emp']} **{len(view_acl)}** dari **{len(acl_display_df)}** {L['user_count_label']}")
             st.dataframe(view_acl, use_container_width=True, height=380)
         else:
             st.info("Belum ada user di ACL. Tambahkan user pertama di tab 'Tambah / Edit User'.")
