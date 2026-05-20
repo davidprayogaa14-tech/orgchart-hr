@@ -31,16 +31,23 @@ except Exception:
 #   Untuk balik ke full mode:         hapus baris tersebut / set "false"
 # ══════════════════════════════════════════════════════════════════
 def _get_public_mode() -> bool:
-    # Cek Streamlit Secrets dulu
+    """
+    Baca PUBLIC_MODE dari Streamlit Secrets atau env var.
+    Dipanggil SETELAH app context siap (bukan module-level).
+    """
     try:
         val = st.secrets.get("PUBLIC_MODE", "false")
         return str(val).lower() in ("true", "1", "yes")
     except Exception:
         pass
-    # Fallback ke env var
     return os.getenv("PUBLIC_MODE", "false").lower() in ("true", "1", "yes")
 
-PUBLIC_MODE: bool = _get_public_mode()
+# PUBLIC_MODE dievaluasi di runtime (bukan module-level) agar
+# st.secrets sudah siap saat dibaca.
+# Nilai di-cache ke session_state supaya konsisten sepanjang sesi.
+if "PUBLIC_MODE" not in st.session_state:
+    st.session_state["PUBLIC_MODE"] = _get_public_mode()
+PUBLIC_MODE: bool = st.session_state["PUBLIC_MODE"]
 
 # Sentinel string yang dipakai sebagai "user publik" saat PUBLIC_MODE aktif
 _PUBLIC_USER_INFO = {
