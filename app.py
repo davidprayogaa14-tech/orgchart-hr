@@ -49,6 +49,12 @@ if "PUBLIC_MODE" not in st.session_state:
     st.session_state["PUBLIC_MODE"] = _get_public_mode()
 PUBLIC_MODE: bool = st.session_state["PUBLIC_MODE"]
 
+# ── OVERRIDE SEMENTARA ───────────────────────────────────────────
+# Set True untuk bypass auth dan tampilkan hanya Org Chart (public view).
+# Set False untuk kembali ke full platform dengan auth.
+# Setelah Secrets-based toggle dikonfirmasi bekerja, hapus baris ini.
+PUBLIC_MODE = True  # ← ganti ke False untuk full mode
+
 # Sentinel string yang dipakai sebagai "user publik" saat PUBLIC_MODE aktif
 _PUBLIC_USER_INFO = {
     "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
