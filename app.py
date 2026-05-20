@@ -21,6 +21,35 @@ except Exception:
 
 
 # ══════════════════════════════════════════════════════════════════
+# PUBLIC MODE — Feature Flag
+# ══════════════════════════════════════════════════════════════════
+# True  → Auth dibypass, hanya Tab Org Chart yang tampil (public view)
+# False → Full platform dengan auth dan semua tab (internal OD)
+#
+# Cara toggle TANPA edit code:
+#   Di Streamlit Secrets, tambahkan:  PUBLIC_MODE = "true"
+#   Untuk balik ke full mode:         hapus baris tersebut / set "false"
+# ══════════════════════════════════════════════════════════════════
+def _get_public_mode() -> bool:
+    # Cek Streamlit Secrets dulu
+    try:
+        val = st.secrets.get("PUBLIC_MODE", "false")
+        return str(val).lower() in ("true", "1", "yes")
+    except Exception:
+        pass
+    # Fallback ke env var
+    return os.getenv("PUBLIC_MODE", "false").lower() in ("true", "1", "yes")
+
+PUBLIC_MODE: bool = _get_public_mode()
+
+# Sentinel string yang dipakai sebagai "user publik" saat PUBLIC_MODE aktif
+_PUBLIC_USER_INFO = {
+    "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
+    "name": "Public", "employee_id": "",
+}
+
+
+# ══════════════════════════════════════════════════════════════════
 # CONSTANTS
 # ══════════════════════════════════════════════════════════════════
 SHEET_ID   = "1LaZpDfmFZJvIARf0RYoX-DtcbkjgOMlwT74nbamnvqM"
@@ -65,6 +94,8 @@ LANG = {
         "company_warning":"⚠️ Mode seluruh perusahaan menampilkan semua karyawan.",
         "tab_data_title":"Data Karyawan","tab_data_sub":"Seluruh data karyawan dengan filter dan pencarian",
         "search_name":"🔍 Cari nama karyawan","filter_all":"Semua",
+        "filter_all_leader":"Semua (divisi penuh)",
+        "filter_all_sbu_label":"Semua SBU",
         "tab_cc_title":"Compliance Check","tab_cc_sub":"Deteksi inkonsistensi data antara Employee Data dan MPP Data",
         "cc_tab_summary":"📊  Ringkasan Isu","cc_tab_missing":"👤  Missing Manager ID",
         "cc_tab_mismatch":"🔀  Data Tidak Konsisten","cc_tab_ghost":"🔍  Tidak Terpetakan",
@@ -116,6 +147,8 @@ LANG = {
         "company_warning":"⚠️ Company-wide mode displays all employees.",
         "tab_data_title":"Employee Data","tab_data_sub":"All employee data with filters and search",
         "search_name":"🔍 Search employee name",
+        "filter_all":"All",
+        "filter_all_leader":"Full division","filter_all_sbu_label":"All SBUs",
         "tab_cc_title":"Compliance Check","tab_cc_sub":"Detect data inconsistencies between Employee Data and MPP Data",
         "cc_tab_summary":"📊  Issue Summary","cc_tab_missing":"👤  Missing Manager ID",
         "cc_tab_mismatch":"🔀  Data Inconsistency","cc_tab_ghost":"🔍  Unmapped Employees",
@@ -469,7 +502,12 @@ _ROLE_TAB_ACCESS = {
 
 
 def _can_access_tab(role: str, tab_idx: int) -> bool:
-    """Return True jika role boleh mengakses tab_idx."""
+    """
+    Return True jika role boleh mengakses tab_idx.
+    Saat PUBLIC_MODE aktif, hanya tab 0 (Org Chart) yang accessible.
+    """
+    if PUBLIC_MODE:
+        return tab_idx == 0
     return tab_idx in _ROLE_TAB_ACCESS.get(role, {0})
 
 
@@ -1796,8 +1834,18 @@ def _render_login_page():
     st.stop()
 
 
-if not st.session_state.get("authenticated", False):
-    _render_login_page()
+if PUBLIC_MODE:
+    # ── PUBLIC MODE: bypass auth sepenuhnya ───────────────────────
+    # User langsung masuk sebagai admin read-only (tidak ada write-back sensitif)
+    # Hanya Tab Org Chart yang ditampilkan (lihat _can_access_tab di bawah)
+    if not st.session_state.get("authenticated", False):
+        st.session_state.authenticated = True
+        st.session_state.user_info     = _PUBLIC_USER_INFO
+        st.session_state.user_email    = "public"
+else:
+    # ── FULL MODE: auth normal ────────────────────────────────────
+    if not st.session_state.get("authenticated", False):
+        _render_login_page()
 
 _user_info = st.session_state.get("user_info", {
     "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
@@ -2359,8 +2407,8 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    # Settings: User Setting (admin only, renamed from Admin Panel)
-    if _is_admin:
+    # Settings: User Setting (admin only — disembunyikan di PUBLIC_MODE)
+    if _is_admin and not PUBLIC_MODE:
         is_admin_active = (active_idx == 99)
         if st.button(f"⚙️  {L['btn_user_setting']}", key="nav_99",
                      use_container_width=True, type="primary" if is_admin_active else "secondary"):
@@ -2425,10 +2473,11 @@ with st.sidebar:
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
-        for k in ["authenticated", "user_email", "user_info", "active_tab"]:
-            st.session_state.pop(k, None)
-        st.rerun()
+    if not PUBLIC_MODE:
+        if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
+            for k in ["authenticated", "user_email", "user_info", "active_tab"]:
+                st.session_state.pop(k, None)
+            st.rerun()
 
     st.markdown(f"""
     <div style="padding:8px 16px 12px 16px;font-size:10px;color:{T['sidebar_text2']};
@@ -2681,42 +2730,44 @@ if _active == 0:
 elif _active == 1:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
-        <div style="font-size:20px;font-weight:700;color:{T['text']};">Data Karyawan</div>
-        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
+        <div style="font-size:20px;font-weight:700;color:{T['text']};">{L['tab_data_title']}</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">{L['tab_data_sub']}</div>
     </div>
     """, unsafe_allow_html=True)
 
+    _fa = L["filter_all"]  # "Semua" atau "All" — dinamis sesuai bahasa
+
     c1, c2, c3, c4 = st.columns(4)
-    with c1: search = st.text_input("🔍 Cari nama karyawan")
-    with c2: bu_f   = st.selectbox(L["filter_bu_plain"], [L["filter_all"]] + sorted(df["Business Unit"].unique().tolist()), key="t2bu")
+    with c1: search = st.text_input(L["search_name"])
+    with c2: bu_f   = st.selectbox(L["filter_bu_plain"], [_fa] + sorted(df["Business Unit"].unique().tolist()), key="t2bu")
     with c3:
-        div_opts = ["Semua"] + sorted(
-            df[df["Business Unit"] == bu_f]["Division"].unique().tolist() if bu_f != L["filter_all"]
+        div_opts = [_fa] + sorted(
+            df[df["Business Unit"] == bu_f]["Division"].unique().tolist() if bu_f != _fa
             else df["Division"].unique().tolist()
         )
         div_f = st.selectbox(L["filter_div_plain"], div_opts, key="t2div")
     with c4:
         sbu_src = df.copy()
-        if bu_f != "Semua": sbu_src = sbu_src[sbu_src["Business Unit"] == bu_f]
-        if div_f != L["filter_all"]: sbu_src = sbu_src[sbu_src["Division"] == div_f]
-        sbu_opts_t2 = ["Semua"] + sorted([s for s in sbu_src["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""])
-        sbu_f = st.selectbox("Filter SBU/Tribe", sbu_opts_t2, key="t2sbu")
+        if bu_f  != _fa: sbu_src = sbu_src[sbu_src["Business Unit"] == bu_f]
+        if div_f != _fa: sbu_src = sbu_src[sbu_src["Division"] == div_f]
+        sbu_opts_t2 = [_fa] + sorted([s for s in sbu_src["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""])
+        sbu_f = st.selectbox(L["filter_sbu"], sbu_opts_t2, key="t2sbu")
 
     data_view = df.copy()
-    if search:       data_view = data_view[data_view["Employee Name"].str.contains(search, case=False, na=False)]
-    if bu_f  != "Semua": data_view = data_view[data_view["Business Unit"] == bu_f]
-    if div_f != "Semua": data_view = data_view[data_view["Division"] == div_f]
-    if sbu_f != L["filter_all"]: data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
+    if search:      data_view = data_view[data_view["Employee Name"].str.contains(search, case=False, na=False)]
+    if bu_f  != _fa: data_view = data_view[data_view["Business Unit"] == bu_f]
+    if div_f != _fa: data_view = data_view[data_view["Division"] == div_f]
+    if sbu_f != _fa: data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
 
     st.caption(f"{L['showing_emp']} **{len(data_view)}** {L['employees']}")
     st.dataframe(data_view, use_container_width=True, height=480)
 
     col_dl7, col_dl8, _ = st.columns([1, 1, 3])
     with col_dl7:
-        st.download_button("📄 CSV", data_view.to_csv(index=False).encode("utf-8"),
+        st.download_button(L["download_csv"], data_view.to_csv(index=False).encode("utf-8"),
                            "filtered.csv", "text/csv", use_container_width=True)
     with col_dl8:
-        st.download_button("📊 Excel", to_excel(data_view), "filtered.xlsx",
+        st.download_button(L["download_excel"], to_excel(data_view), "filtered.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
 
