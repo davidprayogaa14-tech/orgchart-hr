@@ -156,6 +156,180 @@ def load_mpp_data():
     return pd.DataFrame()
 
 
+# ══════════════════════════════════════════════════════════════════
+# PHASE 1 — SCHEMA GUARD
+# Daftar kolom wajib di mpp_data. Jika ada yang hilang saat load,
+# fungsi menampilkan error eksplisit dan return None agar semua
+# consumer (compliance, unified view) gagal dengan pesan jelas,
+# bukan silent empty DataFrame.
+# ══════════════════════════════════════════════════════════════════
+REQUIRED_MPP_COLS = [
+    "JOBID", "MPP Status 2026", "Job Position", "MPP Career Stage",
+    "Primary Budget Holder", "Division", "BU", "SBU",
+    "Tribe/Squad/Function", "Fulfillment Status", "EID",
+    "Current Name", "Current Job Position", "Current Career Stage",
+]
+
+WRITEBACK_FIELD_MAP = {
+    # change_type       : (kolom di employee_data, resolver_type)
+    "Reporting Line": ("Manager ID",    "manager_name_to_id"),
+    "Nama Divisi":    ("Division",       "division_direct"),
+}
+
+
+def validate_mpp_schema(mpp_df: pd.DataFrame) -> bool:
+    """
+    Cek kolom wajib mpp_data saat load.
+    Return True jika valid, tampilkan st.error + return False jika tidak.
+    Dipanggil di dalam load_mpp_data() setelah get_all_records().
+    """
+    if mpp_df.empty:
+        return True  # kosong bukan schema error — biarkan consumer handle
+    missing = [c for c in REQUIRED_MPP_COLS if c not in mpp_df.columns]
+    if missing:
+        st.error(
+            f"⚠️ **Schema MPP berubah** — kolom berikut tidak ditemukan di worksheet `mpp_data`: "
+            f"`{'`, `'.join(missing)}`. "
+            f"Pastikan nama kolom di Google Sheets sesuai dengan daftar kolom wajib. "
+            f"Hubungi admin OD jika terjadi perubahan struktur tabel."
+        )
+        return False
+    return True
+
+
+# ══════════════════════════════════════════════════════════════════
+# PHASE 2 — UNIFIED VIEW
+# Satu fungsi tunggal yang meng-join ketiga dataset:
+#   employee_data ← (Job ID = JOBID) → mpp_data
+#   employee_data ← (Employee ID)    → change_requests (pending)
+#
+# Output: DataFrame unified_df dengan kolom enrichment:
+#   mpp_status, mpp_fulfillment, mpp_job_position, mpp_career_stage,
+#   mpp_primary_holder, mpp_bu, mpp_sbu, mpp_tribe,
+#   has_pending_cr, pending_cr_type, pending_cr_new_val,
+#   tri_status  ← klasifikasi akhir per karyawan
+#
+# Cached ttl=300 — expire bersama load_data().
+# Cache harus di-clear setelah CR approve / employee_data update.
+# ══════════════════════════════════════════════════════════════════
+@st.cache_data(ttl=300)
+def build_unified_view(
+    emp_df: pd.DataFrame,
+    mpp_df: pd.DataFrame,
+    cr_df:  pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Tri-data join: employee_data + mpp_data + change_requests.
+    Return unified DataFrame. Aman jika mpp_df atau cr_df kosong.
+    """
+    emp = emp_df.copy()
+
+    # ── Pastikan Job ID ada ───────────────────────────────────────
+    if "Job ID" not in emp.columns:
+        emp["Job ID"] = ""
+    emp["Job ID"] = emp["Job ID"].astype(str).str.strip()
+
+    # ── JOIN 1: employee ↔ mpp via Job ID (LEFT OUTER) ───────────
+    mpp_prefix_cols = {
+        "JOBID":                  "_mpp_jobid",
+        "MPP Status 2026":        "mpp_status",
+        "Fulfillment Status":     "mpp_fulfillment",
+        "Job Position":           "mpp_job_position",
+        "MPP Career Stage":       "mpp_career_stage",
+        "Primary Budget Holder":  "mpp_primary_holder",
+        "BU":                     "mpp_bu",
+        "SBU":                    "mpp_sbu",
+        "Tribe/Squad/Function":   "mpp_tribe",
+        "Division":               "mpp_division",
+    }
+
+    if not mpp_df.empty:
+        mpp_sel = mpp_df[
+            [c for c in mpp_prefix_cols if c in mpp_df.columns]
+        ].copy()
+        mpp_sel = mpp_sel.rename(columns=mpp_prefix_cols)
+        mpp_sel["_mpp_jobid"] = mpp_sel["_mpp_jobid"].astype(str).str.strip()
+        unified = emp.merge(
+            mpp_sel, left_on="Job ID", right_on="_mpp_jobid", how="left"
+        ).drop(columns=["_mpp_jobid"], errors="ignore")
+    else:
+        for col in mpp_prefix_cols.values():
+            if col != "_mpp_jobid":
+                emp[col] = ""
+        unified = emp.copy()
+
+    # ── JOIN 2: unified ↔ pending CR via Employee ID ─────────────
+    unified["has_pending_cr"]   = False
+    unified["pending_cr_type"]  = ""
+    unified["pending_cr_new_val"] = ""
+
+    if not cr_df.empty and "employee_id" in cr_df.columns:
+        pending_cr = cr_df[cr_df.get("status", pd.Series(dtype=str)) == "Pending"].copy() \
+            if "status" in cr_df.columns else pd.DataFrame()
+        if not pending_cr.empty:
+            pending_map = (
+                pending_cr.groupby("employee_id")
+                .agg(
+                    pending_cr_type   = ("change_type", "first"),
+                    pending_cr_new_val = ("data_baru",  "first"),
+                )
+                .reset_index()
+            )
+            pending_map = pending_map.rename(columns={"employee_id": "_cr_eid"})
+            pending_map["_cr_eid"] = pending_map["_cr_eid"].astype(str).str.strip()
+            unified["_emp_id_str"] = unified["Employee ID"].astype(str).str.strip()
+            unified = unified.merge(
+                pending_map, left_on="_emp_id_str", right_on="_cr_eid", how="left"
+            ).drop(columns=["_emp_id_str", "_cr_eid"], errors="ignore")
+            unified["has_pending_cr"] = unified["pending_cr_type"].notna() & (unified["pending_cr_type"] != "")
+
+    # ── Kolom fallback jika merge tidak menghasilkan kolom ────────
+    for col in ["pending_cr_type", "pending_cr_new_val"]:
+        if col not in unified.columns:
+            unified[col] = ""
+    unified["has_pending_cr"] = unified.get("has_pending_cr", False)
+
+    # ── tri_status classification ─────────────────────────────────
+    def classify_row(row):
+        job_id     = str(row.get("Job ID", "")).strip()
+        mpp_status = str(row.get("mpp_status", "")).strip()
+        fulfillment = str(row.get("mpp_fulfillment", "")).strip()
+        has_cr     = bool(row.get("has_pending_cr", False))
+
+        if not job_id or job_id == "nan":
+            return "No Job ID"
+        if not mpp_status or mpp_status == "nan":
+            return "Ghost"          # ada di emp, tidak ada di MPP
+        if has_cr:
+            return "Pending CR"     # ada CR yang menunggu approval
+        # Cek mismatch field kunci
+        emp_div = str(row.get("Division", "")).strip().lower()
+        mpp_div = str(row.get("mpp_division", "")).strip().lower()
+        emp_pos = str(row.get("Job Position", "")).strip().lower()
+        mpp_pos = str(row.get("mpp_job_position", "")).strip().lower()
+        if emp_div and mpp_div and emp_div != mpp_div:
+            return "Mismatch"
+        if emp_pos and mpp_pos and emp_pos != mpp_pos:
+            return "Mismatch"
+        return "Match"
+
+    unified["tri_status"] = unified.apply(classify_row, axis=1)
+    return unified
+
+
+def get_unified_view() -> pd.DataFrame:
+    """
+    Convenience wrapper — load semua dataset dan return unified view.
+    Dipanggil dari tab yang membutuhkan tri-data.
+    """
+    emp_df, _ = load_data()
+    if emp_df is None:
+        return pd.DataFrame()
+    mpp_df = load_mpp_data()
+    cr_df  = load_change_requests()
+    return build_unified_view(emp_df, mpp_df, cr_df)
+
+
 def run_compliance_checks(emp_df: pd.DataFrame, mpp_df: pd.DataFrame) -> dict:
     results = {
         "missing_manager": pd.DataFrame(),
@@ -676,6 +850,111 @@ def update_cr_status(request_id: str, status: str, reviewed_by: str, catatan: st
 def generate_request_id() -> str:
     import time
     return f"REQ-{int(time.time())}"
+
+
+# ══════════════════════════════════════════════════════════════════
+# PHASE 3 — CR WRITE-BACK
+# Dipanggil SETELAH update_cr_status(..., "Approved") berhasil.
+# Flow:
+#   1. Validasi EID ada di employee_data
+#   2. Resolve data_baru → nilai siap tulis ke Sheets
+#      - Reporting Line : nama manager baru → Employee ID
+#      - Nama Divisi    : nama divisi langsung (string)
+#   3. Find row di sheet1 by EID, update cell yang sesuai (atomic)
+#   4. Clear cache load_data + build_unified_view
+# Return (success: bool, message: str)
+# ══════════════════════════════════════════════════════════════════
+def execute_cr_writeback(
+    employee_id: str,
+    change_type: str,
+    data_baru: str,
+    emp_df: pd.DataFrame,
+) -> tuple:
+    """
+    Write approved CR back ke sheet1 (employee_data).
+    Return (True, pesan_sukses) atau (False, pesan_error).
+    """
+    client = get_gspread_client()
+    if not client:
+        return False, "Tidak dapat terhubung ke Google Sheets."
+
+    data_baru_clean = str(data_baru).strip()
+    if not data_baru_clean or data_baru_clean in ("nan", ""):
+        return False, "Nilai data_baru kosong — tidak ada yang perlu diupdate."
+
+    # ── Resolve: tentukan kolom & nilai yang akan ditulis ─────────
+    if change_type == "Reporting Line":
+        # data_baru = nama manager baru → cari Employee ID-nya
+        match = emp_df[
+            emp_df["Employee Name"].str.strip().str.lower() == data_baru_clean.lower()
+        ]
+        if match.empty:
+            return False, (
+                f"Manager baru '{data_baru_clean}' tidak ditemukan di Employee Data. "
+                f"Pastikan nama persis sama. Write-back dibatalkan."
+            )
+        if len(match) > 1:
+            ids = ", ".join(match["Employee ID"].tolist())
+            return False, (
+                f"Nama '{data_baru_clean}' ditemukan lebih dari satu EID ({ids}). "
+                f"Perjelas nama manager. Write-back dibatalkan."
+            )
+        new_value  = match.iloc[0]["Employee ID"]
+        target_col = "Manager ID"
+
+    elif change_type == "Nama Divisi":
+        # data_baru = nama divisi — validasi keberadaan di data
+        valid_divs = emp_df["Division"].dropna().unique().tolist()
+        match_div  = [d for d in valid_divs if d.strip().lower() == data_baru_clean.lower()]
+        if not match_div:
+            return False, (
+                f"Divisi '{data_baru_clean}' tidak ditemukan di Employee Data. "
+                f"Pastikan nama divisi tujuan valid. Write-back dibatalkan."
+            )
+        new_value  = match_div[0]
+        target_col = "Division"
+
+    else:
+        return False, f"change_type '{change_type}' belum didukung write-back otomatis."
+
+    # ── Cari baris EID di sheet1 dan update ───────────────────────
+    try:
+        sheet      = client.open_by_key(SHEET_ID).sheet1
+        header_row = sheet.row_values(1)
+
+        if target_col not in header_row:
+            return False, f"Kolom '{target_col}' tidak ditemukan di header sheet1."
+        col_idx = header_row.index(target_col) + 1  # gspread 1-indexed
+
+        if "Employee ID" not in header_row:
+            return False, "Kolom 'Employee ID' tidak ditemukan di sheet1."
+        eid_col_idx = header_row.index("Employee ID") + 1
+
+        try:
+            cell = sheet.find(employee_id, in_column=eid_col_idx)
+        except Exception:
+            cell = None
+
+        if not cell:
+            return False, f"Employee ID '{employee_id}' tidak ditemukan di sheet1."
+
+        sheet.update_cell(cell.row, col_idx, new_value)
+
+        # ── Invalidate semua cache yang depend on employee_data ────
+        load_data.clear()
+        load_change_requests.clear()
+        try:
+            build_unified_view.clear()
+        except Exception:
+            pass
+
+        return True, (
+            f"Employee ID {employee_id} — kolom '{target_col}' "
+            f"diperbarui menjadi '{new_value}'."
+        )
+
+    except Exception as e:
+        return False, f"Gagal update sheet: {str(e)[:150]}"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -2559,6 +2838,83 @@ elif _active == 2:
             st.caption(f"{L['showing']} **{len(view_mis)}** isu")
             st.dataframe(view_mis, use_container_width=True, height=400)
 
+            # ── Quick CR — buat Change Request langsung dari mismatch ──
+            # Hanya tampil untuk mismatch yang field-nya bisa di-CR
+            CR_ELIGIBLE_FIELDS = {"Division", "Business Unit"}
+            cr_eligible = view_mis[view_mis["Field"].isin(CR_ELIGIBLE_FIELDS)].copy() if not view_mis.empty else pd.DataFrame()
+
+            if not cr_eligible.empty and _is_admin:
+                st.markdown(f"""
+                <div style="background:{T['accent_bg']};border:1px solid {T['border2']};
+                    border-radius:8px;padding:12px 16px;margin:16px 0 8px 0;
+                    font-size:13px;color:{T['accent']};">
+                    ⚡ <b>Quick CR</b> — Buat Change Request langsung dari temuan mismatch di bawah ini.
+                    Hanya tersedia untuk field: Divisi dan Business Unit.
+                </div>
+                """, unsafe_allow_html=True)
+
+                # Deduplicate per Employee ID — ambil mismatch pertama per orang
+                cr_candidates = cr_eligible.drop_duplicates(subset=["Employee ID"]).head(10)
+                for _, mis_row in cr_candidates.iterrows():
+                    eid    = str(mis_row.get("Employee ID", ""))
+                    ename  = str(mis_row.get("Employee Name", ""))
+                    field  = str(mis_row.get("Field", ""))
+                    val_emp = str(mis_row.get("Nilai di Employee Data", ""))
+                    val_mpp = str(mis_row.get("Nilai di MPP", ""))
+                    change_type_quick = "Nama Divisi" if field == "Division" else "Reporting Line"
+
+                    with st.expander(f"📋 {ename} ({eid}) — {field}: '{val_emp}' → '{val_mpp}'", expanded=False):
+                        st.caption(
+                            f"Karyawan ini tercatat di **{field}** = '{val_emp}' (Employee Data) "
+                            f"namun MPP mencatat '{val_mpp}'. "
+                            f"Buat CR untuk menyelaraskan data."
+                        )
+                        col_qcr1, col_qcr2 = st.columns(2)
+                        with col_qcr1:
+                            qcr_name  = st.text_input("Nama Requester *", key=f"qcr_name_{eid}",
+                                                       value=_user_info.get("name",""),
+                                                       placeholder="Nama lengkap")
+                            qcr_email = st.text_input("Email Requester *", key=f"qcr_email_{eid}",
+                                                       value=st.session_state.get("user_email",""),
+                                                       placeholder="email@mekari.com")
+                        with col_qcr2:
+                            qcr_alasan = st.text_area(
+                                "Alasan *", key=f"qcr_alasan_{eid}", height=80,
+                                value=f"Rekonsiliasi data: {field} di Employee Data ('{val_emp}') "
+                                      f"tidak sesuai dengan MPP ('{val_mpp}')."
+                            )
+
+                        if st.button(f"📨 Buat CR untuk {ename}", key=f"qcr_submit_{eid}",
+                                     use_container_width=True):
+                            errors_qcr = []
+                            if not qcr_name.strip():  errors_qcr.append("Nama requester wajib diisi")
+                            if not qcr_email.strip() or "@" not in qcr_email: errors_qcr.append("Email tidak valid")
+                            if not qcr_alasan.strip(): errors_qcr.append("Alasan wajib diisi")
+                            if errors_qcr:
+                                for e in errors_qcr: st.error(f"❌ {e}")
+                            else:
+                                cr_row = {
+                                    "request_id":      generate_request_id(),
+                                    "submitted_date":  datetime.now().strftime("%Y-%m-%d %H:%M"),
+                                    "requester_name":  qcr_name.strip(),
+                                    "requester_email": qcr_email.strip(),
+                                    "change_type":     change_type_quick,
+                                    "employee_id":     eid,
+                                    "employee_name":   ename,
+                                    "data_lama":       val_emp,
+                                    "data_baru":       val_mpp,
+                                    "alasan":          qcr_alasan.strip(),
+                                    "status":          "Pending",
+                                    "reviewed_by":     "",
+                                    "reviewed_date":   "",
+                                    "catatan":         f"[Auto dari Compliance Mismatch] Field: {field}",
+                                }
+                                if save_change_request(cr_row):
+                                    st.success(f"✅ CR berhasil dibuat untuk **{ename}**. Cek Tab Change Request → Inbox.")
+                                    load_change_requests.clear()
+                                else:
+                                    st.error("❌ Gagal menyimpan CR. Periksa koneksi Google Sheets.")
+
             st.divider()
             _bkd2_title = L["breakdown_field"] if st.session_state.lang == "en" else "Breakdown per Field"
             st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:8px;'>{_bkd2_title}</div>", unsafe_allow_html=True)
@@ -3009,10 +3365,32 @@ elif _active == 4:
                             col_a, col_r = st.columns(2)
                             with col_a:
                                 if st.button("✅ Approve", key=f"approve_{row.get('request_id','')}", use_container_width=True):
-                                    if not reviewer.strip(): st.error("Nama reviewer harus diisi")
+                                    if not reviewer.strip():
+                                        st.error("Nama reviewer harus diisi")
                                     else:
-                                        if update_cr_status(row.get("request_id",""), "Approved", reviewer.strip(), catatan_review.strip()):
-                                            st.success("✅ Approved!"); st.rerun()
+                                        # Step 1: update status CR di change_requests sheet
+                                        cr_ok = update_cr_status(
+                                            row.get("request_id",""), "Approved",
+                                            reviewer.strip(), catatan_review.strip()
+                                        )
+                                        if cr_ok:
+                                            # Step 2: write-back ke employee_data sheet
+                                            wb_ok, wb_msg = execute_cr_writeback(
+                                                employee_id = str(row.get("employee_id","")).strip(),
+                                                change_type = str(row.get("change_type","")).strip(),
+                                                data_baru   = str(row.get("data_baru","")).strip(),
+                                                emp_df      = df,
+                                            )
+                                            if wb_ok:
+                                                st.success(f"✅ Approved & data diperbarui — {wb_msg}")
+                                            else:
+                                                # CR sudah Approved di audit trail,
+                                                # tapi write-back gagal — tampilkan warning
+                                                st.warning(
+                                                    f"⚠️ CR berhasil di-Approve, namun write-back ke Employee Data gagal:\n\n"
+                                                    f"{wb_msg}\n\nUpdate manual diperlukan."
+                                                )
+                                            st.rerun()
                             with col_r:
                                 if st.button("❌ Reject", key=f"reject_{row.get('request_id','')}", use_container_width=True):
                                     if not reviewer.strip(): st.error("Nama reviewer harus diisi")
