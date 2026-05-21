@@ -1668,8 +1668,20 @@ function zoomIn() {{ scale = Math.min(scale + 0.15, 3); applyTransform(); }}
 function zoomOut() {{ scale = Math.max(scale - 0.15, 0.2); applyTransform(); }}
 function resetView() {{ scale = 1; translateX = 0; translateY = 0; applyTransform(); }}
 function fitView() {{
-  scale = Math.min(canvas.clientWidth / (treeRoot.scrollWidth + 60), canvas.clientHeight / (treeRoot.scrollHeight + 60), 1);
-  translateX = 0; translateY = 20; applyTransform();
+  requestAnimationFrame(() => {{
+    // Baca dimensi setelah layout selesai
+    const treeW = treeRoot.scrollWidth;
+    const treeH = treeRoot.scrollHeight;
+    const cW    = canvas.clientWidth;
+    const cH    = canvas.clientHeight;
+    if (treeW === 0 || treeH === 0) {{ setTimeout(fitView, 200); return; }} // retry jika belum siap
+    scale = Math.min(cW / (treeW + 80), cH / (treeH + 80), 1);
+    translateX = 0;
+    translateY = 20;
+    treeRoot.style.transition = 'transform 0.4s ease';
+    applyTransform();
+    setTimeout(() => {{ treeRoot.style.transition = ''; }}, 450);
+  }});
 }}
 canvas.addEventListener('wheel', (e) => {{ e.preventDefault(); scale = Math.max(0.2, Math.min(3, scale + (e.deltaY > 0 ? -0.1 : 0.1))); applyTransform(); }}, {{ passive: false }});
 canvas.addEventListener('mousedown', (e) => {{ if (e.target.closest('.node-box')) return; isDragging = true; dragStartX = e.clientX; dragStartY = e.clientY; dragStartTX = translateX; dragStartTY = translateY; }});
@@ -1715,28 +1727,60 @@ function renderNode(node) {{
   return wrapper;
 }}
 function scrollToHighlighted() {{
-  const el = document.getElementById('highlighted-node');
-  if (!el) return;
-  // Tunggu layout selesai
-  setTimeout(() => {{
-    const canvasRect = canvas.getBoundingClientRect();
-    const elRect     = el.getBoundingClientRect();
-    // Hitung posisi relatif terhadap tree-root
-    const elCenterX  = elRect.left + elRect.width  / 2 - canvasRect.left;
-    const elCenterY  = elRect.top  + elRect.height / 2 - canvasRect.top;
-    const targetX    = canvasRect.width  / 2 - elCenterX;
-    const targetY    = canvasRect.height / 2 - elCenterY;
-    // Smooth transition
-    treeRoot.style.transition = 'transform 0.6s cubic-bezier(0.4,0,0.2,1)';
-    scale = 1.2;
-    translateX = targetX;
-    translateY = targetY - 60;
+  // Retry sampai node benar-benar ada di DOM dan punya ukuran
+  let attempts = 0;
+  function tryScroll() {{
+    const el = document.getElementById('highlighted-node');
+    if (!el || el.getBoundingClientRect().width === 0) {{
+      if (attempts++ < 20) {{ setTimeout(tryScroll, 150); }} // retry max 3 detik
+      return;
+    }}
+    // Reset transform dulu agar getBoundingClientRect akurat (tanpa distorsi scale)
+    const prevScale = scale, prevTX = translateX, prevTY = translateY;
+    scale = 1; translateX = 0; translateY = 0;
+    treeRoot.style.transition = '';
     applyTransform();
-    setTimeout(() => {{ treeRoot.style.transition = ''; }}, 700);
-    // Show legend item
-    const legEl = document.getElementById('legend-highlight');
-    if (legEl) legEl.style.display = 'flex';
-  }}, 350);
+
+    // Baca posisi setelah transform di-reset (koordinat bersih)
+    requestAnimationFrame(() => {{
+      const canvasRect = canvas.getBoundingClientRect();
+      const elRect     = el.getBoundingClientRect();
+
+      // Posisi center node relatif terhadap canvas
+      const elCenterX = elRect.left + elRect.width  / 2 - canvasRect.left;
+      const elCenterY = elRect.top  + elRect.height / 2 - canvasRect.top;
+
+      // Target: bawa node ke tengah canvas, sedikit di atas center (UX)
+      const targetTX = canvasRect.width  / 2 - elCenterX;
+      const targetTY = canvasRect.height / 3 - elCenterY;
+
+      // Pilih scale: fit seluruh tree jika besar, zoom ke node jika kecil
+      const treeW = treeRoot.scrollWidth;
+      const treeH = treeRoot.scrollHeight;
+      const fitScale = Math.min(
+        canvasRect.width  / (treeW  + 80),
+        canvasRect.height / (treeH  + 80),
+        1.0  // tidak lebih dari 100% — hindari blur
+      );
+      // Kalau tree kecil (<= canvas), pakai 0.9; kalau besar, pakai fitScale
+      const targetScale = treeW <= canvasRect.width && treeH <= canvasRect.height
+        ? 0.9
+        : Math.max(fitScale, 0.4);
+
+      // Animasi smooth ke posisi target
+      treeRoot.style.transition = 'transform 0.55s cubic-bezier(0.4,0,0.2,1)';
+      scale = targetScale;
+      translateX = targetTX * targetScale;
+      translateY = targetTY;
+      applyTransform();
+      setTimeout(() => {{ treeRoot.style.transition = ''; }}, 600);
+
+      // Tampilkan legend highlight jika ada
+      const legEl = document.getElementById('legend-highlight');
+      if (legEl) legEl.style.display = 'flex';
+    }});
+  }}
+  setTimeout(tryScroll, 200); // delay awal ringan, retry handle sisanya
 }}
 function rerenderTree() {{
   const r = document.getElementById('tree-root');
@@ -1746,7 +1790,8 @@ function rerenderTree() {{
 }}
 treeData.forEach(n => applyInitialCollapse(n, 0));
 rerenderTree();
-if (!highlightId) {{ setTimeout(fitView, 300); }}
+if (!highlightId) {{ setTimeout(fitView, 400); }}
+else {{ scrollToHighlighted(); }}
 </script></body></html>"""
 
 
