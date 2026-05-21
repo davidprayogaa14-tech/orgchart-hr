@@ -2643,6 +2643,9 @@ if _active == 0:
         selected_emp_row = matched_global.iloc[0]
 
     # AUTO-SET filter BU & Divisi berdasarkan karyawan yang ditemukan/dipilih
+    # Catatan: auto-set ini hanya untuk menggeser selectbox BU/Divisi agar
+    # konsisten secara visual. Saat cross-div search aktif, filtered dataset
+    # diabaikan dan di-override oleh BFS downward dari leader.
     if selected_emp_row is not None:
         _tbu  = str(selected_emp_row.get("Business Unit", ""))
         _tdiv = str(selected_emp_row.get("Division", ""))
@@ -2675,37 +2678,77 @@ if _active == 0:
             ]["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""]
             selected_sbu = st.selectbox(L["filter_sbu"], [L["filter_all_sbu_label"]] + sorted(sbu_opts_raw), key="sel_sbu")
 
-        filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
-        if selected_sbu != L["filter_all_sbu_label"]:
-            filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
+        # ── Determine filtered dataset ────────────────────────────
+        # KASUS A: user search nama → tampilkan seluruh subtree leader
+        #          lintas divisi (bukan dibatasi divisi filter)
+        # KASUS B: user filter manual BU/Divisi → tampilkan divisi tsb
+        _is_cross_div_search = (
+            selected_emp_row is not None
+            and search_highlight_id is not None
+        )
 
-        all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
-        with col_d:
-            selected_leader = st.selectbox(L["filter_leader"],
-                                           [L["filter_all_leader"]] + sorted(all_leaders), key="sel_leader")
+        if _is_cross_div_search:
+            # BFS downward dari leader yang dicari — seluruh df, tanpa batas divisi
+            _lid = search_highlight_id
+            sub_ids_search: set = set()
+            to_visit_s = [_lid]
+            while to_visit_s:
+                curr_s = to_visit_s.pop()
+                if curr_s in sub_ids_search:
+                    continue
+                sub_ids_search.add(curr_s)
+                to_visit_s.extend(df[df["Manager ID"] == curr_s]["Employee ID"].tolist())
+            filtered = df[df["Employee ID"].isin(sub_ids_search)].copy()
+            _cross_div_label = True
+        else:
+            filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
+            if selected_sbu != L["filter_all_sbu_label"]:
+                filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
+            _cross_div_label = False
 
-        if selected_leader != L["filter_all_leader"]:
-            leader_id = filtered[filtered["Employee Name"] == selected_leader]["Employee ID"].values
-            if len(leader_id) > 0:
-                lid      = leader_id[0]
-                sub_ids  = set()
-                to_visit = [lid]
-                while to_visit:
-                    curr = to_visit.pop()
-                    sub_ids.add(curr)
-                    to_visit.extend(df[df["Manager ID"] == curr]["Employee ID"].tolist())
-                filtered = df[df["Employee ID"].isin(sub_ids)].copy()
+        # Filter by leader (hanya berlaku di mode non-search)
+        if not _is_cross_div_search:
+            all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
+            with col_d:
+                selected_leader = st.selectbox(L["filter_leader"],
+                                               [L["filter_all_leader"]] + sorted(all_leaders), key="sel_leader")
+            if selected_leader != L["filter_all_leader"]:
+                leader_id = filtered[filtered["Employee Name"] == selected_leader]["Employee ID"].values
+                if len(leader_id) > 0:
+                    lid      = leader_id[0]
+                    sub_ids  = set()
+                    to_visit = [lid]
+                    while to_visit:
+                        curr = to_visit.pop()
+                        sub_ids.add(curr)
+                        to_visit.extend(df[df["Manager ID"] == curr]["Employee ID"].tolist())
+                    filtered = df[df["Employee ID"].isin(sub_ids)].copy()
+        else:
+            # Saat cross-div search aktif, sembunyikan filter leader (tidak relevan)
+            with col_d:
+                st.selectbox(L["filter_leader"], [L["filter_all_leader"]], key="sel_leader", disabled=True)
 
         col_lv, col_info = st.columns([2, 4])
         with col_lv:
             level_opt = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"],
                                      help="Atur berapa level yang ditampilkan secara default")
         with col_info:
-            if search_highlight_id and search_highlight_id in filtered["Employee ID"].values:
+            if _is_cross_div_search:
+                _emp_name_hl = selected_emp_row["Employee Name"]
+                _divs_in_tree = ", ".join(sorted(filtered["Division"].dropna().unique().tolist())[:5])
+                st.caption(
+                    f"📊 Menampilkan **{len(filtered)}** karyawan di bawah **{_emp_name_hl}** "
+                    f"(lintas divisi: {_divs_in_tree})"
+                )
+            elif search_highlight_id and search_highlight_id in filtered["Employee ID"].values:
                 _emp_name_hl = selected_emp_row["Employee Name"]
                 st.caption(f"📊 {L['showing_emp']} **{len(filtered)}** {L['employees']} — 🎯 **{_emp_name_hl}** {L['emp_found_in']}")
             else:
                 st.caption(f"📊 {L['showing_emp']} **{len(filtered)}** {L['employees']} {L['emp_in_div']}")
+
+        # Saat cross-div search, gunakan mode "company" agar warna node tidak dibatasi 1 divisi
+        _tree_mode = "company" if _is_cross_div_search else "division"
+        _tree_div  = selected_div if not _is_cross_div_search else ""
 
         selected_level  = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt]
         all_ids_needed  = get_all_managers(filtered["Employee ID"].tolist(), df)
@@ -2716,7 +2759,7 @@ if _active == 0:
             ~full_data["Manager ID"].isin(all_ids_set) | full_data["Manager ID"].isin({"", "nan"})
         ]["Employee ID"].astype(str).tolist()
 
-        tree_data  = build_tree_json(full_data, selected_div, root_ids, mode="division")
+        tree_data  = build_tree_json(full_data, _tree_div, root_ids, mode=_tree_mode)
         chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T, highlight_id=search_highlight_id)
         st.components.v1.html(chart_html, height=680, scrolling=False)
 
