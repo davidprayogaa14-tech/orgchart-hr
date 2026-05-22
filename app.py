@@ -811,13 +811,17 @@ def get_gspread_client():
         import gspread
         from google.oauth2.service_account import Credentials
         if "gcp_service_account" in st.secrets:
-            creds = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=SCOPES)
+            creds = Credentials.from_service_account_info(
+                dict(st.secrets["gcp_service_account"]), scopes=SCOPES
+            )
         elif os.path.exists(CREDS_FILE):
             creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
         else:
+            st.error("❌ Credentials tidak ditemukan. Pastikan [gcp_service_account] sudah diisi di Streamlit Secrets.")
             return None
         return gspread.authorize(creds)
-    except Exception:
+    except Exception as e:
+        st.error(f"❌ Gagal inisialisasi Google credentials: {str(e)[:200]}")
         return None
 
 
@@ -826,17 +830,19 @@ def load_data():
     client = get_gspread_client()
     if client:
         try:
-            # Baca dari sheet perusahaan (EMPLOYEE_SHEET_ID) worksheet "Employment Information"
             ws = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(EMPLOYEE_WORKSHEET)
             df = pd.DataFrame(ws.get_all_records())
             return clean_df(df), "google_sheets"
         except Exception as e:
-            st.warning(f"⚠️ Gagal membaca Employee Data dari sheet perusahaan: {str(e)[:80]}")
+            st.warning(f"⚠️ Gagal membaca Employee Data dari sheet perusahaan: {str(e)[:200]}")
     try:
         df = pd.read_csv("employee_data.csv")
         return clean_df(df), "local_csv"
     except Exception:
         return None, "error"
+
+
+
 
 
 @st.cache_data(ttl=60)
