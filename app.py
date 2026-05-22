@@ -65,13 +65,30 @@ _PUBLIC_USER_INFO = {
 # ══════════════════════════════════════════════════════════════════
 # CONSTANTS
 # ══════════════════════════════════════════════════════════════════
+
+# ── Sheet lama (personal) — masih dipakai untuk MPP, CR, ACL ─────
 SHEET_ID   = "1LaZpDfmFZJvIARf0RYoX-DtcbkjgOMlwT74nbamnvqM"
+
+# ── Sheet baru (perusahaan) — Employee Data ───────────────────────
+EMPLOYEE_SHEET_ID  = "1AHuIlmgUayU9bDMNHuh_z5O4EkZkoG6bvaFafGHRO2M"
+EMPLOYEE_WORKSHEET = "Employment Information"
+
 CREDS_FILE = "credentials.json"
 SCOPES     = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 CHIEF_ROOT = "SLKR001"
+
+# ── Mapping kolom: nama di sheet perusahaan → nama internal dashboard ──
+# Kolom yang namanya SAMA tidak perlu didaftarkan di sini.
+EMPLOYEE_COL_MAP = {
+    "Full Name":                              "Employee Name",
+    "Organization":                           "Division",
+    "Employment Approval Line Employee ID":   "Manager ID",
+    "Employment Approval Line":               "Manager Name",
+    "Employment Approval Line Email":         "Manager Email",
+}
 
 # ── Logo Mekari (base64 encoded) ─────────────────────────────
 _MEKARI_LOGO_B64 = "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"
@@ -794,12 +811,37 @@ def reset_user_password(email: str, new_password: str) -> bool:
 # DATA HELPERS
 # ══════════════════════════════════════════════════════════════════
 def clean_df(df: pd.DataFrame) -> pd.DataFrame:
+    # Strip spasi dari semua nama kolom
     df.columns = df.columns.str.strip()
+
+    # Rename kolom dari sheet perusahaan ke nama internal dashboard
+    rename_map = {k: v for k, v in EMPLOYEE_COL_MAP.items() if k in df.columns}
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    # Hapus kolom sistem dari sheet perusahaan (tidak dipakai dashboard)
+    cols_to_drop = [
+        "Webhook Timestamp", "Webhook ID", "user_id",
+        "Employment Status", "Primary Budget Holder", "Secondary Budget Holder",
+        "Join Date", "End Date", "Resign Date", "Original Placement",
+        "Notice Period (TBC)", "Branch", "Tenure",
+        "Employment Approval Line User ID", "HRBP Email", "Email",
+    ]
+    df = df.drop(columns=[c for c in cols_to_drop if c in df.columns], errors="ignore")
+
+    # Normalisasi kolom wajib
     df["Employee ID"] = df["Employee ID"].astype(str).str.strip()
     df["Manager ID"]  = df["Manager ID"].fillna("").astype(str).str.strip()
-    df["SBU/Tribe"] = df["SBU/Tribe"].fillna("").astype(str).str.strip() if "SBU/Tribe" in df.columns else ""
+    df["SBU/Tribe"]   = df["SBU/Tribe"].fillna("").astype(str).str.strip() if "SBU/Tribe" in df.columns else ""
+
+    # Kolom opsional - pastikan ada meski kosong
     if "Career Stage" not in df.columns:
         df["Career Stage"] = ""
+    if "Job ID" not in df.columns:
+        df["Job ID"] = ""
+    if "Business Unit" not in df.columns:
+        df["Business Unit"] = ""
+
     return df
 
 
@@ -823,11 +865,12 @@ def load_data():
     client = get_gspread_client()
     if client:
         try:
-            sheet = client.open_by_key(SHEET_ID).sheet1
-            df = pd.DataFrame(sheet.get_all_records())
+            # Baca dari sheet perusahaan (EMPLOYEE_SHEET_ID) worksheet "Employment Information"
+            ws = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(EMPLOYEE_WORKSHEET)
+            df = pd.DataFrame(ws.get_all_records())
             return clean_df(df), "google_sheets"
         except Exception as e:
-            st.warning(f"⚠️ Gagal membaca dari Google Sheets: {str(e)[:80]}")
+            st.warning(f"⚠️ Gagal membaca Employee Data dari sheet perusahaan: {str(e)[:80]}")
     try:
         df = pd.read_csv("employee_data.csv")
         return clean_df(df), "local_csv"
@@ -968,17 +1011,21 @@ def execute_cr_writeback(
     else:
         return False, f"change_type '{change_type}' belum didukung write-back otomatis."
 
-    # ── Cari baris EID di sheet1 dan update ───────────────────────
+    # ── Cari baris EID di sheet perusahaan dan update ────────────
     try:
-        sheet      = client.open_by_key(SHEET_ID).sheet1
+        sheet      = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(EMPLOYEE_WORKSHEET)
         header_row = sheet.row_values(1)
 
-        if target_col not in header_row:
-            return False, f"Kolom '{target_col}' tidak ditemukan di header sheet1."
-        col_idx = header_row.index(target_col) + 1  # gspread 1-indexed
+        # Resolve nama kolom: internal name → nama asli di sheet perusahaan
+        reverse_col_map = {v: k for k, v in EMPLOYEE_COL_MAP.items()}
+        sheet_col_name  = reverse_col_map.get(target_col, target_col)
+
+        if sheet_col_name not in header_row:
+            return False, f"Kolom '{sheet_col_name}' tidak ditemukan di header sheet perusahaan."
+        col_idx = header_row.index(sheet_col_name) + 1  # gspread 1-indexed
 
         if "Employee ID" not in header_row:
-            return False, "Kolom 'Employee ID' tidak ditemukan di sheet1."
+            return False, "Kolom 'Employee ID' tidak ditemukan di sheet perusahaan."
         eid_col_idx = header_row.index("Employee ID") + 1
 
         try:
@@ -987,7 +1034,7 @@ def execute_cr_writeback(
             cell = None
 
         if not cell:
-            return False, f"Employee ID '{employee_id}' tidak ditemukan di sheet1."
+            return False, f"Employee ID '{employee_id}' tidak ditemukan di sheet perusahaan."
 
         sheet.update_cell(cell.row, col_idx, new_value)
 
