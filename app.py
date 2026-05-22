@@ -207,15 +207,9 @@ LANG = {
 
 @st.cache_data(ttl=300)
 def load_mpp_data():
-    client = get_gspread_client()
-    if client:
-        try:
-            ws = client.open_by_key(SHEET_ID).worksheet("mpp_data")
-            df_mpp = pd.DataFrame(ws.get_all_records())
-            df_mpp.columns = df_mpp.columns.str.strip()
-            return df_mpp
-        except Exception:
-            pass
+    # ⏸️ SEMENTARA DINONAKTIFKAN — menunggu link MPP sheet perusahaan
+    # Sheet lama (SHEET_ID) tidak lagi digunakan sejak migrasi ke sheet perusahaan.
+    # Aktifkan kembali setelah MPP_SHEET_ID tersedia dari Tim PA.
     return pd.DataFrame()
 
 
@@ -548,51 +542,18 @@ def load_acl_table() -> dict:
     Return dict keyed by email (lowercase).
     Fallback ke _ACL_FALLBACK jika sheet belum ada / kosong.
     """
-    client = get_gspread_client()
-    if not client:
-        return _ACL_FALLBACK
-    try:
-        ws   = client.open_by_key(SHEET_ID).worksheet("app_users")
-        rows = ws.get_all_records()
-        if not rows:
-            return _ACL_FALLBACK
-        acl: dict = {}
-        for r in rows:
-            email_key = str(r.get("email", "")).strip().lower()
-            if not email_key:
-                continue
-            acl[email_key] = {
-                "name":        str(r.get("name", "")).strip(),
-                "role":        str(r.get("role", "employee")).strip().lower(),
-                "password":    str(r.get("password", "")).strip(),
-                "allowed_bus": str(r.get("allowed_bus", "*")).strip(),
-                "allowed_sbus":str(r.get("allowed_sbus", "*")).strip(),
-                "employee_id": str(r.get("employee_id", "")).strip(),
-                "is_active":   str(r.get("is_active", "TRUE")).strip().upper() in ("TRUE", "1", "YES"),
-                "scope_note":  str(r.get("scope_note", "")).strip(),
-            }
-        return acl if acl else _ACL_FALLBACK
-    except Exception:
-        return _ACL_FALLBACK
+    # ⏸️ SEMENTARA DINONAKTIFKAN — menunggu migrasi app_users ke sheet perusahaan.
+    # Sheet lama (SHEET_ID) tidak lagi digunakan sejak migrasi ke sheet perusahaan.
+    # Aktifkan kembali setelah ACL_SHEET_ID tersedia dari Tim PA.
+    return _ACL_FALLBACK
 
 
 def get_acl_sheet():
     """
     Return worksheet 'app_users'. Buat otomatis jika belum ada.
+    ⏸️ SEMENTARA DINONAKTIFKAN — menunggu migrasi app_users ke sheet perusahaan.
     """
-    client = get_gspread_client()
-    if not client:
-        return None
-    try:
-        return client.open_by_key(SHEET_ID).worksheet("app_users")
-    except Exception:
-        try:
-            sh = client.open_by_key(SHEET_ID)
-            ws = sh.add_worksheet(title="app_users", rows=500, cols=len(_ACL_COLS))
-            ws.append_row(_ACL_COLS, value_input_option="USER_ENTERED")
-            return ws
-        except Exception:
-            return None
+    return None
 
 
 def get_user_info(email: str) -> dict | None:
@@ -880,31 +841,19 @@ def load_data():
 
 @st.cache_data(ttl=60)
 def load_change_requests():
-    client = get_gspread_client()
-    if not client:
-        return pd.DataFrame()
-    try:
-        ws   = client.open_by_key(SHEET_ID).worksheet("change_requests")
-        data = ws.get_all_records()
-        if not data:
-            return pd.DataFrame(columns=[
-                "request_id","submitted_date","requester_name","requester_email",
-                "change_type","employee_id","employee_name","data_lama","data_baru",
-                "alasan","status","reviewed_by","reviewed_date","catatan",
-            ])
-        return pd.DataFrame(data)
-    except Exception:
-        return pd.DataFrame()
+    # ⏸️ SEMENTARA DINONAKTIFKAN — menunggu link Change Request sheet perusahaan.
+    # Sheet lama (SHEET_ID) tidak lagi digunakan sejak migrasi ke sheet perusahaan.
+    # Aktifkan kembali setelah CR_SHEET_ID tersedia dari Tim PA.
+    return pd.DataFrame(columns=[
+        "request_id","submitted_date","requester_name","requester_email",
+        "change_type","employee_id","employee_name","data_lama","data_baru",
+        "alasan","status","reviewed_by","reviewed_date","catatan",
+    ])
 
 
 def get_cr_sheet():
-    client = get_gspread_client()
-    if not client:
-        return None
-    try:
-        return client.open_by_key(SHEET_ID).worksheet("change_requests")
-    except Exception:
-        return None
+    # ⏸️ SEMENTARA DINONAKTIFKAN — menunggu link Change Request sheet perusahaan.
+    return None
 
 
 def save_change_request(row_data: dict) -> bool:
