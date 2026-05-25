@@ -73,6 +73,18 @@ SHEET_ID   = "1LaZpDfmFZJvIARf0RYoX-DtcbkjgOMlwT74nbamnvqM"
 EMPLOYEE_SHEET_ID  = "1AHuIlmgUayU9bDMNHuh_z5O4EkZkoG6bvaFafGHRO2M"
 EMPLOYEE_WORKSHEET = "Employment Information"
 
+# ── Activity Log — worksheet di sheet yang sama ───────────────────
+ACTIVITY_LOG_WORKSHEET = "activity_log"
+
+# ── Daftar email Admin ─────────────────────────────────────────────
+ADMIN_EMAILS = {
+    "david.prayoga@mekari.com",
+    # tambahkan email admin lain di sini
+}
+
+# ── BU Management — selalu bisa dilihat oleh C-1 Leaders ──────────
+MANAGEMENT_BU = "Management"
+
 CREDS_FILE = "credentials.json"
 SCOPES     = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -611,79 +623,175 @@ def apply_rbac_filter(df: pd.DataFrame, user_info: dict) -> pd.DataFrame:
     """
     Row-Level Security — filter DataFrame berdasarkan role & scope user.
 
-    Mapping:
-    - admin / cxo   → full access, no filter
-    - leader        → filter by allowed_bus + allowed_sbus
-    - employee      → subtree C-1 (direct reports of their manager only)
+    Rules:
+    - admin         → lihat semua organisasi + semua fitur
+    - cxo           → lihat semua BU & semua karyawan (Career Stage C-Level)
+    - leader (C-1)  → lihat BU sendiri + BU Management
+    - employee      → lihat Divisi sendiri saja (C-2 ke bawah)
 
     PENTING: fungsi ini hanya dipanggil SETELAH auth berhasil.
     df yang dikembalikan adalah satu-satunya data yang boleh dilihat user.
     """
     role = user_info.get("role", "employee")
 
-    # ── Full access ───────────────────────────────────────────────
+    # ── Admin & CXO: full access ──────────────────────────────────
     if role in ("admin", "cxo"):
         return df
 
-    # ── Leader: BU + SBU scope ────────────────────────────────────
+    # ── Leader (C-1): BU sendiri + BU Management ─────────────────
     if role == "leader":
-        raw_bus  = user_info.get("allowed_bus", "*").strip()
-        raw_sbus = user_info.get("allowed_sbus", "*").strip()
-
-        # Parse comma-separated, handle wildcard
-        allowed_bus  = [] if raw_bus  == "*" else [b.strip() for b in raw_bus.split(",")  if b.strip()]
-        allowed_sbus = [] if raw_sbus == "*" else [s.strip() for s in raw_sbus.split(",") if s.strip()]
+        user_bu = user_info.get("allowed_bus", "").strip()
+        
+        # Kumpulkan BU yang boleh dilihat: BU sendiri + Management
+        allowed_bus = set()
+        if user_bu and user_bu != "*":
+            for b in user_bu.split(","):
+                if b.strip():
+                    allowed_bus.add(b.strip())
+        allowed_bus.add(MANAGEMENT_BU)  # selalu tambahkan BU Management
 
         filtered = df.copy()
-
-        if allowed_bus:  # non-empty = restricted
-            if "Business Unit" in filtered.columns:
-                filtered = filtered[filtered["Business Unit"].isin(allowed_bus)]
-
-        if allowed_sbus:
-            if "SBU/Tribe" in filtered.columns:
-                # Tetap tampilkan node tanpa SBU (atasan lintas unit tetap visible)
-                sbu_mask = (
-                    filtered["SBU/Tribe"].isin(allowed_sbus) |
-                    filtered["SBU/Tribe"].isin(["", "nan"]) |
-                    filtered["SBU/Tribe"].isna()
-                )
-                filtered = filtered[sbu_mask]
-
+        if "Business Unit" in filtered.columns:
+            filtered = filtered[filtered["Business Unit"].isin(allowed_bus)]
         return filtered
 
-    # ── Employee: subtree C-1 (hanya bawahan dari manager mereka) ──
+    # ── Employee (C-2 ke bawah): Divisi sendiri saja ─────────────
     emp_id = user_info.get("employee_id", "").strip()
     if not emp_id or emp_id == "nan":
-        return df.iloc[0:0]  # deny: tidak ada EID → empty
+        return df.iloc[0:0]  # deny: tidak ada EID → empty dataframe
 
     user_row = df[df["Employee ID"] == emp_id]
     if user_row.empty:
         return df.iloc[0:0]
 
-    manager_id = str(user_row.iloc[0].get("Manager ID", "")).strip()
-    if not manager_id or manager_id in ("", "nan"):
+    # Employee (C-2 ke bawah) hanya lihat Divisi sendiri
+    user_division = str(user_row.iloc[0].get("Division", "")).strip()
+    if not user_division or user_division in ("", "nan"):
         return df.iloc[0:0]
 
-    # BFS downward dari manager (max depth 1 = hanya direct reports)
-    children_map = (
-        df[df["Manager ID"].notna() & (df["Manager ID"] != "")]
-        .groupby("Manager ID")["Employee ID"]
-        .apply(list)
-        .to_dict()
-    )
-    visible = set()
-    queue   = [(manager_id, 0)]
-    while queue:
-        node, depth = queue.pop(0)
-        if node in visible or depth > 1:
-            continue
-        visible.add(node)
-        if depth < 1:
-            for child in children_map.get(node, []):
-                queue.append((child, depth + 1))
+    return df[df["Division"] == user_division].copy()
 
-    return df[df["Employee ID"].isin(visible)].copy()
+
+# ══════════════════════════════════════════════════════════════════
+# SSO — Resolve user dari URL parameter ?email=...
+# ══════════════════════════════════════════════════════════════════
+def resolve_user_from_email(email: str, df: pd.DataFrame) -> dict | None:
+    """
+    Resolve user info dari email.
+    Urutan pengecekan:
+    1. Apakah email ada di ADMIN_EMAILS? → role admin
+    2. Apakah email ada di kolom Email di df? → cek Career Stage
+       - C-Level → role cxo
+       - C-1     → role leader (allowed_bus = BU user tsb)
+       - lainnya → role employee
+    3. Tidak ditemukan → return None (akses ditolak)
+    """
+    email_clean = email.strip().lower()
+
+    # ── 1. Cek Admin ──────────────────────────────────────────────
+    if email_clean in {e.lower() for e in ADMIN_EMAILS}:
+        return {
+            "name":        email_clean,
+            "role":        "admin",
+            "allowed_bus": "*",
+            "allowed_sbus":"*",
+            "employee_id": "",
+            "is_active":   True,
+        }
+
+    # ── 2. Cek di DataFrame Employee ─────────────────────────────
+    if "Email" not in df.columns:
+        return None
+
+    # Normalisasi email di df untuk perbandingan case-insensitive
+    email_series = df["Email"].astype(str).str.strip().str.lower()
+    match = df[email_series == email_clean]
+
+    if match.empty:
+        return None  # Email tidak terdaftar → tolak akses
+
+    row           = match.iloc[0]
+    career_stage  = str(row.get("Career Stage", "")).strip().lower()
+    emp_bu        = str(row.get("Business Unit", "")).strip()
+    emp_id        = str(row.get("Employee ID", "")).strip()
+    emp_name      = str(row.get("Employee Name", "")).strip()
+    emp_division  = str(row.get("Division", "")).strip()
+
+    # ── Mapping Career Stage → Role ──────────────────────────────
+    if "c-level" in career_stage or career_stage == "clevel":
+        role        = "cxo"
+        allowed_bus = "*"
+    elif "c-1" in career_stage or career_stage == "c1":
+        role        = "leader"
+        allowed_bus = emp_bu  # BU sendiri (Management akan ditambah di apply_rbac_filter)
+    else:
+        role        = "employee"
+        allowed_bus = emp_bu
+
+    return {
+        "name":        emp_name or email_clean,
+        "role":        role,
+        "allowed_bus": allowed_bus,
+        "allowed_sbus":"*",
+        "employee_id": emp_id,
+        "division":    emp_division,
+        "is_active":   True,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
+# ACTIVITY LOG — Catat aktivitas user ke sheet activity_log
+# ══════════════════════════════════════════════════════════════════
+def log_activity(
+    user_email:  str,
+    activity:    str,
+    tab:         str  = "",
+    filters:     str  = "",
+    export_info: str  = "",
+    search_term: str  = "",
+) -> None:
+    """
+    Append 1 baris log ke worksheet activity_log.
+    Dipanggil secara non-blocking (exception di-swallow agar tidak ganggu UI).
+    """
+    try:
+        client = get_gspread_client()
+        if not client:
+            return
+        ws = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(ACTIVITY_LOG_WORKSHEET)
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ws.append_row([
+            now_str,        # Tanggal & Waktu
+            user_email,     # Email User
+            tab,            # Tab/Menu yang dikunjungi
+            activity,       # Aktivitas
+            filters,        # Filter yang digunakan
+            export_info,    # Data yang di-export
+            search_term,    # Search yang dilakukan
+        ], value_input_option="USER_ENTERED")
+    except Exception:
+        pass  # Log gagal tidak boleh ganggu UI
+
+
+def ensure_activity_log_header() -> None:
+    """
+    Pastikan header worksheet activity_log sudah ada.
+    Dipanggil sekali saat login.
+    """
+    try:
+        client = get_gspread_client()
+        if not client:
+            return
+        ws = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(ACTIVITY_LOG_WORKSHEET)
+        first_row = ws.row_values(1)
+        expected_header = [
+            "Tanggal & Waktu", "Email User", "Tab Dikunjungi",
+            "Aktivitas", "Filter Digunakan", "Data Di-Export", "Search Dilakukan"
+        ]
+        if not first_row or first_row[0] != "Tanggal & Waktu":
+            ws.insert_row(expected_header, index=1)
+    except Exception:
+        pass
 
 
 def save_acl_user(user_data: dict) -> bool:
@@ -793,12 +901,13 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
         df = df[df["End Date"] == ""]  # hanya ambil yang End Date-nya kosong
 
     # Hapus kolom sistem dari sheet perusahaan (tidak dipakai dashboard)
+    # CATATAN: kolom "Email" TIDAK di-drop — dipakai untuk SSO authentication
     cols_to_drop = [
         "Webhook Timestamp", "Webhook ID", "user_id",
         "Employment Status", "Primary Budget Holder", "Secondary Budget Holder",
         "Join Date", "End Date", "Resign Date", "Original Placement",
         "Notice Period (TBC)", "Branch", "Tenure",
-        "Employment Approval Line User ID", "HRBP Email", "Email",
+        "Employment Approval Line User ID", "HRBP Email",
     ]
     df = df.drop(columns=[c for c in cols_to_drop if c in df.columns], errors="ignore")
 
@@ -1908,16 +2017,47 @@ def _render_login_page():
 
 if PUBLIC_MODE:
     # ── PUBLIC MODE: bypass auth sepenuhnya ───────────────────────
-    # User langsung masuk sebagai admin read-only (tidak ada write-back sensitif)
-    # Hanya Tab Org Chart yang ditampilkan (lihat _can_access_tab di bawah)
     if not st.session_state.get("authenticated", False):
         st.session_state.authenticated = True
         st.session_state.user_info     = _PUBLIC_USER_INFO
         st.session_state.user_email    = "public"
 else:
-    # ── FULL MODE: auth normal ────────────────────────────────────
+    # ── FULL MODE: cek SSO dulu, fallback ke login form ───────────
     if not st.session_state.get("authenticated", False):
-        _render_login_page()
+
+        # ── Coba SSO via URL parameter ?email=... ─────────────────
+        # People DB mengirim email user via URL ketika redirect ke dashboard
+        _url_params = st.query_params
+        _sso_email  = _url_params.get("email", "").strip().lower()
+
+        if _sso_email and "@mekari.com" in _sso_email:
+            # Load df dulu untuk validasi email
+            _df_sso, _ = load_data()
+            if _df_sso is not None and not _df_sso.empty:
+                _sso_user = resolve_user_from_email(_sso_email, _df_sso)
+                if _sso_user:
+                    # Email valid & terdaftar → login otomatis
+                    st.session_state.authenticated = True
+                    st.session_state.user_email    = _sso_email
+                    st.session_state.user_info     = _sso_user
+                    # Catat login di activity log
+                    ensure_activity_log_header()
+                    log_activity(
+                        user_email = _sso_email,
+                        activity   = "Login via SSO (People Database)",
+                        tab        = "Login",
+                    )
+                    st.rerun()
+                else:
+                    # Email tidak terdaftar di database
+                    st.error("❌ Email Anda tidak terdaftar dalam sistem. Hubungi OD Admin.")
+                    st.stop()
+            else:
+                st.error("❌ Gagal memuat data. Coba refresh halaman.")
+                st.stop()
+        else:
+            # Tidak ada SSO parameter → tampilkan login form biasa
+            _render_login_page()
 
 _user_info = st.session_state.get("user_info", {
     "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
@@ -2588,6 +2728,27 @@ st.markdown(f"""
 
 _active = st.session_state.get("active_tab", 0)
 
+# ── Log tab visit (sekali per perubahan tab) ──────────────────────
+_log_email = st.session_state.get("user_email", "")
+_tab_names  = {
+    0: "Org Chart",
+    1: "Data Karyawan",
+    2: "Manager ID Hilang",
+    3: "Daftar Manager",
+    4: "Change Request",
+    5: "MPP Reconciliation",
+    99: "Admin Panel",
+}
+if _log_email and _log_email not in ("public", ""):
+    _last_logged_tab = st.session_state.get("_last_logged_tab", -1)
+    if _active != _last_logged_tab:
+        log_activity(
+            user_email = _log_email,
+            activity   = f"Membuka tab: {_tab_names.get(_active, str(_active))}",
+            tab        = _tab_names.get(_active, str(_active)),
+        )
+        st.session_state["_last_logged_tab"] = _active
+
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 1 — ORG CHART
@@ -2619,6 +2780,17 @@ if _active == 0:
         matched_global = df[
             df["Employee Name"].str.contains(name_search.strip(), case=False, na=False)
         ].copy()
+        # Log pencarian
+        if _log_email and _log_email not in ("public", ""):
+            _last_search = st.session_state.get("_last_search_logged", "")
+            if name_search.strip() != _last_search:
+                log_activity(
+                    user_email  = _log_email,
+                    activity    = "Mencari karyawan",
+                    tab         = "Org Chart",
+                    search_term = name_search.strip(),
+                )
+                st.session_state["_last_search_logged"] = name_search.strip()
 
     with col_search_info:
         if name_search.strip():
