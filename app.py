@@ -86,7 +86,7 @@ EMPLOYEE_COL_MAP = {
     "Full Name":                              "Employee Name",
     "Organization":                           "Division",
     "Employment Approval Line Employee ID":   "Manager ID",
-    "Employment Approval Line":               "Manager Name",
+    "Employment Approval Line Name":          "Manager Name",
     "Employment Approval Line Email":         "Manager Email",
 }
 
