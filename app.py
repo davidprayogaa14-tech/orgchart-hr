@@ -73,8 +73,9 @@ SHEET_ID   = "1LaZpDfmFZJvIARf0RYoX-DtcbkjgOMlwT74nbamnvqM"
 EMPLOYEE_SHEET_ID  = "1AHuIlmgUayU9bDMNHuh_z5O4EkZkoG6bvaFafGHRO2M"
 EMPLOYEE_WORKSHEET = "Employment Information"
 
-# ── Activity Log — worksheet di sheet yang sama ───────────────────
+# ── Activity Log & ACL — worksheet di sheet yang sama ────────────
 ACTIVITY_LOG_WORKSHEET = "activity_log"
+ACL_WORKSHEET          = "app_users"
 
 # ── Daftar email Admin ─────────────────────────────────────────────
 ADMIN_EMAILS = {
@@ -550,22 +551,55 @@ def _can_access_tab(role: str, tab_idx: int) -> bool:
 @st.cache_data(ttl=120)
 def load_acl_table() -> dict:
     """
-    Load ACL dari worksheet 'app_users' di Google Sheets.
+    Load ACL dari worksheet 'app_users' di sheet perusahaan.
     Return dict keyed by email (lowercase).
     Fallback ke _ACL_FALLBACK jika sheet belum ada / kosong.
     """
-    # ⏸️ SEMENTARA DINONAKTIFKAN — menunggu migrasi app_users ke sheet perusahaan.
-    # Sheet lama (SHEET_ID) tidak lagi digunakan sejak migrasi ke sheet perusahaan.
-    # Aktifkan kembali setelah ACL_SHEET_ID tersedia dari Tim PA.
-    return _ACL_FALLBACK
+    client = get_gspread_client()
+    if not client:
+        return _ACL_FALLBACK
+    try:
+        ws   = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(ACL_WORKSHEET)
+        rows = ws.get_all_records()
+        if not rows:
+            return _ACL_FALLBACK
+        acl: dict = {}
+        for r in rows:
+            email_key = str(r.get("email", "")).strip().lower()
+            if not email_key:
+                continue
+            acl[email_key] = {
+                "name":        str(r.get("name", "")).strip(),
+                "role":        str(r.get("role", "employee")).strip().lower(),
+                "allowed_bus": str(r.get("allowed_bus", "*")).strip(),
+                "allowed_sbus":str(r.get("allowed_sbus", "*")).strip(),
+                "employee_id": str(r.get("employee_id", "")).strip(),
+                "is_active":   str(r.get("is_active", "TRUE")).strip().upper() in ("TRUE", "1", "YES"),
+                "scope_note":  str(r.get("scope_note", "")).strip(),
+            }
+        return acl if acl else _ACL_FALLBACK
+    except Exception:
+        return _ACL_FALLBACK
 
 
 def get_acl_sheet():
     """
-    Return worksheet 'app_users'. Buat otomatis jika belum ada.
-    ⏸️ SEMENTARA DINONAKTIFKAN — menunggu migrasi app_users ke sheet perusahaan.
+    Return worksheet 'app_users' dari sheet perusahaan.
+    Buat otomatis jika belum ada.
     """
-    return None
+    client = get_gspread_client()
+    if not client:
+        return None
+    try:
+        return client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(ACL_WORKSHEET)
+    except Exception:
+        try:
+            sh = client.open_by_key(EMPLOYEE_SHEET_ID)
+            ws = sh.add_worksheet(title=ACL_WORKSHEET, rows=500, cols=len(_ACL_COLS))
+            ws.append_row(_ACL_COLS, value_input_option="USER_ENTERED")
+            return ws
+        except Exception:
+            return None
 
 
 def get_user_info(email: str) -> dict | None:
@@ -679,16 +713,14 @@ def resolve_user_from_email(email: str, df: pd.DataFrame) -> dict | None:
     """
     Resolve user info dari email.
     Urutan pengecekan:
-    1. Apakah email ada di ADMIN_EMAILS? → role admin
-    2. Apakah email ada di kolom Email di df? → cek Career Stage
-       - C-Level → role cxo
-       - C-1     → role leader (allowed_bus = BU user tsb)
-       - lainnya → role employee
-    3. Tidak ditemukan → return None (akses ditolak)
+    1. Apakah email ada di ADMIN_EMAILS?   → role admin
+    2. Apakah email ada di sheet app_users? → pakai role yang di-set OD Tim
+    3. Apakah email ada di kolom Email df?  → fallback Career Stage otomatis
+    4. Tidak ditemukan di manapun          → return None (akses ditolak)
     """
     email_clean = email.strip().lower()
 
-    # ── 1. Cek Admin ──────────────────────────────────────────────
+    # ── 1. Cek ADMIN_EMAILS (hardcoded) ──────────────────────────
     if email_clean in {e.lower() for e in ADMIN_EMAILS}:
         return {
             "name":        email_clean,
@@ -699,31 +731,39 @@ def resolve_user_from_email(email: str, df: pd.DataFrame) -> dict | None:
             "is_active":   True,
         }
 
-    # ── 2. Cek di DataFrame Employee ─────────────────────────────
+    # ── 2. Cek sheet app_users (manual input oleh OD Tim) ─────────
+    acl = load_acl_table()
+    if email_clean in acl:
+        user = acl[email_clean]
+        if not user.get("is_active", True):
+            return None  # Akun dinonaktifkan
+        return user
+
+    # ── 3. Fallback: cek di kolom Email database karyawan ─────────
+    # Digunakan jika user belum di-input manual di app_users
     if "Email" not in df.columns:
         return None
 
-    # Normalisasi email di df untuk perbandingan case-insensitive
     email_series = df["Email"].astype(str).str.strip().str.lower()
-    match = df[email_series == email_clean]
+    match        = df[email_series == email_clean]
 
     if match.empty:
-        return None  # Email tidak terdaftar → tolak akses
+        return None  # Email tidak terdaftar sama sekali → tolak akses
 
-    row           = match.iloc[0]
-    career_stage  = str(row.get("Career Stage", "")).strip().lower()
-    emp_bu        = str(row.get("Business Unit", "")).strip()
-    emp_id        = str(row.get("Employee ID", "")).strip()
-    emp_name      = str(row.get("Employee Name", "")).strip()
-    emp_division  = str(row.get("Division", "")).strip()
+    row          = match.iloc[0]
+    career_stage = str(row.get("Career Stage", "")).strip().lower()
+    emp_bu       = str(row.get("Business Unit", "")).strip()
+    emp_id       = str(row.get("Employee ID", "")).strip()
+    emp_name     = str(row.get("Employee Name", "")).strip()
+    emp_division = str(row.get("Division", "")).strip()
 
-    # ── Mapping Career Stage → Role ──────────────────────────────
+    # Mapping Career Stage → Role (fallback otomatis)
     if "c-level" in career_stage or career_stage == "clevel":
         role        = "cxo"
         allowed_bus = "*"
     elif "c-1" in career_stage or career_stage == "c1":
         role        = "leader"
-        allowed_bus = emp_bu  # BU sendiri (Management akan ditambah di apply_rbac_filter)
+        allowed_bus = emp_bu
     else:
         role        = "employee"
         allowed_bus = emp_bu
