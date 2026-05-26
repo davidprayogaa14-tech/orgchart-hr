@@ -599,7 +599,7 @@ _PEOPLE_DB_DROP_COLS = [
 # Nilai Employment Status yang ditampilkan di dashboard
 # Hanya Permanent dan Intern — sesuai keputusan OD Team
 _ACTIVE_STATUS_VALUES = {
-    "permanent", "intern",
+    "permanent", "intern", "Probation", "Contract",
 }
 
 
