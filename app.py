@@ -597,9 +597,9 @@ _PEOPLE_DB_DROP_COLS = [
 ]
 
 # Nilai Employment Status yang ditampilkan di dashboard
-# Hanya Permanent dan Intern — sesuai keputusan OD Team
+# Permanent, Intern, Probation, Contract — sesuai keputusan OD Team
 _ACTIVE_STATUS_VALUES = {
-    "permanent", "intern", "Probation", "Contract",
+    "permanent", "intern", "probation", "contract",
 }
 
 
@@ -1742,9 +1742,10 @@ def _render_login_page():
     st.stop()
 
 
-if not st.session_state.get("authenticated", False):
-    _render_login_page()
-
+# ── Auth gate dinonaktifkan sementara ─────────────────────────────
+# Autentikasi akan disambungkan ke SSO People Database.
+# Saat ini semua user masuk sebagai admin (full access) untuk operasional.
+# TODO: Sambungkan token SSO dari People Database ke session_state ini.
 _user_info = st.session_state.get("user_info", {
     "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
     "name": "User", "employee_id": "",
