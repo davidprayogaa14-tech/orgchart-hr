@@ -931,14 +931,14 @@ def clean_df(df: pd.DataFrame) -> pd.DataFrame:
     # ── Filter karyawan aktif saja ────────────────────────────────
     # Karyawan yang sudah resign memiliki nilai di kolom "Resign Date"
     # Mereka harus dikeluarkan agar hierarchy org chart tidak kacau
-    if "Employment Status" in df.columns:
-        df["Employment Status"] = df["Employment Status"].astype(str).str.strip()
-        df = df[df["Employment Status"] == ""]  # hanya ambil yang Resign Date-nya kosong
+    if "Resign Date" in df.columns:
+        df["Resign Date"] = df["Resign Date"].astype(str).str.strip()
+        df = df[df["Resign Date"] == ""]  # hanya ambil yang Resign Date-nya kosong
     
     # Hapus juga berdasarkan "End Date" jika ada
-    if "Employment Status" in df.columns:
-        df["Employment Status"] = df["Employment Status"].astype(str).str.strip()
-        df = df[df["Employment Status"] == ""]  # hanya ambil yang End Date-nya kosong
+    if "End Date" in df.columns:
+        df["End Date"] = df["End Date"].astype(str).str.strip()
+        df = df[df["End Date"] == ""]  # hanya ambil yang End Date-nya kosong
 
     # Hapus kolom sistem dari sheet perusahaan (tidak dipakai dashboard)
     # CATATAN: kolom "Email" TIDAK di-drop — dipakai untuk SSO authentication
