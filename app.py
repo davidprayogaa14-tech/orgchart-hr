@@ -596,10 +596,12 @@ _PEOPLE_DB_DROP_COLS = [
     "HRBP Email", "Join Date", "Employment Status", "Employment Type Status",
 ]
 
-# Nilai Employment Status yang ditampilkan di dashboard
-# Permanent, Intern, Probation, Contract — sesuai keputusan OD Team
+# Nilai Employment Type Status yang ditampilkan di dashboard
+# Permanent, Intern, Probation, Contract, Active, Resigned
+# Matching dilakukan case-insensitive (.lower()) saat filter
 _ACTIVE_STATUS_VALUES = {
     "permanent", "intern", "probation", "contract",
+    "active", "resigned",
 }
 
 
@@ -634,12 +636,18 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
 
     if _status_col:
         df[_status_col] = df[_status_col].astype(str).str.strip()
+        # Debug: log nilai unik agar bisa verify di Streamlit Cloud logs
+        unique_vals = df[_status_col].unique().tolist()
+        print(f"[normalize_people_db] '{_status_col}' unique values: {unique_vals}")
         active_mask = df[_status_col].str.lower().isin(_ACTIVE_STATUS_VALUES)
         total_before = len(df)
         df = df[active_mask].copy()
         total_after  = len(df)
         print(f"[normalize_people_db] Employment filter: {total_before} → {total_after} records "
               f"(removed {total_before - total_after})")
+        if total_after == 0:
+            print(f"[normalize_people_db] WARNING: 0 records after filter! "
+                  f"Check if status values match _ACTIVE_STATUS_VALUES: {_ACTIVE_STATUS_VALUES}")
 
     # ── Step 3: Rename kolom ──────────────────────────────────────
     rename_map = {
@@ -652,6 +660,12 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
     # Hanya rename kolom yang memang ada (defensive)
     rename_map = {k: v for k, v in rename_map.items() if k in df.columns}
     df = df.rename(columns=rename_map)
+
+    # Debug: log sample Manager ID setelah rename agar bisa verify format
+    if "Manager ID" in df.columns:
+        sample_mgr = df["Manager ID"].dropna().head(5).tolist()
+        print(f"[normalize_people_db] Manager ID sample (post-rename): {sample_mgr}")
+    print(f"[normalize_people_db] Columns after rename: {df.columns.tolist()}")
 
     # ── Step 4: Drop kolom tidak diperlukan ───────────────────────
     cols_to_drop = [c for c in _PEOPLE_DB_DROP_COLS if c in df.columns]
