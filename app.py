@@ -593,16 +593,15 @@ _PEOPLE_DB_DROP_COLS = [
     "Primary Budget Holder", "Secondary Budget Holder",
     "End Date", "Resign Date", "Original Placement",
     "Notice Period (TBC)", "Branch", "Tenure",
-    "HRBP Email", "Join Date", "Employment Status", "Employment Type Status",
+    "HRBP Email", "Join Date",
+    "Employment Status", "Employment Type Status",  # di-drop setelah dipakai untuk filter
 ]
 
-# Nilai Employment Type Status yang ditampilkan di dashboard
-# Permanent, Intern, Probation, Contract, Active, Resigned
-# Matching dilakukan case-insensitive (.lower()) saat filter
-_ACTIVE_STATUS_VALUES = {
-    "permanent", "intern", "probation", "contract",
-    "active", "resigned",
-}
+# Filter kriteria — dua kolom terpisah:
+#   Employment Status      : Active, Resigned
+#   Employment Type Status : Permanent, Intern, Probation, Contract
+_EMPLOYMENT_STATUS_VALUES = {"active", "resigned"}
+_EMPLOYMENT_TYPE_VALUES   = {"permanent", "intern", "probation", "contract"}
 
 
 def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
@@ -625,29 +624,36 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df.columns = df.columns.str.strip()
 
-    # ── Step 2: Filter berdasarkan Employment Type Status ────────────
-    # Kolom di People Database: "Employment Type Status"
-    # Hanya tampilkan: Permanent, Intern, Probation, Contract
-    _status_col = None
-    if "Employment Type Status" in df.columns:
-        _status_col = "Employment Type Status"
-    elif "Employment Status" in df.columns:
-        _status_col = "Employment Status"
+    # ── Step 2: Filter dua kolom Employment ──────────────────────────
+    # Kolom 1: "Employment Status"      → kriteria: Active, Resigned
+    # Kolom 2: "Employment Type Status" → kriteria: Permanent, Intern, Probation, Contract
+    # Kedua filter diterapkan secara AND (harus lolos keduanya)
 
-    if _status_col:
-        df[_status_col] = df[_status_col].astype(str).str.strip()
-        # Debug: log nilai unik agar bisa verify di Streamlit Cloud logs
-        unique_vals = df[_status_col].unique().tolist()
-        print(f"[normalize_people_db] '{_status_col}' unique values: {unique_vals}")
-        active_mask = df[_status_col].str.lower().isin(_ACTIVE_STATUS_VALUES)
-        total_before = len(df)
-        df = df[active_mask].copy()
-        total_after  = len(df)
-        print(f"[normalize_people_db] Employment filter: {total_before} → {total_after} records "
-              f"(removed {total_before - total_after})")
-        if total_after == 0:
-            print(f"[normalize_people_db] WARNING: 0 records after filter! "
-                  f"Check if status values match _ACTIVE_STATUS_VALUES: {_ACTIVE_STATUS_VALUES}")
+    total_before = len(df)
+
+    # Filter kolom "Employment Status"
+    if "Employment Status" in df.columns:
+        df["Employment Status"] = df["Employment Status"].astype(str).str.strip()
+        unique_emp_status = df["Employment Status"].unique().tolist()
+        print(f"[normalize_people_db] 'Employment Status' unique values: {unique_emp_status}")
+        mask_status = df["Employment Status"].str.lower().isin(_EMPLOYMENT_STATUS_VALUES)
+        df = df[mask_status].copy()
+        print(f"[normalize_people_db] After Employment Status filter: {len(df)} records")
+    else:
+        print("[normalize_people_db] WARNING: 'Employment Status' column not found")
+
+    # Filter kolom "Employment Type Status"
+    if "Employment Type Status" in df.columns:
+        df["Employment Type Status"] = df["Employment Type Status"].astype(str).str.strip()
+        unique_type_status = df["Employment Type Status"].unique().tolist()
+        print(f"[normalize_people_db] 'Employment Type Status' unique values: {unique_type_status}")
+        mask_type = df["Employment Type Status"].str.lower().isin(_EMPLOYMENT_TYPE_VALUES)
+        df = df[mask_type].copy()
+        print(f"[normalize_people_db] After Employment Type Status filter: {len(df)} records")
+    else:
+        print("[normalize_people_db] WARNING: 'Employment Type Status' column not found")
+
+    print(f"[normalize_people_db] Total filtered: {total_before} → {len(df)} records")
 
     # ── Step 3: Rename kolom ──────────────────────────────────────
     rename_map = {
@@ -701,6 +707,15 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
     df = df[df["Employee ID"].str.len() > 0]
     df = df[df["Employee ID"] != "nan"]
 
+    # Deduplicate Employee ID — People Database bisa mengandung
+    # multiple rows per karyawan (misal: resign + rejoin).
+    # Keep last row (data terbaru berdasarkan urutan di sheet).
+    dupes = df["Employee ID"].duplicated(keep=False).sum()
+    if dupes > 0:
+        print(f"[normalize_people_db] Found {dupes} duplicate Employee ID rows — keeping last occurrence")
+        df = df.drop_duplicates(subset=["Employee ID"], keep="last")
+
+    print(f"[normalize_people_db] Final records loaded: {len(df)}")
     return df.reset_index(drop=True)
 
 
@@ -936,8 +951,11 @@ def build_tree_json(full_data: pd.DataFrame, selected_div: str, root_ids: list, 
     valid = full_data[full_data["Manager ID"].notna() & (full_data["Manager ID"] != "") & (full_data["Manager ID"] != "nan")]
     children_map: dict = valid.groupby("Manager ID")["Employee ID"].apply(list).to_dict()
 
+    # Deduplicate sebelum set_index — mencegah ValueError jika masih
+    # ada duplikat Employee ID yang lolos dari normalize_people_db
+    _tree_df = full_data.drop_duplicates(subset=["Employee ID"], keep="last")
     info_map: dict = (
-        full_data
+        _tree_df
         .set_index("Employee ID")[["Employee Name", "Job Position", "Division", "SBU/Tribe", "Business Unit"]]
         .rename(columns={"Employee Name": "name", "Job Position": "position",
                          "Division": "division", "SBU/Tribe": "sbu", "Business Unit": "bu"})
