@@ -21,87 +21,25 @@ except Exception:
 
 
 # ══════════════════════════════════════════════════════════════════
-# PUBLIC MODE — Feature Flag
-# ══════════════════════════════════════════════════════════════════
-# True  → Auth dibypass, hanya Tab Org Chart yang tampil (public view)
-# False → Full platform dengan auth dan semua tab (internal OD)
-#
-# Cara toggle TANPA edit code:
-#   Di Streamlit Secrets, tambahkan:  PUBLIC_MODE = "true"
-#   Untuk balik ke full mode:         hapus baris tersebut / set "false"
-# ══════════════════════════════════════════════════════════════════
-def _get_public_mode() -> bool:
-    """
-    Baca PUBLIC_MODE dari Streamlit Secrets atau env var.
-    Dipanggil SETELAH app context siap (bukan module-level).
-    """
-    try:
-        val = st.secrets.get("PUBLIC_MODE", "false")
-        return str(val).lower() in ("true", "1", "yes")
-    except Exception:
-        pass
-    return os.getenv("PUBLIC_MODE", "false").lower() in ("true", "1", "yes")
-
-# PUBLIC_MODE dievaluasi di runtime (bukan module-level) agar
-# st.secrets sudah siap saat dibaca.
-# Nilai di-cache ke session_state supaya konsisten sepanjang sesi.
-if "PUBLIC_MODE" not in st.session_state:
-    st.session_state["PUBLIC_MODE"] = _get_public_mode()
-PUBLIC_MODE: bool = st.session_state["PUBLIC_MODE"]
-
-# ── OVERRIDE SEMENTARA ───────────────────────────────────────────
-# Set True untuk bypass auth dan tampilkan hanya Org Chart (public view).
-# Set False untuk kembali ke full platform dengan auth.
-# Setelah Secrets-based toggle dikonfirmasi bekerja, hapus baris ini.
-PUBLIC_MODE = True  # ← ganti ke False untuk full mode
-
-# Sentinel string yang dipakai sebagai "user publik" saat PUBLIC_MODE aktif
-_PUBLIC_USER_INFO = {
-    "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
-    "name": "Public", "employee_id": "",
-}
-
-
-# ══════════════════════════════════════════════════════════════════
 # CONSTANTS
 # ══════════════════════════════════════════════════════════════════
+# ── People Database (source of truth resmi) ───────────────────────
+SHEET_ID        = "1AHuIlmgUayU9bDMNHuh_z5O4EkZkoG6bvaFafGHRO2M"
+SHEET_EMP_NAME  = "Employment Information"   # worksheet utama employee
+SHEET_LOG_NAME  = "activity_log"             # worksheet activity log
+SHEET_ACL_NAME  = "app_users"                # worksheet ACL
+SHEET_CR_NAME   = "change_requests"          # worksheet change requests
+SHEET_MPP_NAME  = "mpp_data"                 # worksheet MPP
 
-# ── Sheet lama (personal) — masih dipakai untuk MPP, CR, ACL ─────
-SHEET_ID   = "1LaZpDfmFZJvIARf0RYoX-DtcbkjgOMlwT74nbamnvqM"
-
-# ── Sheet baru (perusahaan) — Employee Data ───────────────────────
-EMPLOYEE_SHEET_ID  = "1AHuIlmgUayU9bDMNHuh_z5O4EkZkoG6bvaFafGHRO2M"
-EMPLOYEE_WORKSHEET = "Employment Information"
-
-# ── Activity Log & ACL — worksheet di sheet yang sama ────────────
-ACTIVITY_LOG_WORKSHEET = "activity_log"
-ACL_WORKSHEET          = "app_users"
-
-# ── Daftar email Admin ─────────────────────────────────────────────
-ADMIN_EMAILS = {
-    "david.prayoga@mekari.com",
-    # tambahkan email admin lain di sini
-}
-
-# ── BU Management — selalu bisa dilihat oleh C-1 Leaders ──────────
-MANAGEMENT_BU = "Management"
-
+# ── GCP & Auth ────────────────────────────────────────────────────
+# Service Account: orgchartmaker@people-mekari-ai.iam.gserviceaccount.com
+# GCP Project    : people-mekari-ai
 CREDS_FILE = "credentials.json"
 SCOPES     = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 CHIEF_ROOT = "SLKR001"
-
-# ── Mapping kolom: nama di sheet perusahaan → nama internal dashboard ──
-# Kolom yang namanya SAMA tidak perlu didaftarkan di sini.
-EMPLOYEE_COL_MAP = {
-    "Full Name":                              "Employee Name",
-    "Organization":                           "Division",
-    "Employment Approval Line Employee ID":   "Manager ID",
-    "Employment Approval Line Name":          "Manager Name",
-    "Employment Approval Line Email":         "Manager Email",
-}
 
 # ── Logo Mekari (base64 encoded) ─────────────────────────────
 _MEKARI_LOGO_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAA1ACsDASIAAhEBAxEB/8QAGgAAAgMBAQAAAAAAAAAAAAAAAAgEBQcGA//EADAQAAEDAwQBAgQEBwAAAAAAAAECAwQABREGBxIhMUFRCBMicRQyM2FCQ3KBgpGh/8QAGwEAAQUBAQAAAAAAAAAAAAAAAAEDBAUHBgL/xAAoEQABAwMDAwMFAAAAAAAAAAABAAIEAxEhBRIxBlFhIzJBExRxgfD/2gAMAwEAAhEDEQA/AHLoopb/AIq9Ua105reyGz3ydbLcuEXWBGc4pcfSshzmPCwEqa+lWR34qz0jS36pKEam4NJB58C6cp0zUdtCZCis52Z3RtmudMPSJjjEG625vNxZUoJSlIH6yST+mcHz+Ugg+hODbx71X7UOoi1pK7TrVZYasMORXFNuy1D+YrHfE+iD0R2Rk4FhA6XnzJj4m3aWe4ngdvzf48Z4Xtkd7nFvZN/RUDTZuKtO203gpNyMRr8WUjA+dwHPA9ByzU+uec3a4hMFQL3e7NZIwk3m6wbcyc4clSEtJOPYqIpevie1noDVelYsSz39mfeIMtLrCY7S1oUhQ4uJ+Zx4YwQrz2UCr34hNn9Ta11SxqKwzoTvCImOqJLcU2UcVKOUKCSDnl2DjseT6YLq7bjW2k4jk2/WB6LCQoJMlLrbjeSQB2hRxkkDsCtF6T0nTC+jKMr1Qb7bgZ7Zye2OfhTo9OncO3ZXLNOutc/lOuN/MQW3OCynmg+UnHlJwOj10KutvnbJH1xZZWo3yxaY8tD8lYaU50j60jikEkFSUg4HgmqKplmtk+83Ri12uI7MmyCUssNjKlkAqOPsAT9ga1KSxjqLw920EG54sLc3PbypzuE8ti3J0Fe1JRbdW2lx1fSWlyA04f8ABeFf8rrMj3FJrZdgNx7pxEq3QLW2r8xmy0k49+LfP/RxTbaTtTtj0va7K5MXNXBiNR1SF9KdKEhPI+fOPc1hOv6Zp0Et+ykfUvyMG37GFVVqbGe03VpS6fGZqQoYsukY7gBcUq4S0g98RlDQI9iS4fugUxdZzuds/pzX2oYd7ucu4xX2GRHdEZxID7QUVBJyDxIKldjB7/YYY6clxYWoMkSr7W3OBfNsf3dJQc1r7uS27VbSX7X1oud1jOpgxY7akw3Hk/TLkD+AeyB4UvvBIABIUByVqmXPRms4s56M9GuNmmpcdjrGFgoV9bZ/qTkfuFdU/dpt0K1WyPbbdFbixIzYaZZbGEoSBgAVwe6Oz+mdfXNi6TXpduntpDbj8PgFPoHgL5JIJHofPeOxjHXw+u21pVRk1vovwAMkC1s97/PnjCkNlguO7haBBksTYTE2K4l1iQ2l1pafCkqGQf7g17VFtECNarVEtkJBbiw2EMMpJJ4oQkJSMnz0BUqs1dtudvCgoooopEIooooQiiiihC//2Q=="
@@ -114,31 +52,21 @@ LANG = {
         "nav_org":"Org Chart","nav_data":"Data Karyawan","nav_compliance":"Compliance Check",
         "nav_manager":"Daftar Manager","nav_cr":"Change Request",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Keluar",
-        "btn_sync":"Sync Data","btn_user_setting":"User Setting",
-        "nav_settings":"Settings","settings_group":"Pengaturan",
         "lang_toggle":"🇬🇧 English","data_source_live":"Live · Google Sheets",
         "data_source_local":"Lokal · CSV","auto_refresh":"Auto-refresh setiap 5 menit",
         "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
         "header_subtitle":"Dashboard Visualisasi Data Organisasi","header_metric":"Total Karyawan",
-        "filter_all":"Semua","filter_all_bu":"Semua BU","filter_all_div":"Semua Divisi",
-        "filter_all_sbu":"Semua SBU","filter_all_level":"Semua Level",
-        "filter_bu":"🏢 Business Unit","filter_div":"📁 Divisi","filter_sbu":"🗂 SBU/Tribe",
-        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Divisi",
-        "filter_level":"🎯 Filter Level Hierarki","filter_search_name":"🔍 Cari Nama",
-        "showing_emp":"Menampilkan","employees":"karyawan","positions":"posisi",
-        "showing":"Menampilkan","breakdown_div":"Breakdown per Divisi",
-        "download_csv":"⬇ CSV","download_excel":"⬇ Excel",
         "mode_label":"MODE TAMPILAN","mode_division":"Per Divisi","mode_company":"Seluruh Perusahaan",
         "search_label":"Cari Karyawan","search_ph":"Ketik nama karyawan...",
         "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Divisi",
         "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
+        "filter_all_sbu":"Semua SBU","filter_all_div":"Semua (divisi penuh)",
         "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
+        "showing_emp":"Menampilkan","employees":"karyawan",
         "emp_found":"Ditemukan","emp_not_found":"Tidak ada karyawan bernama",
         "company_warning":"⚠️ Mode seluruh perusahaan menampilkan semua karyawan.",
         "tab_data_title":"Data Karyawan","tab_data_sub":"Seluruh data karyawan dengan filter dan pencarian",
         "search_name":"🔍 Cari nama karyawan","filter_all":"Semua",
-        "filter_all_leader":"Semua (divisi penuh)",
-        "filter_all_sbu_label":"Semua SBU",
         "tab_cc_title":"Compliance Check","tab_cc_sub":"Deteksi inkonsistensi data antara Employee Data dan MPP Data",
         "cc_tab_summary":"📊  Ringkasan Isu","cc_tab_missing":"👤  Missing Manager ID",
         "cc_tab_mismatch":"🔀  Data Tidak Konsisten","cc_tab_ghost":"🔍  Tidak Terpetakan",
@@ -153,45 +81,30 @@ LANG = {
         "tab_mgr_sub":"Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control",
         "tab_cr_title":"Structure Change Request",
         "tab_cr_sub":"Kelola permintaan perubahan struktur organisasi",
+        "showing":"Menampilkan","breakdown_div":"Breakdown per Divisi",
+        "download_csv":"📄 CSV","download_excel":"📊 Excel",
+        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Divisi",
         "emp_in_div":"karyawan di divisi ini","emp_found_in":"ada di divisi ini",
-        "emp_select_ph":"— Pilih karyawan —","emp_select_label":"Pilih karyawan:",
-        "emp_more":"lainnya","emp_pick_below":"Pilih salah satu di bawah.",
-        "search_not_found":"Tidak ada karyawan bernama",
-        "search_found_one":"Ditemukan:","search_found_many":"Ditemukan",
-        "filter_all_leader":"Semua (divisi penuh)",
-        "filter_all_sbu_label":"Semua SBU",
-        "breakdown_field":"Breakdown per Field",
-        "mgr_count_label":"manager","req_count_label":"request","user_count_label":"user",
     },
     "en": {
         "nav_org":"Org Chart","nav_data":"Employee Data","nav_compliance":"Compliance Check",
         "nav_manager":"Manager List","nav_cr":"Change Request",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Sign Out",
-        "btn_sync":"Sync Data","btn_user_setting":"User Setting",
-        "nav_settings":"Settings","settings_group":"Settings",
         "lang_toggle":"🇮🇩 Bahasa","data_source_live":"Live · Google Sheets",
         "data_source_local":"Local · CSV","auto_refresh":"Auto-refresh every 5 minutes",
         "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
         "header_subtitle":"Organizational Data Visualization Dashboard","header_metric":"Total Employees",
-        "filter_all":"All","filter_all_bu":"All BUs","filter_all_div":"All Divisions",
-        "filter_all_sbu":"All SBUs","filter_all_level":"All Levels",
-        "filter_bu":"🏢 Business Unit","filter_div":"📁 Division","filter_sbu":"🗂 SBU/Tribe",
-        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Division",
-        "filter_level":"🎯 Filter Hierarchy Level","filter_search_name":"🔍 Search Name",
-        "showing_emp":"Showing","employees":"employees","positions":"positions",
-        "showing":"Showing","breakdown_div":"Breakdown by Division",
-        "download_csv":"⬇ CSV","download_excel":"⬇ Excel",
         "mode_label":"VIEW MODE","mode_division":"By Division","mode_company":"Entire Company",
         "search_label":"Search Employee","search_ph":"Type employee name...",
-        "filter_label":"Filter","filter_leader":"👤 Filter by Leader",
-        "filter_all_div_full":"All (full division)",
+        "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Division",
+        "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
+        "filter_all_sbu":"All SBUs","filter_all_div":"All (full division)",
         "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
+        "showing_emp":"Showing","employees":"employees",
         "emp_found":"Found","emp_not_found":"No employee named",
         "company_warning":"⚠️ Company-wide mode displays all employees.",
         "tab_data_title":"Employee Data","tab_data_sub":"All employee data with filters and search",
-        "search_name":"🔍 Search employee name",
-        "filter_all":"All",
-        "filter_all_leader":"Full division","filter_all_sbu_label":"All SBUs",
+        "search_name":"🔍 Search employee name","filter_all":"All",
         "tab_cc_title":"Compliance Check","tab_cc_sub":"Detect data inconsistencies between Employee Data and MPP Data",
         "cc_tab_summary":"📊  Issue Summary","cc_tab_missing":"👤  Missing Manager ID",
         "cc_tab_mismatch":"🔀  Data Inconsistency","cc_tab_ghost":"🔍  Unmapped Employees",
@@ -206,198 +119,26 @@ LANG = {
         "tab_mgr_sub":"All employees with direct reports and Span of Control analysis",
         "tab_cr_title":"Structure Change Request",
         "tab_cr_sub":"Manage organizational structure change requests",
+        "showing":"Showing","breakdown_div":"Breakdown by Division",
+        "download_csv":"📄 CSV","download_excel":"📊 Excel",
+        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Division",
         "emp_in_div":"employees in this division","emp_found_in":"found in this division",
-        "emp_select_ph":"— Select employee —","emp_select_label":"Select employee:",
-        "emp_more":"more","emp_pick_below":"Select one below.",
-        "search_not_found":"No employee named",
-        "search_found_one":"Found:","search_found_many":"Found",
-        "filter_all_leader":"Full division","filter_all_sbu_label":"All SBUs",
-        "breakdown_field":"Breakdown by Field",
-        "mgr_count_label":"manager","req_count_label":"request","user_count_label":"user",
     },
 }
 
 
 @st.cache_data(ttl=300)
 def load_mpp_data():
-    # ⏸️ SEMENTARA DINONAKTIFKAN — menunggu link MPP sheet perusahaan
-    # Sheet lama (SHEET_ID) tidak lagi digunakan sejak migrasi ke sheet perusahaan.
-    # Aktifkan kembali setelah MPP_SHEET_ID tersedia dari Tim PA.
+    client = get_gspread_client()
+    if client:
+        try:
+            ws = client.open_by_key(SHEET_ID).worksheet(SHEET_MPP_NAME)
+            df_mpp = pd.DataFrame(ws.get_all_records())
+            df_mpp.columns = df_mpp.columns.str.strip()
+            return df_mpp
+        except Exception:
+            pass
     return pd.DataFrame()
-
-
-# ══════════════════════════════════════════════════════════════════
-# PHASE 1 — SCHEMA GUARD
-# Daftar kolom wajib di mpp_data. Jika ada yang hilang saat load,
-# fungsi menampilkan error eksplisit dan return None agar semua
-# consumer (compliance, unified view) gagal dengan pesan jelas,
-# bukan silent empty DataFrame.
-# ══════════════════════════════════════════════════════════════════
-REQUIRED_MPP_COLS = [
-    "JOBID", "MPP Status 2026", "Job Position", "MPP Career Stage",
-    "Primary Budget Holder", "Division", "BU", "SBU",
-    "Tribe/Squad/Function", "Fulfillment Status", "EID",
-    "Current Name", "Current Job Position", "Current Career Stage",
-]
-
-WRITEBACK_FIELD_MAP = {
-    # change_type       : (kolom di employee_data, resolver_type)
-    "Reporting Line": ("Manager ID",    "manager_name_to_id"),
-    "Nama Divisi":    ("Division",       "division_direct"),
-}
-
-
-def validate_mpp_schema(mpp_df: pd.DataFrame) -> bool:
-    """
-    Cek kolom wajib mpp_data saat load.
-    Return True jika valid, tampilkan st.error + return False jika tidak.
-    Dipanggil di dalam load_mpp_data() setelah get_all_records().
-    """
-    if mpp_df.empty:
-        return True  # kosong bukan schema error — biarkan consumer handle
-    missing = [c for c in REQUIRED_MPP_COLS if c not in mpp_df.columns]
-    if missing:
-        st.error(
-            f"⚠️ **Schema MPP berubah** — kolom berikut tidak ditemukan di worksheet `mpp_data`: "
-            f"`{'`, `'.join(missing)}`. "
-            f"Pastikan nama kolom di Google Sheets sesuai dengan daftar kolom wajib. "
-            f"Hubungi admin OD jika terjadi perubahan struktur tabel."
-        )
-        return False
-    return True
-
-
-# ══════════════════════════════════════════════════════════════════
-# PHASE 2 — UNIFIED VIEW
-# Satu fungsi tunggal yang meng-join ketiga dataset:
-#   employee_data ← (Job ID = JOBID) → mpp_data
-#   employee_data ← (Employee ID)    → change_requests (pending)
-#
-# Output: DataFrame unified_df dengan kolom enrichment:
-#   mpp_status, mpp_fulfillment, mpp_job_position, mpp_career_stage,
-#   mpp_primary_holder, mpp_bu, mpp_sbu, mpp_tribe,
-#   has_pending_cr, pending_cr_type, pending_cr_new_val,
-#   tri_status  ← klasifikasi akhir per karyawan
-#
-# Cached ttl=300 — expire bersama load_data().
-# Cache harus di-clear setelah CR approve / employee_data update.
-# ══════════════════════════════════════════════════════════════════
-@st.cache_data(ttl=300)
-def build_unified_view(
-    emp_df: pd.DataFrame,
-    mpp_df: pd.DataFrame,
-    cr_df:  pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Tri-data join: employee_data + mpp_data + change_requests.
-    Return unified DataFrame. Aman jika mpp_df atau cr_df kosong.
-    """
-    emp = emp_df.copy()
-
-    # ── Pastikan Job ID ada ───────────────────────────────────────
-    if "Job ID" not in emp.columns:
-        emp["Job ID"] = ""
-    emp["Job ID"] = emp["Job ID"].astype(str).str.strip()
-
-    # ── JOIN 1: employee ↔ mpp via Job ID (LEFT OUTER) ───────────
-    mpp_prefix_cols = {
-        "JOBID":                  "_mpp_jobid",
-        "MPP Status 2026":        "mpp_status",
-        "Fulfillment Status":     "mpp_fulfillment",
-        "Job Position":           "mpp_job_position",
-        "MPP Career Stage":       "mpp_career_stage",
-        "Primary Budget Holder":  "mpp_primary_holder",
-        "BU":                     "mpp_bu",
-        "SBU":                    "mpp_sbu",
-        "Tribe/Squad/Function":   "mpp_tribe",
-        "Division":               "mpp_division",
-    }
-
-    if not mpp_df.empty:
-        mpp_sel = mpp_df[
-            [c for c in mpp_prefix_cols if c in mpp_df.columns]
-        ].copy()
-        mpp_sel = mpp_sel.rename(columns=mpp_prefix_cols)
-        mpp_sel["_mpp_jobid"] = mpp_sel["_mpp_jobid"].astype(str).str.strip()
-        unified = emp.merge(
-            mpp_sel, left_on="Job ID", right_on="_mpp_jobid", how="left"
-        ).drop(columns=["_mpp_jobid"], errors="ignore")
-    else:
-        for col in mpp_prefix_cols.values():
-            if col != "_mpp_jobid":
-                emp[col] = ""
-        unified = emp.copy()
-
-    # ── JOIN 2: unified ↔ pending CR via Employee ID ─────────────
-    unified["has_pending_cr"]   = False
-    unified["pending_cr_type"]  = ""
-    unified["pending_cr_new_val"] = ""
-
-    if not cr_df.empty and "employee_id" in cr_df.columns:
-        pending_cr = cr_df[cr_df.get("status", pd.Series(dtype=str)) == "Pending"].copy() \
-            if "status" in cr_df.columns else pd.DataFrame()
-        if not pending_cr.empty:
-            pending_map = (
-                pending_cr.groupby("employee_id")
-                .agg(
-                    pending_cr_type   = ("change_type", "first"),
-                    pending_cr_new_val = ("data_baru",  "first"),
-                )
-                .reset_index()
-            )
-            pending_map = pending_map.rename(columns={"employee_id": "_cr_eid"})
-            pending_map["_cr_eid"] = pending_map["_cr_eid"].astype(str).str.strip()
-            unified["_emp_id_str"] = unified["Employee ID"].astype(str).str.strip()
-            unified = unified.merge(
-                pending_map, left_on="_emp_id_str", right_on="_cr_eid", how="left"
-            ).drop(columns=["_emp_id_str", "_cr_eid"], errors="ignore")
-            unified["has_pending_cr"] = unified["pending_cr_type"].notna() & (unified["pending_cr_type"] != "")
-
-    # ── Kolom fallback jika merge tidak menghasilkan kolom ────────
-    for col in ["pending_cr_type", "pending_cr_new_val"]:
-        if col not in unified.columns:
-            unified[col] = ""
-    unified["has_pending_cr"] = unified.get("has_pending_cr", False)
-
-    # ── tri_status classification ─────────────────────────────────
-    def classify_row(row):
-        job_id     = str(row.get("Job ID", "")).strip()
-        mpp_status = str(row.get("mpp_status", "")).strip()
-        fulfillment = str(row.get("mpp_fulfillment", "")).strip()
-        has_cr     = bool(row.get("has_pending_cr", False))
-
-        if not job_id or job_id == "nan":
-            return "No Job ID"
-        if not mpp_status or mpp_status == "nan":
-            return "Ghost"          # ada di emp, tidak ada di MPP
-        if has_cr:
-            return "Pending CR"     # ada CR yang menunggu approval
-        # Cek mismatch field kunci
-        emp_div = str(row.get("Division", "")).strip().lower()
-        mpp_div = str(row.get("mpp_division", "")).strip().lower()
-        emp_pos = str(row.get("Job Position", "")).strip().lower()
-        mpp_pos = str(row.get("mpp_job_position", "")).strip().lower()
-        if emp_div and mpp_div and emp_div != mpp_div:
-            return "Mismatch"
-        if emp_pos and mpp_pos and emp_pos != mpp_pos:
-            return "Mismatch"
-        return "Match"
-
-    unified["tri_status"] = unified.apply(classify_row, axis=1)
-    return unified
-
-
-def get_unified_view() -> pd.DataFrame:
-    """
-    Convenience wrapper — load semua dataset dan return unified view.
-    Dipanggil dari tab yang membutuhkan tri-data.
-    """
-    emp_df, _ = load_data()
-    if emp_df is None:
-        return pd.DataFrame()
-    mpp_df = load_mpp_data()
-    cr_df  = load_change_requests()
-    return build_unified_view(emp_df, mpp_df, cr_df)
 
 
 def run_compliance_checks(emp_df: pd.DataFrame, mpp_df: pd.DataFrame) -> dict:
@@ -539,19 +280,14 @@ _ROLE_TAB_ACCESS = {
 
 
 def _can_access_tab(role: str, tab_idx: int) -> bool:
-    """
-    Return True jika role boleh mengakses tab_idx.
-    Saat PUBLIC_MODE aktif, hanya tab 0 (Org Chart) yang accessible.
-    """
-    if PUBLIC_MODE:
-        return tab_idx == 0
+    """Return True jika role boleh mengakses tab_idx."""
     return tab_idx in _ROLE_TAB_ACCESS.get(role, {0})
 
 
 @st.cache_data(ttl=120)
 def load_acl_table() -> dict:
     """
-    Load ACL dari worksheet 'app_users' di sheet perusahaan.
+    Load ACL dari worksheet 'app_users' di Google Sheets.
     Return dict keyed by email (lowercase).
     Fallback ke _ACL_FALLBACK jika sheet belum ada / kosong.
     """
@@ -559,7 +295,7 @@ def load_acl_table() -> dict:
     if not client:
         return _ACL_FALLBACK
     try:
-        ws   = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(ACL_WORKSHEET)
+        ws   = client.open_by_key(SHEET_ID).worksheet(SHEET_ACL_NAME)
         rows = ws.get_all_records()
         if not rows:
             return _ACL_FALLBACK
@@ -571,6 +307,7 @@ def load_acl_table() -> dict:
             acl[email_key] = {
                 "name":        str(r.get("name", "")).strip(),
                 "role":        str(r.get("role", "employee")).strip().lower(),
+                "password":    str(r.get("password", "")).strip(),
                 "allowed_bus": str(r.get("allowed_bus", "*")).strip(),
                 "allowed_sbus":str(r.get("allowed_sbus", "*")).strip(),
                 "employee_id": str(r.get("employee_id", "")).strip(),
@@ -584,18 +321,17 @@ def load_acl_table() -> dict:
 
 def get_acl_sheet():
     """
-    Return worksheet 'app_users' dari sheet perusahaan.
-    Buat otomatis jika belum ada.
+    Return worksheet 'app_users'. Buat otomatis jika belum ada.
     """
     client = get_gspread_client()
     if not client:
         return None
     try:
-        return client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(ACL_WORKSHEET)
+        return client.open_by_key(SHEET_ID).worksheet(SHEET_ACL_NAME)
     except Exception:
         try:
-            sh = client.open_by_key(EMPLOYEE_SHEET_ID)
-            ws = sh.add_worksheet(title=ACL_WORKSHEET, rows=500, cols=len(_ACL_COLS))
+            sh = client.open_by_key(SHEET_ID)
+            ws = sh.add_worksheet(title="app_users", rows=500, cols=len(_ACL_COLS))
             ws.append_row(_ACL_COLS, value_input_option="USER_ENTERED")
             return ws
         except Exception:
@@ -657,181 +393,79 @@ def apply_rbac_filter(df: pd.DataFrame, user_info: dict) -> pd.DataFrame:
     """
     Row-Level Security — filter DataFrame berdasarkan role & scope user.
 
-    Rules:
-    - admin         → lihat semua organisasi + semua fitur
-    - cxo           → lihat semua BU & semua karyawan (Career Stage C-Level)
-    - leader (C-1)  → lihat BU sendiri + BU Management
-    - employee      → lihat Divisi sendiri saja (C-2 ke bawah)
+    Mapping:
+    - admin / cxo   → full access, no filter
+    - leader        → filter by allowed_bus + allowed_sbus
+    - employee      → subtree C-1 (direct reports of their manager only)
 
     PENTING: fungsi ini hanya dipanggil SETELAH auth berhasil.
     df yang dikembalikan adalah satu-satunya data yang boleh dilihat user.
     """
     role = user_info.get("role", "employee")
 
-    # ── Admin & CXO: full access ──────────────────────────────────
+    # ── Full access ───────────────────────────────────────────────
     if role in ("admin", "cxo"):
         return df
 
-    # ── Leader (C-1): BU sendiri + BU Management ─────────────────
+    # ── Leader: BU + SBU scope ────────────────────────────────────
     if role == "leader":
-        user_bu = user_info.get("allowed_bus", "").strip()
-        
-        # Kumpulkan BU yang boleh dilihat: BU sendiri + Management
-        allowed_bus = set()
-        if user_bu and user_bu != "*":
-            for b in user_bu.split(","):
-                if b.strip():
-                    allowed_bus.add(b.strip())
-        allowed_bus.add(MANAGEMENT_BU)  # selalu tambahkan BU Management
+        raw_bus  = user_info.get("allowed_bus", "*").strip()
+        raw_sbus = user_info.get("allowed_sbus", "*").strip()
+
+        # Parse comma-separated, handle wildcard
+        allowed_bus  = [] if raw_bus  == "*" else [b.strip() for b in raw_bus.split(",")  if b.strip()]
+        allowed_sbus = [] if raw_sbus == "*" else [s.strip() for s in raw_sbus.split(",") if s.strip()]
 
         filtered = df.copy()
-        if "Business Unit" in filtered.columns:
-            filtered = filtered[filtered["Business Unit"].isin(allowed_bus)]
+
+        if allowed_bus:  # non-empty = restricted
+            if "Business Unit" in filtered.columns:
+                filtered = filtered[filtered["Business Unit"].isin(allowed_bus)]
+
+        if allowed_sbus:
+            if "SBU/Tribe" in filtered.columns:
+                # Tetap tampilkan node tanpa SBU (atasan lintas unit tetap visible)
+                sbu_mask = (
+                    filtered["SBU/Tribe"].isin(allowed_sbus) |
+                    filtered["SBU/Tribe"].isin(["", "nan"]) |
+                    filtered["SBU/Tribe"].isna()
+                )
+                filtered = filtered[sbu_mask]
+
         return filtered
 
-    # ── Employee (C-2 ke bawah): Divisi sendiri saja ─────────────
+    # ── Employee: subtree C-1 (hanya bawahan dari manager mereka) ──
     emp_id = user_info.get("employee_id", "").strip()
     if not emp_id or emp_id == "nan":
-        return df.iloc[0:0]  # deny: tidak ada EID → empty dataframe
+        return df.iloc[0:0]  # deny: tidak ada EID → empty
 
     user_row = df[df["Employee ID"] == emp_id]
     if user_row.empty:
         return df.iloc[0:0]
 
-    # Employee (C-2 ke bawah) hanya lihat Divisi sendiri
-    user_division = str(user_row.iloc[0].get("Division", "")).strip()
-    if not user_division or user_division in ("", "nan"):
+    manager_id = str(user_row.iloc[0].get("Manager ID", "")).strip()
+    if not manager_id or manager_id in ("", "nan"):
         return df.iloc[0:0]
 
-    return df[df["Division"] == user_division].copy()
+    # BFS downward dari manager (max depth 1 = hanya direct reports)
+    children_map = (
+        df[df["Manager ID"].notna() & (df["Manager ID"] != "")]
+        .groupby("Manager ID")["Employee ID"]
+        .apply(list)
+        .to_dict()
+    )
+    visible = set()
+    queue   = [(manager_id, 0)]
+    while queue:
+        node, depth = queue.pop(0)
+        if node in visible or depth > 1:
+            continue
+        visible.add(node)
+        if depth < 1:
+            for child in children_map.get(node, []):
+                queue.append((child, depth + 1))
 
-
-# ══════════════════════════════════════════════════════════════════
-# SSO — Resolve user dari URL parameter ?email=...
-# ══════════════════════════════════════════════════════════════════
-def resolve_user_from_email(email: str, df: pd.DataFrame) -> dict | None:
-    """
-    Resolve user info dari email.
-    Urutan pengecekan:
-    1. Apakah email ada di ADMIN_EMAILS?   → role admin
-    2. Apakah email ada di sheet app_users? → pakai role yang di-set OD Tim
-    3. Apakah email ada di kolom Email df?  → fallback Career Stage otomatis
-    4. Tidak ditemukan di manapun          → return None (akses ditolak)
-    """
-    email_clean = email.strip().lower()
-
-    # ── 1. Cek ADMIN_EMAILS (hardcoded) ──────────────────────────
-    if email_clean in {e.lower() for e in ADMIN_EMAILS}:
-        return {
-            "name":        email_clean,
-            "role":        "admin",
-            "allowed_bus": "*",
-            "allowed_sbus":"*",
-            "employee_id": "",
-            "is_active":   True,
-        }
-
-    # ── 2. Cek sheet app_users (manual input oleh OD Tim) ─────────
-    acl = load_acl_table()
-    if email_clean in acl:
-        user = acl[email_clean]
-        if not user.get("is_active", True):
-            return None  # Akun dinonaktifkan
-        return user
-
-    # ── 3. Fallback: cek di kolom Email database karyawan ─────────
-    # Digunakan jika user belum di-input manual di app_users
-    if "Email" not in df.columns:
-        return None
-
-    email_series = df["Email"].astype(str).str.strip().str.lower()
-    match        = df[email_series == email_clean]
-
-    if match.empty:
-        return None  # Email tidak terdaftar sama sekali → tolak akses
-
-    row          = match.iloc[0]
-    career_stage = str(row.get("Career Stage", "")).strip().lower()
-    emp_bu       = str(row.get("Business Unit", "")).strip()
-    emp_id       = str(row.get("Employee ID", "")).strip()
-    emp_name     = str(row.get("Employee Name", "")).strip()
-    emp_division = str(row.get("Division", "")).strip()
-
-    # Mapping Career Stage → Role (fallback otomatis)
-    if "c-level" in career_stage or career_stage == "clevel":
-        role        = "cxo"
-        allowed_bus = "*"
-    elif "c-1" in career_stage or career_stage == "c1":
-        role        = "leader"
-        allowed_bus = emp_bu
-    else:
-        role        = "employee"
-        allowed_bus = emp_bu
-
-    return {
-        "name":        emp_name or email_clean,
-        "role":        role,
-        "allowed_bus": allowed_bus,
-        "allowed_sbus":"*",
-        "employee_id": emp_id,
-        "division":    emp_division,
-        "is_active":   True,
-    }
-
-
-# ══════════════════════════════════════════════════════════════════
-# ACTIVITY LOG — Catat aktivitas user ke sheet activity_log
-# ══════════════════════════════════════════════════════════════════
-def log_activity(
-    user_email:  str,
-    activity:    str,
-    tab:         str  = "",
-    filters:     str  = "",
-    export_info: str  = "",
-    search_term: str  = "",
-) -> None:
-    """
-    Append 1 baris log ke worksheet activity_log.
-    Dipanggil secara non-blocking (exception di-swallow agar tidak ganggu UI).
-    """
-    try:
-        client = get_gspread_client()
-        if not client:
-            return
-        ws = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(ACTIVITY_LOG_WORKSHEET)
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ws.append_row([
-            now_str,        # Tanggal & Waktu
-            user_email,     # Email User
-            tab,            # Tab/Menu yang dikunjungi
-            activity,       # Aktivitas
-            filters,        # Filter yang digunakan
-            export_info,    # Data yang di-export
-            search_term,    # Search yang dilakukan
-        ], value_input_option="USER_ENTERED")
-    except Exception:
-        pass  # Log gagal tidak boleh ganggu UI
-
-
-def ensure_activity_log_header() -> None:
-    """
-    Pastikan header worksheet activity_log sudah ada.
-    Dipanggil sekali saat login.
-    """
-    try:
-        client = get_gspread_client()
-        if not client:
-            return
-        ws = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(ACTIVITY_LOG_WORKSHEET)
-        first_row = ws.row_values(1)
-        expected_header = [
-            "Tanggal & Waktu", "Email User", "Tab Dikunjungi",
-            "Aktivitas", "Filter Digunakan", "Data Di-Export", "Search Dilakukan"
-        ]
-        if not first_row or first_row[0] != "Tanggal & Waktu":
-            ws.insert_row(expected_header, index=1)
-    except Exception:
-        pass
+    return df[df["Employee ID"].isin(visible)].copy()
 
 
 def save_acl_user(user_data: dict) -> bool:
@@ -919,47 +553,141 @@ def reset_user_password(email: str, new_password: str) -> bool:
 
 # DATA HELPERS
 # ══════════════════════════════════════════════════════════════════
-def clean_df(df: pd.DataFrame) -> pd.DataFrame:
-    # Strip spasi dari semua nama kolom
+
+# ══════════════════════════════════════════════════════════════════
+# DATA HELPERS — Schema Normalization & Loading
+# ══════════════════════════════════════════════════════════════════
+#
+# SCHEMA MAPPING: People Database → Dashboard internal column names
+#
+#   People DB Column                      → Dashboard Column
+#   ─────────────────────────────────────────────────────────────
+#   Employee ID                           → Employee ID       (same)
+#   Full Name                             → Employee Name     (rename)
+#   Employment Approval Line Employee ID  → Manager ID        (rename)
+#   Organization                          → Division          (rename)
+#   Career Stage                          → Career Stage      (same)
+#   Job ID                                → Job ID            (same)
+#   Job Position                          → Job Position      (same)
+#   SBU/Tribe                             → SBU/Tribe         (same)
+#   Business Unit                         → Business Unit     (same)
+#   Email                                 → Email             (new — auth mapping)
+#   Employment Type Status                → (filter: Permanent/Intern/Probation/Contract, then drop)
+#
+#   Employment Approval Line Name            → Manager Name     (rename)
+#   Employment Approval Line Email           → Manager Email     (rename)
+#
+#   DROPPED COLUMNS (tidak relevan untuk org chart):
+#   Webhook Timestamp, Webhook ID, user_id,
+#   Employment Approval Line User ID, Primary Budget Holder,
+#   Secondary Budget Holder, End Date, Resign Date,
+#   Original Placement, Notice Period (TBC), Branch, Tenure,
+#   HRBP Email, Join Date
+# ══════════════════════════════════════════════════════════════════
+
+# Kolom yang di-drop setelah normalisasi
+_PEOPLE_DB_DROP_COLS = [
+    "Webhook Timestamp", "Webhook ID", "user_id",
+    # Employment Approval Line Name & Email TIDAK di-drop — di-rename ke Manager Name/Email
+    "Employment Approval Line User ID",
+    "Primary Budget Holder", "Secondary Budget Holder",
+    "End Date", "Resign Date", "Original Placement",
+    "Notice Period (TBC)", "Branch", "Tenure",
+    "HRBP Email", "Join Date", "Employment Status", "Employment Type Status",
+]
+
+# Nilai Employment Status yang ditampilkan di dashboard
+# Permanent, Intern, Probation, Contract — sesuai keputusan OD Team
+_ACTIVE_STATUS_VALUES = {
+    "permanent", "intern", "probation", "contract",
+}
+
+
+def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Normalisasi DataFrame dari People Database ke schema internal dashboard.
+
+    Urutan operasi:
+    1. Strip whitespace dari semua nama kolom
+    2. Filter hanya karyawan aktif (Employment Status)
+    3. Rename kolom sesuai mapping:
+         Full Name                            → Employee Name
+         Employment Approval Line Employee ID → Manager ID
+         Employment Approval Line Name        → Manager Name
+         Employment Approval Line Email       → Manager Email
+         Organization                         → Division
+    4. Drop kolom yang tidak diperlukan
+    5. Pastikan semua kolom wajib tersedia
+    6. Type-cast dan clean values
+    """
+    df = df.copy()
     df.columns = df.columns.str.strip()
 
-    # Rename kolom dari sheet perusahaan ke nama internal dashboard
-    rename_map = {k: v for k, v in EMPLOYEE_COL_MAP.items() if k in df.columns}
-    if rename_map:
-        df = df.rename(columns=rename_map)
+    # ── Step 2: Filter berdasarkan Employment Type Status ────────────
+    # Kolom di People Database: "Employment Type Status"
+    # Hanya tampilkan: Permanent, Intern, Probation, Contract
+    _status_col = None
+    if "Employment Type Status" in df.columns:
+        _status_col = "Employment Type Status"
+    elif "Employment Status" in df.columns:
+        _status_col = "Employment Status"
 
-    # ── Filter karyawan aktif saja ────────────────────────────────
-    # Hanya tampilkan karyawan dengan Employment Status == "Active"
-    # Karyawan resign / inactive otomatis excluded dari seluruh dashboard
-    if "Employment Status" in df.columns:
-        df["Employment Status"] = df["Employment Status"].astype(str).str.strip()
-        df = df[df["Employment Status"].str.lower() == "active"]
+    if _status_col:
+        df[_status_col] = df[_status_col].astype(str).str.strip()
+        active_mask = df[_status_col].str.lower().isin(_ACTIVE_STATUS_VALUES)
+        total_before = len(df)
+        df = df[active_mask].copy()
+        total_after  = len(df)
+        print(f"[normalize_people_db] Employment filter: {total_before} → {total_after} records "
+              f"(removed {total_before - total_after})")
 
-    # Hapus kolom sistem dari sheet perusahaan (tidak dipakai dashboard)
-    # CATATAN: kolom "Email" TIDAK di-drop — dipakai untuk SSO authentication
-    cols_to_drop = [
-        "Webhook Timestamp", "Webhook ID", "user_id",
-        "Employment Status", "Primary Budget Holder", "Secondary Budget Holder",
-        "Join Date", "End Date", "Resign Date", "Original Placement",
-        "Notice Period (TBC)", "Branch", "Tenure",
-        "Employment Approval Line User ID", "HRBP Email",
-    ]
-    df = df.drop(columns=[c for c in cols_to_drop if c in df.columns], errors="ignore")
+    # ── Step 3: Rename kolom ──────────────────────────────────────
+    rename_map = {
+        "Full Name":                             "Employee Name",
+        "Employment Approval Line Employee ID":  "Manager ID",
+        "Employment Approval Line Name":         "Manager Name",
+        "Employment Approval Line Email":        "Manager Email",
+        "Organization":                          "Division",
+    }
+    # Hanya rename kolom yang memang ada (defensive)
+    rename_map = {k: v for k, v in rename_map.items() if k in df.columns}
+    df = df.rename(columns=rename_map)
 
-    # Normalisasi kolom wajib
-    df["Employee ID"] = df["Employee ID"].astype(str).str.strip()
-    df["Manager ID"]  = df["Manager ID"].fillna("").astype(str).str.strip()
-    df["SBU/Tribe"]   = df["SBU/Tribe"].fillna("").astype(str).str.strip() if "SBU/Tribe" in df.columns else ""
+    # ── Step 4: Drop kolom tidak diperlukan ───────────────────────
+    cols_to_drop = [c for c in _PEOPLE_DB_DROP_COLS if c in df.columns]
+    df = df.drop(columns=cols_to_drop)
 
-    # Kolom opsional - pastikan ada meski kosong
-    if "Career Stage" not in df.columns:
-        df["Career Stage"] = ""
-    if "Job ID" not in df.columns:
-        df["Job ID"] = ""
-    if "Business Unit" not in df.columns:
-        df["Business Unit"] = ""
+    # ── Step 5: Pastikan kolom wajib tersedia ─────────────────────
+    required_cols = {
+        "Employee ID":    "",
+        "Employee Name":  "",
+        "Manager ID":     "",
+        "Manager Name":   "",
+        "Manager Email":  "",
+        "Division":       "",
+        "Business Unit":  "",
+        "SBU/Tribe":      "",
+        "Job Position":   "",
+        "Job ID":         "",
+        "Career Stage":   "",
+        "Email":          "",
+    }
+    for col, default in required_cols.items():
+        if col not in df.columns:
+            df[col] = default
 
-    return df
+    # ── Step 6: Type-cast & clean ─────────────────────────────────
+    df["Employee ID"]   = df["Employee ID"].astype(str).str.strip()
+    df["Manager ID"]    = df["Manager ID"].fillna("").astype(str).str.strip()
+    df["SBU/Tribe"]     = df["SBU/Tribe"].fillna("").astype(str).str.strip()
+    df["Career Stage"]  = df["Career Stage"].fillna("").astype(str).str.strip()
+    df["Email"]         = df["Email"].fillna("").astype(str).str.strip().str.lower()
+
+    # Hapus baris tanpa Employee ID valid
+    df = df[df["Employee ID"].str.len() > 0]
+    df = df[df["Employee ID"] != "nan"]
+
+    return df.reset_index(drop=True)
 
 
 def get_gspread_client():
@@ -967,55 +695,172 @@ def get_gspread_client():
         import gspread
         from google.oauth2.service_account import Credentials
         if "gcp_service_account" in st.secrets:
-            creds = Credentials.from_service_account_info(
-                dict(st.secrets["gcp_service_account"]), scopes=SCOPES
-            )
+            creds = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=SCOPES)
         elif os.path.exists(CREDS_FILE):
             creds = Credentials.from_service_account_file(CREDS_FILE, scopes=SCOPES)
         else:
-            st.error("❌ Credentials tidak ditemukan. Pastikan [gcp_service_account] sudah diisi di Streamlit Secrets.")
             return None
         return gspread.authorize(creds)
-    except Exception as e:
-        st.error(f"❌ Gagal inisialisasi Google credentials: {str(e)[:200]}")
+    except Exception:
         return None
 
 
 @st.cache_data(ttl=300)
 def load_data():
+    """
+    Load employee data dari People Database resmi.
+    Primary  : Google Sheets → worksheet 'Employment Information'
+    Fallback : employee_data.csv (untuk development lokal)
+    """
     client = get_gspread_client()
     if client:
         try:
-            ws = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(EMPLOYEE_WORKSHEET)
+            ws = client.open_by_key(SHEET_ID).worksheet(SHEET_EMP_NAME)
             df = pd.DataFrame(ws.get_all_records())
-            return clean_df(df), "google_sheets"
+            return normalize_people_db(df), "google_sheets"
         except Exception as e:
-            st.warning(f"⚠️ Gagal membaca Employee Data dari sheet perusahaan: {str(e)[:200]}")
+            st.warning(f"⚠️ Gagal membaca dari Google Sheets: {str(e)[:80]}")
     try:
         df = pd.read_csv("employee_data.csv")
-        return clean_df(df), "local_csv"
+        return normalize_people_db(df), "local_csv"
     except Exception:
         return None, "error"
 
 
-
-
-
 @st.cache_data(ttl=60)
 def load_change_requests():
-    # ⏸️ SEMENTARA DINONAKTIFKAN — menunggu link Change Request sheet perusahaan.
-    # Sheet lama (SHEET_ID) tidak lagi digunakan sejak migrasi ke sheet perusahaan.
-    # Aktifkan kembali setelah CR_SHEET_ID tersedia dari Tim PA.
-    return pd.DataFrame(columns=[
-        "request_id","submitted_date","requester_name","requester_email",
-        "change_type","employee_id","employee_name","data_lama","data_baru",
-        "alasan","status","reviewed_by","reviewed_date","catatan",
-    ])
+    client = get_gspread_client()
+    if not client:
+        return pd.DataFrame()
+    try:
+        ws   = client.open_by_key(SHEET_ID).worksheet(SHEET_CR_NAME)
+        data = ws.get_all_records()
+        if not data:
+            return pd.DataFrame(columns=[
+                "request_id","submitted_date","requester_name","requester_email",
+                "change_type","employee_id","employee_name","data_lama","data_baru",
+                "alasan","status","reviewed_by","reviewed_date","catatan",
+            ])
+        return pd.DataFrame(data)
+    except Exception:
+        return pd.DataFrame()
 
 
 def get_cr_sheet():
-    # ⏸️ SEMENTARA DINONAKTIFKAN — menunggu link Change Request sheet perusahaan.
-    return None
+    client = get_gspread_client()
+    if not client:
+        return None
+    try:
+        return client.open_by_key(SHEET_ID).worksheet(SHEET_CR_NAME)
+    except Exception:
+        return None
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# ACTIVITY LOG MODULE
+# Mencatat setiap aktivitas user ke worksheet 'activity_log'
+# Schema: timestamp | session_id | user_email | user_name | user_role
+#         action_type | detail | record_count | filters_applied
+#
+# action_type values:
+#   login          → user berhasil login
+#   logout         → user logout
+#   view_orgchart  → user melihat/merender org chart
+#   search         → user melakukan pencarian karyawan
+#   filter_change  → user mengubah filter BU/Division/SBU
+#   export         → user mengekspor data (Excel/PDF)
+#   view_tab       → user berpindah tab (admin only tabs)
+#   acl_change     → admin mengubah ACL user
+# ══════════════════════════════════════════════════════════════════
+
+import uuid as _uuid
+
+_LOG_COLS = [
+    "timestamp", "session_id", "user_email", "user_name",
+    "user_role", "action_type", "detail", "record_count", "filters_applied",
+]
+
+
+def _get_log_sheet():
+    """Return worksheet 'activity_log'. Buat otomatis jika belum ada."""
+    client = get_gspread_client()
+    if not client:
+        return None
+    try:
+        return client.open_by_key(SHEET_ID).worksheet(SHEET_LOG_NAME)
+    except Exception:
+        try:
+            sh = client.open_by_key(SHEET_ID)
+            ws = sh.add_worksheet(title=SHEET_LOG_NAME, rows=5000, cols=len(_LOG_COLS))
+            ws.append_row(_LOG_COLS, value_input_option="USER_ENTERED")
+            return ws
+        except Exception:
+            return None
+
+
+def log_activity(
+    action_type: str,
+    detail: str = "",
+    record_count: int = 0,
+    filters_applied: dict = None,
+) -> None:
+    """
+    Catat aktivitas user ke worksheet activity_log.
+    Dipanggil secara non-blocking — error di sini tidak boleh crash dashboard.
+
+    Args:
+        action_type   : tipe aksi (lihat _LOG_COLS di atas)
+        detail        : deskripsi singkat (misal: "BU=Technology, Div=Engineering")
+        record_count  : jumlah record yang ditampilkan/diakses
+        filters_applied: dict filter aktif saat aksi terjadi
+    """
+    try:
+        user_info  = st.session_state.get("user_info", {})
+        session_id = st.session_state.get("session_id", "")
+
+        # Generate session_id sekali per session login
+        if not session_id:
+            session_id = str(_uuid.uuid4())[:8]
+            st.session_state["session_id"] = session_id
+
+        row = [
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            session_id,
+            st.session_state.get("user_email", ""),
+            user_info.get("name", ""),
+            user_info.get("role", ""),
+            action_type,
+            str(detail)[:200],          # truncate agar tidak overflow cell
+            str(record_count),
+            str(filters_applied or {})[:200],
+        ]
+
+        ws = _get_log_sheet()
+        if ws:
+            ws.append_row(row, value_input_option="USER_ENTERED")
+    except Exception:
+        # Silent fail — log error tidak boleh mengganggu UX
+        pass
+
+
+def get_activity_log(limit: int = 500) -> pd.DataFrame:
+    """
+    Load activity log untuk ditampilkan di Admin Panel.
+    Return DataFrame kosong jika sheet tidak tersedia.
+    """
+    try:
+        ws   = _get_log_sheet()
+        if not ws:
+            return pd.DataFrame(columns=_LOG_COLS)
+        rows = ws.get_all_records()
+        if not rows:
+            return pd.DataFrame(columns=_LOG_COLS)
+        df = pd.DataFrame(rows)
+        # Tampilkan terbaru dulu, limit rows
+        return df.iloc[::-1].head(limit).reset_index(drop=True)
+    except Exception:
+        return pd.DataFrame(columns=_LOG_COLS)
 
 
 def save_change_request(row_data: dict) -> bool:
@@ -1055,115 +900,6 @@ def update_cr_status(request_id: str, status: str, reviewed_by: str, catatan: st
 def generate_request_id() -> str:
     import time
     return f"REQ-{int(time.time())}"
-
-
-# ══════════════════════════════════════════════════════════════════
-# PHASE 3 — CR WRITE-BACK
-# Dipanggil SETELAH update_cr_status(..., "Approved") berhasil.
-# Flow:
-#   1. Validasi EID ada di employee_data
-#   2. Resolve data_baru → nilai siap tulis ke Sheets
-#      - Reporting Line : nama manager baru → Employee ID
-#      - Nama Divisi    : nama divisi langsung (string)
-#   3. Find row di sheet1 by EID, update cell yang sesuai (atomic)
-#   4. Clear cache load_data + build_unified_view
-# Return (success: bool, message: str)
-# ══════════════════════════════════════════════════════════════════
-def execute_cr_writeback(
-    employee_id: str,
-    change_type: str,
-    data_baru: str,
-    emp_df: pd.DataFrame,
-) -> tuple:
-    """
-    Write approved CR back ke sheet1 (employee_data).
-    Return (True, pesan_sukses) atau (False, pesan_error).
-    """
-    client = get_gspread_client()
-    if not client:
-        return False, "Tidak dapat terhubung ke Google Sheets."
-
-    data_baru_clean = str(data_baru).strip()
-    if not data_baru_clean or data_baru_clean in ("nan", ""):
-        return False, "Nilai data_baru kosong — tidak ada yang perlu diupdate."
-
-    # ── Resolve: tentukan kolom & nilai yang akan ditulis ─────────
-    if change_type == "Reporting Line":
-        # data_baru = nama manager baru → cari Employee ID-nya
-        match = emp_df[
-            emp_df["Employee Name"].str.strip().str.lower() == data_baru_clean.lower()
-        ]
-        if match.empty:
-            return False, (
-                f"Manager baru '{data_baru_clean}' tidak ditemukan di Employee Data. "
-                f"Pastikan nama persis sama. Write-back dibatalkan."
-            )
-        if len(match) > 1:
-            ids = ", ".join(match["Employee ID"].tolist())
-            return False, (
-                f"Nama '{data_baru_clean}' ditemukan lebih dari satu EID ({ids}). "
-                f"Perjelas nama manager. Write-back dibatalkan."
-            )
-        new_value  = match.iloc[0]["Employee ID"]
-        target_col = "Manager ID"
-
-    elif change_type == "Nama Divisi":
-        # data_baru = nama divisi — validasi keberadaan di data
-        valid_divs = emp_df["Division"].dropna().unique().tolist()
-        match_div  = [d for d in valid_divs if d.strip().lower() == data_baru_clean.lower()]
-        if not match_div:
-            return False, (
-                f"Divisi '{data_baru_clean}' tidak ditemukan di Employee Data. "
-                f"Pastikan nama divisi tujuan valid. Write-back dibatalkan."
-            )
-        new_value  = match_div[0]
-        target_col = "Division"
-
-    else:
-        return False, f"change_type '{change_type}' belum didukung write-back otomatis."
-
-    # ── Cari baris EID di sheet perusahaan dan update ────────────
-    try:
-        sheet      = client.open_by_key(EMPLOYEE_SHEET_ID).worksheet(EMPLOYEE_WORKSHEET)
-        header_row = sheet.row_values(1)
-
-        # Resolve nama kolom: internal name → nama asli di sheet perusahaan
-        reverse_col_map = {v: k for k, v in EMPLOYEE_COL_MAP.items()}
-        sheet_col_name  = reverse_col_map.get(target_col, target_col)
-
-        if sheet_col_name not in header_row:
-            return False, f"Kolom '{sheet_col_name}' tidak ditemukan di header sheet perusahaan."
-        col_idx = header_row.index(sheet_col_name) + 1  # gspread 1-indexed
-
-        if "Employee ID" not in header_row:
-            return False, "Kolom 'Employee ID' tidak ditemukan di sheet perusahaan."
-        eid_col_idx = header_row.index("Employee ID") + 1
-
-        try:
-            cell = sheet.find(employee_id, in_column=eid_col_idx)
-        except Exception:
-            cell = None
-
-        if not cell:
-            return False, f"Employee ID '{employee_id}' tidak ditemukan di sheet perusahaan."
-
-        sheet.update_cell(cell.row, col_idx, new_value)
-
-        # ── Invalidate semua cache yang depend on employee_data ────
-        load_data.clear()
-        load_change_requests.clear()
-        try:
-            build_unified_view.clear()
-        except Exception:
-            pass
-
-        return True, (
-            f"Employee ID {employee_id} — kolom '{target_col}' "
-            f"diperbarui menjadi '{new_value}'."
-        )
-
-    except Exception as e:
-        return False, f"Gagal update sheet: {str(e)[:150]}"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1826,20 +1562,8 @@ function zoomIn() {{ scale = Math.min(scale + 0.15, 3); applyTransform(); }}
 function zoomOut() {{ scale = Math.max(scale - 0.15, 0.2); applyTransform(); }}
 function resetView() {{ scale = 1; translateX = 0; translateY = 0; applyTransform(); }}
 function fitView() {{
-  requestAnimationFrame(() => {{
-    // Baca dimensi setelah layout selesai
-    const treeW = treeRoot.scrollWidth;
-    const treeH = treeRoot.scrollHeight;
-    const cW    = canvas.clientWidth;
-    const cH    = canvas.clientHeight;
-    if (treeW === 0 || treeH === 0) {{ setTimeout(fitView, 200); return; }} // retry jika belum siap
-    scale = Math.min(cW / (treeW + 80), cH / (treeH + 80), 1);
-    translateX = 0;
-    translateY = 20;
-    treeRoot.style.transition = 'transform 0.4s ease';
-    applyTransform();
-    setTimeout(() => {{ treeRoot.style.transition = ''; }}, 450);
-  }});
+  scale = Math.min(canvas.clientWidth / (treeRoot.scrollWidth + 60), canvas.clientHeight / (treeRoot.scrollHeight + 60), 1);
+  translateX = 0; translateY = 20; applyTransform();
 }}
 canvas.addEventListener('wheel', (e) => {{ e.preventDefault(); scale = Math.max(0.2, Math.min(3, scale + (e.deltaY > 0 ? -0.1 : 0.1))); applyTransform(); }}, {{ passive: false }});
 canvas.addEventListener('mousedown', (e) => {{ if (e.target.closest('.node-box')) return; isDragging = true; dragStartX = e.clientX; dragStartY = e.clientY; dragStartTX = translateX; dragStartTY = translateY; }});
@@ -1885,60 +1609,28 @@ function renderNode(node) {{
   return wrapper;
 }}
 function scrollToHighlighted() {{
-  // Retry sampai node benar-benar ada di DOM dan punya ukuran
-  let attempts = 0;
-  function tryScroll() {{
-    const el = document.getElementById('highlighted-node');
-    if (!el || el.getBoundingClientRect().width === 0) {{
-      if (attempts++ < 20) {{ setTimeout(tryScroll, 150); }} // retry max 3 detik
-      return;
-    }}
-    // Reset transform dulu agar getBoundingClientRect akurat (tanpa distorsi scale)
-    const prevScale = scale, prevTX = translateX, prevTY = translateY;
-    scale = 1; translateX = 0; translateY = 0;
-    treeRoot.style.transition = '';
+  const el = document.getElementById('highlighted-node');
+  if (!el) return;
+  // Tunggu layout selesai
+  setTimeout(() => {{
+    const canvasRect = canvas.getBoundingClientRect();
+    const elRect     = el.getBoundingClientRect();
+    // Hitung posisi relatif terhadap tree-root
+    const elCenterX  = elRect.left + elRect.width  / 2 - canvasRect.left;
+    const elCenterY  = elRect.top  + elRect.height / 2 - canvasRect.top;
+    const targetX    = canvasRect.width  / 2 - elCenterX;
+    const targetY    = canvasRect.height / 2 - elCenterY;
+    // Smooth transition
+    treeRoot.style.transition = 'transform 0.6s cubic-bezier(0.4,0,0.2,1)';
+    scale = 1.2;
+    translateX = targetX;
+    translateY = targetY - 60;
     applyTransform();
-
-    // Baca posisi setelah transform di-reset (koordinat bersih)
-    requestAnimationFrame(() => {{
-      const canvasRect = canvas.getBoundingClientRect();
-      const elRect     = el.getBoundingClientRect();
-
-      // Posisi center node relatif terhadap canvas
-      const elCenterX = elRect.left + elRect.width  / 2 - canvasRect.left;
-      const elCenterY = elRect.top  + elRect.height / 2 - canvasRect.top;
-
-      // Target: bawa node ke tengah canvas, sedikit di atas center (UX)
-      const targetTX = canvasRect.width  / 2 - elCenterX;
-      const targetTY = canvasRect.height / 3 - elCenterY;
-
-      // Pilih scale: fit seluruh tree jika besar, zoom ke node jika kecil
-      const treeW = treeRoot.scrollWidth;
-      const treeH = treeRoot.scrollHeight;
-      const fitScale = Math.min(
-        canvasRect.width  / (treeW  + 80),
-        canvasRect.height / (treeH  + 80),
-        1.0  // tidak lebih dari 100% — hindari blur
-      );
-      // Kalau tree kecil (<= canvas), pakai 0.9; kalau besar, pakai fitScale
-      const targetScale = treeW <= canvasRect.width && treeH <= canvasRect.height
-        ? 0.9
-        : Math.max(fitScale, 0.4);
-
-      // Animasi smooth ke posisi target
-      treeRoot.style.transition = 'transform 0.55s cubic-bezier(0.4,0,0.2,1)';
-      scale = targetScale;
-      translateX = targetTX * targetScale;
-      translateY = targetTY;
-      applyTransform();
-      setTimeout(() => {{ treeRoot.style.transition = ''; }}, 600);
-
-      // Tampilkan legend highlight jika ada
-      const legEl = document.getElementById('legend-highlight');
-      if (legEl) legEl.style.display = 'flex';
-    }});
-  }}
-  setTimeout(tryScroll, 200); // delay awal ringan, retry handle sisanya
+    setTimeout(() => {{ treeRoot.style.transition = ''; }}, 700);
+    // Show legend item
+    const legEl = document.getElementById('legend-highlight');
+    if (legEl) legEl.style.display = 'flex';
+  }}, 350);
 }}
 function rerenderTree() {{
   const r = document.getElementById('tree-root');
@@ -1948,8 +1640,7 @@ function rerenderTree() {{
 }}
 treeData.forEach(n => applyInitialCollapse(n, 0));
 rerenderTree();
-if (!highlightId) {{ setTimeout(fitView, 400); }}
-else {{ scrollToHighlighted(); }}
+if (!highlightId) {{ setTimeout(fitView, 300); }}
 </script></body></html>"""
 
 
@@ -2037,6 +1728,12 @@ def _render_login_page():
             st.session_state.authenticated = True
             st.session_state.user_email    = email_input.strip().lower()
             st.session_state.user_info     = user_info
+            # Log aktivitas login ke activity_log
+            st.session_state["session_id"] = str(_uuid.uuid4())[:8]
+            log_activity(
+                action_type="login",
+                detail=f"Login berhasil · role={user_info.get('role','')}",
+            )
             st.rerun()
         else:
             st.error("Email atau password salah, atau akun Anda tidak aktif. Hubungi OD Admin.")
@@ -2050,50 +1747,10 @@ def _render_login_page():
     st.stop()
 
 
-if PUBLIC_MODE:
-    # ── PUBLIC MODE: bypass auth sepenuhnya ───────────────────────
-    if not st.session_state.get("authenticated", False):
-        st.session_state.authenticated = True
-        st.session_state.user_info     = _PUBLIC_USER_INFO
-        st.session_state.user_email    = "public"
-else:
-    # ── FULL MODE: cek SSO dulu, fallback ke login form ───────────
-    if not st.session_state.get("authenticated", False):
-
-        # ── Coba SSO via URL parameter ?email=... ─────────────────
-        # People DB mengirim email user via URL ketika redirect ke dashboard
-        _url_params = st.query_params
-        _sso_email  = _url_params.get("email", "").strip().lower()
-
-        if _sso_email and "@mekari.com" in _sso_email:
-            # Load df dulu untuk validasi email
-            _df_sso, _ = load_data()
-            if _df_sso is not None and not _df_sso.empty:
-                _sso_user = resolve_user_from_email(_sso_email, _df_sso)
-                if _sso_user:
-                    # Email valid & terdaftar → login otomatis
-                    st.session_state.authenticated = True
-                    st.session_state.user_email    = _sso_email
-                    st.session_state.user_info     = _sso_user
-                    # Catat login di activity log
-                    ensure_activity_log_header()
-                    log_activity(
-                        user_email = _sso_email,
-                        activity   = "Login via SSO (People Database)",
-                        tab        = "Login",
-                    )
-                    st.rerun()
-                else:
-                    # Email tidak terdaftar di database
-                    st.error("❌ Email Anda tidak terdaftar dalam sistem. Hubungi OD Admin.")
-                    st.stop()
-            else:
-                st.error("❌ Gagal memuat data. Coba refresh halaman.")
-                st.stop()
-        else:
-            # Tidak ada SSO parameter → tampilkan login form biasa
-            _render_login_page()
-
+# ── Auth gate dinonaktifkan sementara ─────────────────────────────
+# Autentikasi akan disambungkan ke SSO People Database.
+# Saat ini semua user masuk sebagai admin (full access) untuk operasional.
+# TODO: Sambungkan token SSO dari People Database ke session_state ini.
 _user_info = st.session_state.get("user_info", {
     "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
     "name": "User", "employee_id": "",
@@ -2481,163 +2138,111 @@ with st.sidebar:
     total_div      = df["Division"].nunique()
     total_mgr      = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
 
-    # ── Brand Header ───────────────────────────────────────────────
     st.markdown(f"""
-    <div style="padding:20px 16px 14px 16px; border-bottom:1px solid {T['outline']};">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
-            <div style="width:36px;height:36px;border-radius:8px;background:#ffffff;
+    <div style="padding:24px 18px 18px 18px; border-bottom:1px solid {T['outline']}; margin-bottom:4px;">
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
+            <div style="width:40px;height:40px;border-radius:8px;
+                background:#ffffff;
                 display:flex;align-items:center;justify-content:center;flex-shrink:0;
-                box-shadow:0 2px 8px rgba(142,148,242,0.2);overflow:hidden;padding:3px;">
-                <img src="data:image/png;base64,{_MEKARI_LOGO_B64}"
-                    style="width:100%;height:100%;object-fit:contain;" />
-            </div>
+                box-shadow:0 2px 12px rgba(142,148,242,0.25);overflow:hidden;padding:4px;">
+                <img src="data:image/png;base64,{_MEKARI_LOGO_B64}" style="width:100%;height:100%;object-fit:contain;" /></div>
             <div>
-                <div style="font-size:14px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">Mekari</div>
+                <div style="font-size:15px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;line-height:1.2;letter-spacing:-0.02em;">Mekari</div>
                 <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
-                    letter-spacing:0.05em;text-transform:uppercase;">People Dashboard</div>
+                    letter-spacing:0.06em;text-transform:uppercase;margin-top:2px;">People Dashboard</div>
             </div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;background:rgba(142,148,242,0.10);
-            border-radius:6px;padding:5px 10px;">
-            <span style="font-size:7px;">{status_dot}</span>
+        <div style="background:rgba(142,148,242,0.12);border-radius:6px;padding:6px 10px;
+            display:flex;align-items:center;gap:6px;">
+            <span style="font-size:8px;">{status_dot}</span>
             <span style="font-size:11px;color:{T['sidebar_text2']};font-weight:500;">{status_txt}</span>
         </div>
     </div>
-    """, unsafe_allow_html=True)
-
-    # ── Stats Grid ─────────────────────────────────────────────────
-    st.markdown(f"""
-    <div style="padding:12px 16px 10px 16px;border-bottom:1px solid {T['outline']};">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
-            <div style="background:rgba(142,148,242,0.08);border-radius:6px;padding:8px 10px;text-align:center;">
-                <div style="font-size:17px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">{total_karyawan:,}</div>
-                <div style="font-size:9px;color:{T['sidebar_text2']};font-weight:600;
-                    text-transform:uppercase;letter-spacing:0.06em;margin-top:1px;">{L["header_metric"]}</div>
+    <div style="padding:12px 18px 8px 18px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
+                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_karyawan:,}</div>
+                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
+                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">{L["header_metric"]}</div>
             </div>
-            <div style="background:rgba(142,148,242,0.08);border-radius:6px;padding:8px 10px;text-align:center;">
-                <div style="font-size:17px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">{total_mgr}</div>
-                <div style="font-size:9px;color:{T['sidebar_text2']};font-weight:600;
-                    text-transform:uppercase;letter-spacing:0.06em;margin-top:1px;">Manager</div>
+            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
+                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_mgr}</div>
+                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
+                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Manager</div>
             </div>
-            <div style="background:rgba(142,148,242,0.08);border-radius:6px;padding:8px 10px;text-align:center;">
-                <div style="font-size:17px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">{total_bu}</div>
-                <div style="font-size:9px;color:{T['sidebar_text2']};font-weight:600;
-                    text-transform:uppercase;letter-spacing:0.06em;margin-top:1px;">Business Unit</div>
+            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
+                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_bu}</div>
+                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
+                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Business Unit</div>
             </div>
-            <div style="background:rgba(142,148,242,0.08);border-radius:6px;padding:8px 10px;text-align:center;">
-                <div style="font-size:17px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;letter-spacing:-0.02em;line-height:1.2;">{total_div}</div>
-                <div style="font-size:9px;color:{T['sidebar_text2']};font-weight:600;
-                    text-transform:uppercase;letter-spacing:0.06em;margin-top:1px;">Divisi</div>
+            <div style="background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;text-align:center;">
+                <div style="font-size:19px;font-weight:700;color:{T['sidebar_active']};
+                    font-family:'Inter',sans-serif;letter-spacing:-0.03em;">{total_div}</div>
+                <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
+                    text-transform:uppercase;letter-spacing:0.05em;margin-top:2px;">Divisi</div>
             </div>
         </div>
     </div>
+    <div style="padding:6px 18px;margin-bottom:2px;"><div style="height:1px;background:{T['outline']};"></div></div>
+    <div style="padding:4px 18px 6px 18px;">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;
+            letter-spacing:0.09em;color:{T['sidebar_text2']};">{L["menu_label"]}</div>
+    </div>
     """, unsafe_allow_html=True)
 
-    # ── User Identity ──────────────────────────────────────────────
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = 0
 
+    # User identity card
     _uname    = _user_info.get("name", "User")
     _uemail   = st.session_state.get("user_email", "")
     _urole    = _user_role.upper()
     _role_colors = {"ADMIN": "#8E94F2", "CXO": "#059669", "LEADER": "#d97706", "EMPLOYEE": "#64748b"}
     _role_color  = _role_colors.get(_urole, "#64748b")
     _initials    = "".join([w[0].upper() for w in _uname.split()[:2]])
-
     st.markdown(f"""
-    <div style="padding:10px 16px 8px 16px;border-bottom:1px solid {T['outline']};">
-        <div style="display:flex;align-items:center;gap:9px;
-            background:rgba(142,148,242,0.08);border-radius:8px;padding:8px 10px;">
-            <div style="width:30px;height:30px;border-radius:50%;background:{T['primary']};
+    <div style="padding:8px 18px 12px 18px;">
+        <div style="display:flex;align-items:center;gap:10px;
+            background:rgba(142,148,242,0.10);border-radius:8px;padding:10px 12px;">
+            <div style="width:32px;height:32px;border-radius:50%;
+                background:{T['primary']};
                 display:flex;align-items:center;justify-content:center;
-                font-size:11px;font-weight:700;color:white;flex-shrink:0;
-                font-family:'Inter',sans-serif;">{_initials}</div>
-            <div style="min-width:0;flex:1;">
-                <div style="font-size:12px;font-weight:600;color:{T['sidebar_active']};
-                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-                    font-family:'Inter',sans-serif;line-height:1.3;">{_uname}</div>
-                <span style="font-size:9px;font-weight:600;padding:1px 6px;border-radius:3px;
-                    background:{_role_color};color:white;letter-spacing:0.04em;
-                    display:inline-block;margin-top:2px;">{_urole}</span>
+                font-size:12px;font-weight:600;color:white;flex-shrink:0;font-family:'Inter',sans-serif;">{_initials}</div>
+            <div style="min-width:0;">
+                <div style="font-size:13px;font-weight:600;color:{T['sidebar_active']};
+                    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Inter',sans-serif;">{_uname}</div>
+                <div style="display:flex;align-items:center;gap:5px;margin-top:3px;">
+                    <span style="font-size:9px;font-weight:600;padding:2px 6px;border-radius:4px;
+                        background:{_role_color};color:white;letter-spacing:0.05em;">{_urole}</span>
+                </div>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Navigation Section Label ───────────────────────────────────
-    st.markdown(f"""
-    <div style="padding:10px 16px 4px 16px;">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.10em;color:{T['sidebar_text2']};">Menu</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # ── Main Nav Items ─────────────────────────────────────────────
+    # ── Tab visibility sementara ──────────────────────────────────
+    # Hanya Org Chart yang ditampilkan.
+    # Tab lain (Data Karyawan, Compliance, Manager, CR, Admin Panel)
+    # akan dimunculkan kembali setelah integrasi SSO People Database selesai.
+    # TODO: Kembalikan nav_items lengkap setelah SSO aktif.
     nav_items = [
-        ("🌳", L["nav_org"],         0),
-        ("👥", L["nav_data"],        1),
-        ("🔍", L["nav_compliance"],  2),
-        ("👔", L["nav_manager"],     3),
-        ("📝", L["nav_cr"],          4),
+        ("🌳", L["nav_org"], 0),
     ]
 
     active_idx = st.session_state.active_tab
+
+    # Pastikan tab aktif masih boleh diakses role ini
+    # (misal setelah role berubah via session lama)
     if not _can_access_tab(_user_role, active_idx):
         st.session_state.active_tab = 0
         active_idx = 0
 
-    # Inject nav button CSS override for icon+label layout — rata kiri
-    st.markdown(f"""
-    <style>
-    /* Nav buttons — rata kiri, icon + label 12.5px Inter */
-    [data-testid="stSidebar"] [data-testid="stButton"] button {{
-        display: flex !important;
-        align-items: center !important;
-        justify-content: flex-start !important;
-        gap: 10px !important;
-        padding: 9px 14px !important;
-        font-size: 12.5px !important;
-        font-weight: 500 !important;
-        font-family: 'Inter', sans-serif !important;
-        border-radius: 7px !important;
-        text-align: left !important;
-        width: 100% !important;
-        color: {T['sidebar_text']} !important;
-        background: transparent !important;
-        border: none !important;
-        transition: background 0.15s, color 0.15s !important;
-        letter-spacing: -0.01em !important;
-    }}
-    [data-testid="stSidebar"] [data-testid="stButton"] button p {{
-        text-align: left !important;
-        margin: 0 !important;
-    }}
-    [data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
-        background: rgba(142,148,242,0.12) !important;
-        color: {T['sidebar_active']} !important;
-    }}
-    [data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {{
-        background: {"rgba(142,148,242,0.18)" if not dm else "rgba(142,148,242,0.22)"} !important;
-        color: {T['sidebar_active']} !important;
-        font-weight: 600 !important;
-        border: none !important;
-        box-shadow: none !important;
-    }}
-    /* Icon-only buttons (mode + lang) — square, centered */
-    [data-testid="stSidebar"] .icon-btn-col [data-testid="stButton"] button {{
-        justify-content: center !important;
-        padding: 9px 6px !important;
-        font-size: 16px !important;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-
     for icon_nav, label_nav, tab_idx in nav_items:
+        # Render hanya tab yang boleh diakses role ini
         if not _can_access_tab(_user_role, tab_idx):
             continue
         is_active = (active_idx == tab_idx)
@@ -2646,89 +2251,33 @@ with st.sidebar:
             st.session_state.active_tab = tab_idx
             st.rerun()
 
-    # ── Settings Group ─────────────────────────────────────────────
     st.markdown(f"""
-    <div style="padding:10px 16px 4px 16px;margin-top:4px;border-top:1px solid {T['outline']};">
-        <div style="font-size:9px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.10em;color:{T['sidebar_text2']};">Settings</div>
-    </div>
+    <div style="padding:8px 20px;margin:4px 0;"><div style="height:1px;background:{T['outline']};"></div></div>
     """, unsafe_allow_html=True)
 
-    # Settings: User Setting (admin only — disembunyikan di PUBLIC_MODE)
-    if _is_admin and not PUBLIC_MODE:
-        is_admin_active = (active_idx == 99)
-        if st.button(f"⚙️  {L['btn_user_setting']}", key="nav_99",
-                     use_container_width=True, type="primary" if is_admin_active else "secondary"):
-            st.session_state.active_tab = 99
-            st.rerun()
+    col_sb1, col_sb2 = st.columns(2)
+    with col_sb1:
+        if st.button(L["btn_refresh"], use_container_width=True, key="refresh_btn"):
+            st.cache_data.clear(); st.rerun()
+    with col_sb2:
+        if st.button(f"{toggle_icon} {L['btn_mode']}", use_container_width=True, key="toggle_btn"):
+            st.session_state.dark_mode = not st.session_state.dark_mode; st.rerun()
 
-    # Settings: Sync Data (renamed from Refresh)
-    if st.button(f"🔄  {L['btn_sync']}", use_container_width=True, key="refresh_btn"):
-        st.cache_data.clear()
+    # Language toggle
+    if st.button(L["lang_toggle"], use_container_width=True, key="lang_btn"):
+        st.session_state.lang = "en" if st.session_state.lang == "id" else "id"
         st.rerun()
 
-    # Settings: Mode icon + Language compact label — 2 equal columns, no gap
-    _mode_icon  = "☀️" if dm else "🌙"
-    _lang_label = "EN" if st.session_state.lang == "id" else "ID"
-    _lang_help  = "Switch to English" if st.session_state.lang == "id" else "Ganti ke Bahasa Indonesia"
-
-    col_mode, col_lang = st.columns(2)
-    with col_mode:
-        if st.button(_mode_icon, use_container_width=True, key="toggle_btn",
-                     help="Dark / Light mode"):
-            st.session_state.dark_mode = not st.session_state.dark_mode
-            st.rerun()
-    with col_lang:
-        if st.button(_lang_label, use_container_width=True, key="lang_btn", help=_lang_help):
-            st.session_state.lang = "en" if st.session_state.lang == "id" else "id"
-            st.rerun()
-
-    # CSS: tight 2-column icon+label buttons — no gap, centered, bordered
-    st.markdown(f"""
-    <style>
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] {{
-        gap: 4px !important;
-    }}
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] div[data-testid="column"] {{
-        padding: 0 !important;
-        min-width: 0 !important;
-    }}
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] [data-testid="stButton"] button {{
-        justify-content: center !important;
-        font-size: 13px !important;
-        font-weight: 600 !important;
-        padding: 8px 4px !important;
-        letter-spacing: 0.04em !important;
-        background: transparent !important;
-        border: 1px solid {T['outline']} !important;
-        color: {T['sidebar_text']} !important;
-        border-radius: 7px !important;
-        width: 100% !important;
-    }}
-    [data-testid="stSidebar"] div[data-testid="stHorizontalBlock"] [data-testid="stButton"] button:hover {{
-        background: rgba(142,148,242,0.15) !important;
-        border-color: {T['primary']} !important;
-        color: {T['sidebar_active']} !important;
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-
-    # ── Logout ─────────────────────────────────────────────────────
-    st.markdown(f"""
-    <div style="padding:6px 16px 0 16px;">
-        <div style="height:1px;background:{T['outline']};"></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if not PUBLIC_MODE:
-        if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
-            for k in ["authenticated", "user_email", "user_info", "active_tab"]:
-                st.session_state.pop(k, None)
-            st.rerun()
+    # Logout button
+    st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
+    if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
+        log_activity(action_type="logout", detail="User logout")
+        for k in ["authenticated","user_email","user_info","active_tab"]:
+            st.session_state.pop(k, None)
+        st.rerun()
 
     st.markdown(f"""
-    <div style="padding:8px 16px 12px 16px;font-size:10px;color:{T['sidebar_text2']};
-        text-align:center;letter-spacing:0.02em;">
+    <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
         {L["auto_refresh"]}
     </div>
     """, unsafe_allow_html=True)
@@ -2763,27 +2312,6 @@ st.markdown(f"""
 
 _active = st.session_state.get("active_tab", 0)
 
-# ── Log tab visit (sekali per perubahan tab) ──────────────────────
-_log_email = st.session_state.get("user_email", "")
-_tab_names  = {
-    0: "Org Chart",
-    1: "Data Karyawan",
-    2: "Manager ID Hilang",
-    3: "Daftar Manager",
-    4: "Change Request",
-    5: "MPP Reconciliation",
-    99: "Admin Panel",
-}
-if _log_email and _log_email not in ("public", ""):
-    _last_logged_tab = st.session_state.get("_last_logged_tab", -1)
-    if _active != _last_logged_tab:
-        log_activity(
-            user_email = _log_email,
-            activity   = f"Membuka tab: {_tab_names.get(_active, str(_active))}",
-            tab        = _tab_names.get(_active, str(_active)),
-        )
-        st.session_state["_last_logged_tab"] = _active
-
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 1 — ORG CHART
@@ -2791,21 +2319,21 @@ if _log_email and _log_email not in ("public", ""):
 if _active == 0:
     st.markdown(f"""
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;
-        letter-spacing:0.09em;color:{T['text3']};margin-bottom:10px;">{L['mode_label']}</div>
+        letter-spacing:0.09em;color:{T['text3']};margin-bottom:10px;">MODE TAMPILAN</div>
     """, unsafe_allow_html=True)
-    view_mode = st.radio("", [L["mode_division"], L["mode_company"]], horizontal=True, label_visibility="collapsed")
+    view_mode = st.radio("", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True, label_visibility="collapsed")
 
     # ── Search Name ──────────────────────────────────────────────
     # [FIX] Search sekarang cari di seluruh df, auto-set filter BU/Divisi
     st.markdown(f"""
     <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-        letter-spacing:0.06em;margin:16px 0 8px 0;">{L['search_label']}</div>
+        letter-spacing:0.06em;margin:16px 0 8px 0;">Cari Karyawan</div>
     """, unsafe_allow_html=True)
 
     col_search, col_search_info = st.columns([3, 5])
     with col_search:
         name_search = st.text_input(
-            L["search_label"], placeholder=L["search_ph"],
+            "🔍 Search Name", placeholder="Ketik nama karyawan...",
             key="org_name_search", label_visibility="collapsed"
         )
 
@@ -2815,58 +2343,45 @@ if _active == 0:
         matched_global = df[
             df["Employee Name"].str.contains(name_search.strip(), case=False, na=False)
         ].copy()
-        # Log pencarian
-        if _log_email and _log_email not in ("public", ""):
-            _last_search = st.session_state.get("_last_search_logged", "")
-            if name_search.strip() != _last_search:
-                log_activity(
-                    user_email  = _log_email,
-                    activity    = "Mencari karyawan",
-                    tab         = "Org Chart",
-                    search_term = name_search.strip(),
-                )
-                st.session_state["_last_search_logged"] = name_search.strip()
 
     with col_search_info:
         if name_search.strip():
             if len(matched_global) == 0:
                 st.markdown(f"""<div style="padding:8px 12px;background:#fee2e2;border-radius:8px;
                     font-size:12px;color:#991b1b;margin-top:4px;">
-                    ❌ {L['search_not_found']} "<b>{name_search}</b>"</div>""",
+                    ❌ Tidak ada karyawan bernama "<b>{name_search}</b>"</div>""",
                     unsafe_allow_html=True)
             elif len(matched_global) == 1:
                 emp = matched_global.iloc[0]
                 st.markdown(f"""<div style="padding:8px 12px;background:#dcfce7;border-radius:8px;
                     font-size:12px;color:#166534;margin-top:4px;">
-                    ✅ {L['search_found_one']} <b>{emp['Employee Name']}</b> — {emp.get('Job Position','')},
+                    ✅ Ditemukan: <b>{emp['Employee Name']}</b> — {emp.get('Job Position','')},
                     <b>{emp.get('Division','')}</b> ({emp.get('Business Unit','')})</div>""",
                     unsafe_allow_html=True)
             else:
                 names_list = ", ".join(matched_global["Employee Name"].tolist()[:4])
-                suffix = f" +{len(matched_global)-4} {L['emp_more']}" if len(matched_global) > 4 else ""
+                suffix = f" +{len(matched_global)-4} lainnya" if len(matched_global) > 4 else ""
                 st.markdown(f"""<div style="padding:8px 12px;background:#fef9c3;border-radius:8px;
                     font-size:12px;color:#854d0e;margin-top:4px;">
-                    ⚠️ {L['search_found_many']} <b>{len(matched_global)}</b> {L['employees']}: {names_list}{suffix}. {L['emp_pick_below']}</div>""", unsafe_allow_html=True)
+                    ⚠️ Ditemukan <b>{len(matched_global)}</b> karyawan: {names_list}{suffix}.
+                    Pilih salah satu di bawah.</div>""", unsafe_allow_html=True)
 
     # Jika >1 hasil → selectbox pilih karyawan spesifik
     selected_emp_row = None
     if len(matched_global) > 1:
-        emp_choices = [L["emp_select_ph"]] + [
+        emp_choices = ["— Pilih karyawan —"] + [
             f"{r['Employee Name']}  ·  {r.get('Division','')}  ·  {r.get('Business Unit','')}"
             for _, r in matched_global.iterrows()
         ]
-        chosen_emp = st.selectbox(L["emp_select_label"], emp_choices,
+        chosen_emp = st.selectbox("Pilih karyawan:", emp_choices,
                                   key="search_emp_choice", label_visibility="collapsed")
-        if chosen_emp != L["emp_select_ph"]:
+        if chosen_emp != "— Pilih karyawan —":
             idx_c = emp_choices.index(chosen_emp) - 1
             selected_emp_row = matched_global.iloc[idx_c]
     elif len(matched_global) == 1:
         selected_emp_row = matched_global.iloc[0]
 
     # AUTO-SET filter BU & Divisi berdasarkan karyawan yang ditemukan/dipilih
-    # Catatan: auto-set ini hanya untuk menggeser selectbox BU/Divisi agar
-    # konsisten secara visual. Saat cross-div search aktif, filtered dataset
-    # diabaikan dan di-override oleh BFS downward dari leader.
     if selected_emp_row is not None:
         _tbu  = str(selected_emp_row.get("Business Unit", ""))
         _tdiv = str(selected_emp_row.get("Division", ""))
@@ -2876,100 +2391,60 @@ if _active == 0:
         _div_list_for = sorted(df[df["Business Unit"] == _tbu]["Division"].dropna().unique().tolist())
         if _tdiv in _div_list_for:
             st.session_state["sel_div"] = _tdiv
-        st.session_state["sel_sbu"]    = L["filter_all_sbu_label"]
-        st.session_state["sel_leader"] = L["filter_all_leader"]
+        st.session_state["sel_sbu"]    = "Semua SBU"
+        st.session_state["sel_leader"] = "Semua (divisi penuh)"
 
     # ID karyawan target untuk highlight di tree
     search_highlight_id = str(selected_emp_row.get("Employee ID", "")) if selected_emp_row is not None else None
-    if view_mode == L["mode_division"]:
+    if view_mode == "Per Divisi":
         st.markdown(f"""
         <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-            letter-spacing:0.06em;margin:16px 0 10px 0;">{L['filter_label']}</div>
+            letter-spacing:0.06em;margin:16px 0 10px 0;">Filter</div>
         """, unsafe_allow_html=True)
         col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
         with col_a:
             bu_list    = sorted(df["Business Unit"].dropna().unique().tolist())
-            selected_bu = st.selectbox(L["filter_bu"], bu_list, key="sel_bu")
+            selected_bu = st.selectbox("🏢 Business Unit", bu_list, key="sel_bu")
         with col_b:
             div_list    = sorted(df[df["Business Unit"] == selected_bu]["Division"].dropna().unique().tolist())
-            selected_div = st.selectbox(L["filter_div"], div_list, key="sel_div")
+            selected_div = st.selectbox("📁 Divisi", div_list, key="sel_div")
         with col_c:
             sbu_opts_raw = [s for s in df[
                 (df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)
             ]["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""]
-            selected_sbu = st.selectbox(L["filter_sbu"], [L["filter_all_sbu_label"]] + sorted(sbu_opts_raw), key="sel_sbu")
+            selected_sbu = st.selectbox("🏷️ SBU/Tribe", ["Semua SBU"] + sorted(sbu_opts_raw), key="sel_sbu")
 
-        # ── Determine filtered dataset ────────────────────────────
-        # KASUS A: user search nama → tampilkan seluruh subtree leader
-        #          lintas divisi (bukan dibatasi divisi filter)
-        # KASUS B: user filter manual BU/Divisi → tampilkan divisi tsb
-        _is_cross_div_search = (
-            selected_emp_row is not None
-            and search_highlight_id is not None
-        )
+        filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
+        if selected_sbu != "Semua SBU":
+            filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
 
-        if _is_cross_div_search:
-            # BFS downward dari leader yang dicari — seluruh df, tanpa batas divisi
-            _lid = search_highlight_id
-            sub_ids_search: set = set()
-            to_visit_s = [_lid]
-            while to_visit_s:
-                curr_s = to_visit_s.pop()
-                if curr_s in sub_ids_search:
-                    continue
-                sub_ids_search.add(curr_s)
-                to_visit_s.extend(df[df["Manager ID"] == curr_s]["Employee ID"].tolist())
-            filtered = df[df["Employee ID"].isin(sub_ids_search)].copy()
-            _cross_div_label = True
-        else:
-            filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
-            if selected_sbu != L["filter_all_sbu_label"]:
-                filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
-            _cross_div_label = False
+        all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
+        with col_d:
+            selected_leader = st.selectbox("👤 Filter by Leader",
+                                           ["Semua (divisi penuh)"] + sorted(all_leaders), key="sel_leader")
 
-        # Filter by leader (hanya berlaku di mode non-search)
-        if not _is_cross_div_search:
-            all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
-            with col_d:
-                selected_leader = st.selectbox(L["filter_leader"],
-                                               [L["filter_all_leader"]] + sorted(all_leaders), key="sel_leader")
-            if selected_leader != L["filter_all_leader"]:
-                leader_id = filtered[filtered["Employee Name"] == selected_leader]["Employee ID"].values
-                if len(leader_id) > 0:
-                    lid      = leader_id[0]
-                    sub_ids  = set()
-                    to_visit = [lid]
-                    while to_visit:
-                        curr = to_visit.pop()
-                        sub_ids.add(curr)
-                        to_visit.extend(df[df["Manager ID"] == curr]["Employee ID"].tolist())
-                    filtered = df[df["Employee ID"].isin(sub_ids)].copy()
-        else:
-            # Saat cross-div search aktif, sembunyikan filter leader (tidak relevan)
-            with col_d:
-                st.selectbox(L["filter_leader"], [L["filter_all_leader"]], key="sel_leader", disabled=True)
+        if selected_leader != "Semua (divisi penuh)":
+            leader_id = filtered[filtered["Employee Name"] == selected_leader]["Employee ID"].values
+            if len(leader_id) > 0:
+                lid      = leader_id[0]
+                sub_ids  = set()
+                to_visit = [lid]
+                while to_visit:
+                    curr = to_visit.pop()
+                    sub_ids.add(curr)
+                    to_visit.extend(df[df["Manager ID"] == curr]["Employee ID"].tolist())
+                filtered = df[df["Employee ID"].isin(sub_ids)].copy()
 
         col_lv, col_info = st.columns([2, 4])
         with col_lv:
             level_opt = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"],
                                      help="Atur berapa level yang ditampilkan secara default")
         with col_info:
-            if _is_cross_div_search:
+            if search_highlight_id and search_highlight_id in filtered["Employee ID"].values:
                 _emp_name_hl = selected_emp_row["Employee Name"]
-                _divs_in_tree = ", ".join(sorted(filtered["Division"].dropna().unique().tolist())[:5])
-                st.caption(
-                    f"📊 Menampilkan **{len(filtered)}** karyawan di bawah **{_emp_name_hl}** "
-                    f"(lintas divisi: {_divs_in_tree})"
-                )
-            elif search_highlight_id and search_highlight_id in filtered["Employee ID"].values:
-                _emp_name_hl = selected_emp_row["Employee Name"]
-                st.caption(f"📊 {L['showing_emp']} **{len(filtered)}** {L['employees']} — 🎯 **{_emp_name_hl}** {L['emp_found_in']}")
+                st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan — 🎯 **{_emp_name_hl}** ada di divisi ini")
             else:
-                st.caption(f"📊 {L['showing_emp']} **{len(filtered)}** {L['employees']} {L['emp_in_div']}")
-
-        # Saat cross-div search, gunakan mode "company" agar warna node tidak dibatasi 1 divisi
-        _tree_mode = "company" if _is_cross_div_search else "division"
-        _tree_div  = selected_div if not _is_cross_div_search else ""
+                st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan di divisi ini")
 
         selected_level  = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt]
         all_ids_needed  = get_all_managers(filtered["Employee ID"].tolist(), df)
@@ -2980,7 +2455,7 @@ if _active == 0:
             ~full_data["Manager ID"].isin(all_ids_set) | full_data["Manager ID"].isin({"", "nan"})
         ]["Employee ID"].astype(str).tolist()
 
-        tree_data  = build_tree_json(full_data, _tree_div, root_ids, mode=_tree_mode)
+        tree_data  = build_tree_json(full_data, selected_div, root_ids, mode="division")
         chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T, highlight_id=search_highlight_id)
         st.components.v1.html(chart_html, height=680, scrolling=False)
 
@@ -3013,7 +2488,7 @@ if _active == 0:
         with col_lv2:
             level_opt2 = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"], key="lv2")
         with col_inf2:
-            st.caption(f"📊 {L['showing_emp']} **{len(df)}** {L['employees']}")
+            st.caption(f"📊 Menampilkan **{len(df)}** karyawan")
 
         selected_level2 = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt2]
         # Mode perusahaan: tampilkan seluruh tree (search sudah auto-switch ke Per Divisi)
@@ -3052,44 +2527,42 @@ if _active == 0:
 elif _active == 1:
     st.markdown(f"""
     <div style="margin-bottom:20px;">
-        <div style="font-size:20px;font-weight:700;color:{T['text']};">{L['tab_data_title']}</div>
-        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">{L['tab_data_sub']}</div>
+        <div style="font-size:20px;font-weight:700;color:{T['text']};">Data Karyawan</div>
+        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">Seluruh data karyawan dengan filter dan pencarian</div>
     </div>
     """, unsafe_allow_html=True)
 
-    _fa = L["filter_all"]  # "Semua" atau "All" — dinamis sesuai bahasa
-
     c1, c2, c3, c4 = st.columns(4)
-    with c1: search = st.text_input(L["search_name"])
-    with c2: bu_f   = st.selectbox(L["filter_bu_plain"], [_fa] + sorted(df["Business Unit"].unique().tolist()), key="t2bu")
+    with c1: search = st.text_input("🔍 Cari nama karyawan")
+    with c2: bu_f   = st.selectbox("Filter BU", ["Semua"] + sorted(df["Business Unit"].unique().tolist()), key="t2bu")
     with c3:
-        div_opts = [_fa] + sorted(
-            df[df["Business Unit"] == bu_f]["Division"].unique().tolist() if bu_f != _fa
+        div_opts = ["Semua"] + sorted(
+            df[df["Business Unit"] == bu_f]["Division"].unique().tolist() if bu_f != "Semua"
             else df["Division"].unique().tolist()
         )
-        div_f = st.selectbox(L["filter_div_plain"], div_opts, key="t2div")
+        div_f = st.selectbox("Filter Divisi", div_opts, key="t2div")
     with c4:
         sbu_src = df.copy()
-        if bu_f  != _fa: sbu_src = sbu_src[sbu_src["Business Unit"] == bu_f]
-        if div_f != _fa: sbu_src = sbu_src[sbu_src["Division"] == div_f]
-        sbu_opts_t2 = [_fa] + sorted([s for s in sbu_src["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""])
-        sbu_f = st.selectbox(L["filter_sbu"], sbu_opts_t2, key="t2sbu")
+        if bu_f != "Semua": sbu_src = sbu_src[sbu_src["Business Unit"] == bu_f]
+        if div_f != "Semua": sbu_src = sbu_src[sbu_src["Division"] == div_f]
+        sbu_opts_t2 = ["Semua"] + sorted([s for s in sbu_src["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""])
+        sbu_f = st.selectbox("Filter SBU/Tribe", sbu_opts_t2, key="t2sbu")
 
     data_view = df.copy()
-    if search:      data_view = data_view[data_view["Employee Name"].str.contains(search, case=False, na=False)]
-    if bu_f  != _fa: data_view = data_view[data_view["Business Unit"] == bu_f]
-    if div_f != _fa: data_view = data_view[data_view["Division"] == div_f]
-    if sbu_f != _fa: data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
+    if search:       data_view = data_view[data_view["Employee Name"].str.contains(search, case=False, na=False)]
+    if bu_f  != "Semua": data_view = data_view[data_view["Business Unit"] == bu_f]
+    if div_f != "Semua": data_view = data_view[data_view["Division"] == div_f]
+    if sbu_f != "Semua": data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
 
-    st.caption(f"{L['showing_emp']} **{len(data_view)}** {L['employees']}")
+    st.caption(f"Menampilkan **{len(data_view)}** karyawan")
     st.dataframe(data_view, use_container_width=True, height=480)
 
     col_dl7, col_dl8, _ = st.columns([1, 1, 3])
     with col_dl7:
-        st.download_button(L["download_csv"], data_view.to_csv(index=False).encode("utf-8"),
+        st.download_button("📄 CSV", data_view.to_csv(index=False).encode("utf-8"),
                            "filtered.csv", "text/csv", use_container_width=True)
     with col_dl8:
-        st.download_button(L["download_excel"], to_excel(data_view), "filtered.xlsx",
+        st.download_button("📊 Excel", to_excel(data_view), "filtered.xlsx",
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
 
@@ -3211,85 +2684,8 @@ elif _active == 2:
             st.caption(f"{L['showing']} **{len(view_mis)}** isu")
             st.dataframe(view_mis, use_container_width=True, height=400)
 
-            # ── Quick CR — buat Change Request langsung dari mismatch ──
-            # Hanya tampil untuk mismatch yang field-nya bisa di-CR
-            CR_ELIGIBLE_FIELDS = {"Division", "Business Unit"}
-            cr_eligible = view_mis[view_mis["Field"].isin(CR_ELIGIBLE_FIELDS)].copy() if not view_mis.empty else pd.DataFrame()
-
-            if not cr_eligible.empty and _is_admin:
-                st.markdown(f"""
-                <div style="background:{T['accent_bg']};border:1px solid {T['border2']};
-                    border-radius:8px;padding:12px 16px;margin:16px 0 8px 0;
-                    font-size:13px;color:{T['accent']};">
-                    ⚡ <b>Quick CR</b> — Buat Change Request langsung dari temuan mismatch di bawah ini.
-                    Hanya tersedia untuk field: Divisi dan Business Unit.
-                </div>
-                """, unsafe_allow_html=True)
-
-                # Deduplicate per Employee ID — ambil mismatch pertama per orang
-                cr_candidates = cr_eligible.drop_duplicates(subset=["Employee ID"]).head(10)
-                for _, mis_row in cr_candidates.iterrows():
-                    eid    = str(mis_row.get("Employee ID", ""))
-                    ename  = str(mis_row.get("Employee Name", ""))
-                    field  = str(mis_row.get("Field", ""))
-                    val_emp = str(mis_row.get("Nilai di Employee Data", ""))
-                    val_mpp = str(mis_row.get("Nilai di MPP", ""))
-                    change_type_quick = "Nama Divisi" if field == "Division" else "Reporting Line"
-
-                    with st.expander(f"📋 {ename} ({eid}) — {field}: '{val_emp}' → '{val_mpp}'", expanded=False):
-                        st.caption(
-                            f"Karyawan ini tercatat di **{field}** = '{val_emp}' (Employee Data) "
-                            f"namun MPP mencatat '{val_mpp}'. "
-                            f"Buat CR untuk menyelaraskan data."
-                        )
-                        col_qcr1, col_qcr2 = st.columns(2)
-                        with col_qcr1:
-                            qcr_name  = st.text_input("Nama Requester *", key=f"qcr_name_{eid}",
-                                                       value=_user_info.get("name",""),
-                                                       placeholder="Nama lengkap")
-                            qcr_email = st.text_input("Email Requester *", key=f"qcr_email_{eid}",
-                                                       value=st.session_state.get("user_email",""),
-                                                       placeholder="email@mekari.com")
-                        with col_qcr2:
-                            qcr_alasan = st.text_area(
-                                "Alasan *", key=f"qcr_alasan_{eid}", height=80,
-                                value=f"Rekonsiliasi data: {field} di Employee Data ('{val_emp}') "
-                                      f"tidak sesuai dengan MPP ('{val_mpp}')."
-                            )
-
-                        if st.button(f"📨 Buat CR untuk {ename}", key=f"qcr_submit_{eid}",
-                                     use_container_width=True):
-                            errors_qcr = []
-                            if not qcr_name.strip():  errors_qcr.append("Nama requester wajib diisi")
-                            if not qcr_email.strip() or "@" not in qcr_email: errors_qcr.append("Email tidak valid")
-                            if not qcr_alasan.strip(): errors_qcr.append("Alasan wajib diisi")
-                            if errors_qcr:
-                                for e in errors_qcr: st.error(f"❌ {e}")
-                            else:
-                                cr_row = {
-                                    "request_id":      generate_request_id(),
-                                    "submitted_date":  datetime.now().strftime("%Y-%m-%d %H:%M"),
-                                    "requester_name":  qcr_name.strip(),
-                                    "requester_email": qcr_email.strip(),
-                                    "change_type":     change_type_quick,
-                                    "employee_id":     eid,
-                                    "employee_name":   ename,
-                                    "data_lama":       val_emp,
-                                    "data_baru":       val_mpp,
-                                    "alasan":          qcr_alasan.strip(),
-                                    "status":          "Pending",
-                                    "reviewed_by":     "",
-                                    "reviewed_date":   "",
-                                    "catatan":         f"[Auto dari Compliance Mismatch] Field: {field}",
-                                }
-                                if save_change_request(cr_row):
-                                    st.success(f"✅ CR berhasil dibuat untuk **{ename}**. Cek Tab Change Request → Inbox.")
-                                    load_change_requests.clear()
-                                else:
-                                    st.error("❌ Gagal menyimpan CR. Periksa koneksi Google Sheets.")
-
             st.divider()
-            _bkd2_title = L["breakdown_field"] if st.session_state.lang == "en" else "Breakdown per Field"
+            _bkd2_title = "Breakdown by Field" if st.session_state.lang == "en" else "Breakdown per Field"
             st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:8px;'>{_bkd2_title}</div>", unsafe_allow_html=True)
             field_bkd = view_mis.groupby(["Field","Severity"]).size().reset_index(name="Count").sort_values("Count",ascending=False)
             st.dataframe(field_bkd, use_container_width=True, height=200)
@@ -3347,10 +2743,10 @@ elif _active == 2:
             col_v1, col_v2, col_v3, col_v4 = st.columns([2, 2, 2, 2])
             with col_v1:
                 _bu_v_opts = ["Semua"] + sorted(vac_df["BU"].dropna().unique().tolist()) if "BU" in vac_df.columns else ["Semua"]
-                bu_v = st.selectbox(L["filter_bu_plain"], _bu_v_opts, key="cc_vac_bu")
+                bu_v = st.selectbox("Filter BU", _bu_v_opts, key="cc_vac_bu")
             with col_v2:
                 _div_v_opts = ["Semua"] + sorted(vac_df["Division"].dropna().unique().tolist()) if "Division" in vac_df.columns else ["Semua"]
-                div_v = st.selectbox(L["filter_div_plain"], _div_v_opts, key="cc_vac_div")
+                div_v = st.selectbox("Filter Divisi", _div_v_opts, key="cc_vac_div")
             with col_v3:
                 _status_v_opts = ["Semua"] + sorted(vac_df["Fulfillment Status"].dropna().unique().tolist()) if "Fulfillment Status" in vac_df.columns else ["Semua"]
                 status_v = st.selectbox("Filter Fulfillment Status", _status_v_opts, key="cc_vac_status")
@@ -3365,7 +2761,7 @@ elif _active == 2:
             if jobid_search_v.strip() and "JOBID" in view_vac.columns:
                 view_vac = view_vac[view_vac["JOBID"].astype(str).str.contains(jobid_search_v.strip(), case=False, na=False)]
 
-            st.caption(f"{L['showing']} **{len(view_vac)}** {L['positions']} MPP")
+            st.caption(f"{L['showing']} **{len(view_vac)}** posisi MPP")
             st.dataframe(view_vac, use_container_width=True, height=430)
             st.divider()
             c1, c2, _ = st.columns([1,1,3])
@@ -3443,14 +2839,14 @@ elif _active == 3:
     col_m1, col_m2, col_m3, col_m4 = st.columns(4)
     with col_m1: search_mgr = st.text_input("🔍 Cari nama manager", key="search_mgr")
     with col_m2:
-        bu_mgr = st.selectbox(L["filter_bu_plain"],
-                              [L["filter_all"]] + sorted(mgr_df["Business Unit"].dropna().unique().tolist()), key="bu_mgr")
+        bu_mgr = st.selectbox("Filter BU",
+                              ["Semua"] + sorted(mgr_df["Business Unit"].dropna().unique().tolist()), key="bu_mgr")
     with col_m3:
         div_mgr_opts = (["Semua"] + sorted(mgr_df[mgr_df["Business Unit"] == bu_mgr]["Division"].dropna().unique().tolist())
-                        if bu_mgr != L["filter_all"] else ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist()))
-        div_mgr = st.selectbox(L["filter_div_plain"], div_mgr_opts, key="div_mgr")
+                        if bu_mgr != "Semua" else ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist()))
+        div_mgr = st.selectbox("Filter Divisi", div_mgr_opts, key="div_mgr")
     with col_m4:
-        level_filter = st.selectbox(L["filter_level"], [L["filter_all"], "Chief", "C-1", "C-2"], key="level_mgr",
+        level_filter = st.selectbox("🎯 Filter Level Hierarki", ["Semua", "Chief", "C-1", "C-2"], key="level_mgr",
                                     help="Chief = bawahan langsung SLKR001 | C-1 = 1 tingkat di bawah Chief | C-2 = 2 tingkat di bawah Chief")
 
     hide_level0 = st.checkbox("🚫 Sembunyikan manager yang memiliki bawahan Career Stage Level 0",
@@ -3475,7 +2871,7 @@ elif _active == 3:
         </div>
         """, unsafe_allow_html=True)
 
-    st.caption(f"{L['showing_emp']} **{len(view_mgr)}** {L['mgr_count_label']}")
+    st.caption(f"Menampilkan **{len(view_mgr)}** manager")
     
     display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division",
                         "Business Unit", "SBU/Tribe", "Level Hierarki", "Bawahan Langsung", "Total Span (Semua Bawahan)"]
@@ -3738,32 +3134,10 @@ elif _active == 4:
                             col_a, col_r = st.columns(2)
                             with col_a:
                                 if st.button("✅ Approve", key=f"approve_{row.get('request_id','')}", use_container_width=True):
-                                    if not reviewer.strip():
-                                        st.error("Nama reviewer harus diisi")
+                                    if not reviewer.strip(): st.error("Nama reviewer harus diisi")
                                     else:
-                                        # Step 1: update status CR di change_requests sheet
-                                        cr_ok = update_cr_status(
-                                            row.get("request_id",""), "Approved",
-                                            reviewer.strip(), catatan_review.strip()
-                                        )
-                                        if cr_ok:
-                                            # Step 2: write-back ke employee_data sheet
-                                            wb_ok, wb_msg = execute_cr_writeback(
-                                                employee_id = str(row.get("employee_id","")).strip(),
-                                                change_type = str(row.get("change_type","")).strip(),
-                                                data_baru   = str(row.get("data_baru","")).strip(),
-                                                emp_df      = df,
-                                            )
-                                            if wb_ok:
-                                                st.success(f"✅ Approved & data diperbarui — {wb_msg}")
-                                            else:
-                                                # CR sudah Approved di audit trail,
-                                                # tapi write-back gagal — tampilkan warning
-                                                st.warning(
-                                                    f"⚠️ CR berhasil di-Approve, namun write-back ke Employee Data gagal:\n\n"
-                                                    f"{wb_msg}\n\nUpdate manual diperlukan."
-                                                )
-                                            st.rerun()
+                                        if update_cr_status(row.get("request_id",""), "Approved", reviewer.strip(), catatan_review.strip()):
+                                            st.success("✅ Approved!"); st.rerun()
                             with col_r:
                                 if st.button("❌ Reject", key=f"reject_{row.get('request_id','')}", use_container_width=True):
                                     if not reviewer.strip(): st.error("Nama reviewer harus diisi")
@@ -3805,7 +3179,7 @@ elif _active == 4:
                                 "employee_name","employee_id","data_lama","data_baru",
                                 "status","reviewed_by","reviewed_date","catatan"]
                 available_cols = [c for c in display_cols if c in view_hist.columns]
-                st.caption(f"{L['showing_emp']} **{len(view_hist)}** {L['req_count_label']}")
+                st.caption(f"Menampilkan **{len(view_hist)}** request")
                 st.dataframe(view_hist[available_cols].reset_index(drop=True), use_container_width=True, height=480)
                 st.divider()
                 col_hd1, col_hd2, _ = st.columns([1,1,3])
@@ -3831,14 +3205,14 @@ elif _active == 99:
 
     st.markdown(f"""
     <div style="margin-bottom:24px;">
-        <div style="font-size:20px;font-weight:700;color:{T['text']};">⚙️ User Setting — Manajemen Akses</div>
+        <div style="font-size:20px;font-weight:700;color:{T['text']};">⚙️ Admin Panel — Manajemen Akses</div>
         <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
             Kelola hak akses user dashboard · Perubahan berlaku dalam 2 menit (cache TTL)
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    ap_tab1, ap_tab2, ap_tab3 = st.tabs(["👥  Daftar User", "➕  Tambah / Edit User", "🔒  Reset Password"])
+    ap_tab1, ap_tab2, ap_tab3, ap_tab4 = st.tabs(["👥  Daftar User", "➕  Tambah / Edit User", "🔒  Reset Password", "📋  Activity Log"])
 
     # Reload ACL fresh untuk admin panel
     acl_dict = load_acl_table()
@@ -3887,7 +3261,7 @@ elif _active == 99:
                     view_acl["Nama"].str.lower().str.contains(q)
                 ]
 
-            st.caption(f"{L['showing_emp']} **{len(view_acl)}** dari **{len(acl_display_df)}** {L['user_count_label']}")
+            st.caption(f"Menampilkan **{len(view_acl)}** dari **{len(acl_display_df)}** user")
             st.dataframe(view_acl, use_container_width=True, height=380)
         else:
             st.info("Belum ada user di ACL. Tambahkan user pertama di tab 'Tambah / Edit User'.")
@@ -4087,3 +3461,60 @@ elif _active == 99:
                         st.success(f"✅ Password **{rp_email}** berhasil direset. Informasikan ke user.")
                     else:
                         st.error("Gagal reset password. Pastikan koneksi ke Google Sheets aktif.")
+    # ── Tab 4: Activity Log ────────────────────────────────────────
+    with ap_tab4:
+        st.markdown(f"""
+        <div style="margin-bottom:16px;">
+            <div style="font-size:14px;font-weight:600;color:{T['text']};">📋 Activity Log</div>
+            <div style="font-size:12px;color:{T['text_variant']};margin-top:4px;">
+                500 aktivitas terbaru · diurutkan dari terbaru
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        log_df = get_activity_log(limit=500)
+
+        if log_df.empty:
+            st.info("Belum ada aktivitas tercatat. Log akan muncul setelah user mulai login.")
+        else:
+            # Summary metrics
+            col_lg1, col_lg2, col_lg3, col_lg4 = st.columns(4)
+            col_lg1.metric("Total Events",   len(log_df))
+            col_lg2.metric("Login Events",   len(log_df[log_df.get("action_type","") == "login"]) if "action_type" in log_df.columns else "-")
+            col_lg3.metric("Unique Users",   log_df["user_email"].nunique() if "user_email" in log_df.columns else "-")
+            col_lg4.metric("Export Events",  len(log_df[log_df.get("action_type","") == "export"]) if "action_type" in log_df.columns else "-")
+
+            st.markdown("---")
+
+            # Filter log
+            col_lf1, col_lf2, col_lf3 = st.columns(3)
+            with col_lf1:
+                log_users = ["Semua"] + sorted(log_df["user_email"].dropna().unique().tolist()) if "user_email" in log_df.columns else ["Semua"]
+                f_log_user = st.selectbox("Filter User", log_users, key="f_log_user")
+            with col_lf2:
+                log_actions = ["Semua"] + sorted(log_df["action_type"].dropna().unique().tolist()) if "action_type" in log_df.columns else ["Semua"]
+                f_log_action = st.selectbox("Filter Action", log_actions, key="f_log_action")
+            with col_lf3:
+                f_log_search = st.text_input("Cari detail", placeholder="Ketik...", key="f_log_search")
+
+            view_log = log_df.copy()
+            if f_log_user   != "Semua" and "user_email"   in view_log.columns: view_log = view_log[view_log["user_email"]   == f_log_user]
+            if f_log_action != "Semua" and "action_type"  in view_log.columns: view_log = view_log[view_log["action_type"]  == f_log_action]
+            if f_log_search.strip() and "detail" in view_log.columns:
+                view_log = view_log[view_log["detail"].str.lower().str.contains(f_log_search.lower(), na=False)]
+
+            st.caption(f"Menampilkan **{len(view_log)}** dari **{len(log_df)}** log entries")
+            st.dataframe(view_log, use_container_width=True, height=450)
+
+            # Export log
+            if st.button("⬇️ Export Log ke Excel", key="btn_export_log"):
+                buf = BytesIO()
+                with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                    view_log.to_excel(writer, index=False, sheet_name="Activity Log")
+                st.download_button(
+                    "📥 Download Activity Log",
+                    data=buf.getvalue(),
+                    file_name=f"activity_log_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_log"
+                )
