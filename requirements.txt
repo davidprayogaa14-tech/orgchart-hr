@@ -1,8 +1,7 @@
-streamlit==1.40.0
+streamlit>=1.41.0
 pandas
 gspread
 google-auth
 google-auth-oauthlib
-reportlab>=4.0.0
 openpyxl
-plotly
+reportlab
