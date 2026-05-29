@@ -1779,14 +1779,122 @@ def _render_login_page():
     st.stop()
 
 
-# ── Auth gate dinonaktifkan sementara ─────────────────────────────
-# Autentikasi akan disambungkan ke SSO People Database.
-# Saat ini semua user masuk sebagai admin (full access) untuk operasional.
-# TODO: Sambungkan token SSO dari People Database ke session_state ini.
-_user_info = st.session_state.get("user_info", {
-    "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
-    "name": "User", "employee_id": "",
-})
+# ══════════════════════════════════════════════════════════════════
+# GOOGLE OAUTH AUTH GATE
+# ══════════════════════════════════════════════════════════════════
+# Alur:
+# 1. User klik "Login dengan Google"
+# 2. Google konfirmasi identitas (SSO — tidak perlu login ulang
+#    jika sudah login Google di People Database)
+# 3. Dashboard baca email dari Google session
+# 4. Cek email di app_users sheet
+# 5. Ada & aktif → masuk sesuai role | Tidak ada → ditolak
+# ══════════════════════════════════════════════════════════════════
+
+def _render_google_login():
+    """Halaman login Google OAuth."""
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
+    .stApp { background: #f5f5ff !important; }
+    .block-container { max-width: 420px !important; padding-top: 14vh !important; margin: 0 auto !important; }
+    header, #MainMenu, footer { visibility: hidden !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="text-align:center; margin-bottom:40px;">
+        <div style="width:52px;height:52px;border-radius:14px;background:#8E94F2;
+            display:flex;align-items:center;justify-content:center;font-size:26px;
+            margin:0 auto 20px;box-shadow:0 6px 24px rgba(142,148,242,0.4);">&#127962;</div>
+        <div style="font-size:24px;font-weight:700;color:#1a1a2e;letter-spacing:-0.02em;">Mekari</div>
+        <div style="font-size:12px;color:#7b7b9d;margin-top:6px;font-weight:500;
+            letter-spacing:0.06em;text-transform:uppercase;">People Dashboard</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="background:#fff;border:1.5px solid #e0e0f0;border-radius:12px;
+        padding:28px 32px;text-align:center;box-shadow:0 4px 20px rgba(142,148,242,0.10);">
+        <div style="font-size:14px;color:#3d3d5c;margin-bottom:20px;line-height:1.6;">
+            Gunakan akun Google perusahaan Anda<br>
+            <span style="color:#8E94F2;font-weight:600;">@mekari.com</span> untuk masuk
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.button(
+        "🔐  Login dengan Google",
+        on_click=st.login,
+        use_container_width=True,
+        key="google_login_btn",
+    )
+
+    st.markdown("""
+    </div>
+    <div style="text-align:center;margin-top:20px;font-size:11px;color:#9e9ea0;">
+        Akses dikelola oleh OD Team · Mekari People Analytics
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
+
+def _render_access_denied(email: str):
+    """Halaman tolak akses — email tidak ada di app_users."""
+    st.markdown("""
+    <style>
+    .stApp { background: #f5f5ff !important; }
+    .block-container { max-width: 480px !important; padding-top: 14vh !important; margin: 0 auto !important; }
+    header, #MainMenu, footer { visibility: hidden !important; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+    <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
+        padding:32px;text-align:center;box-shadow:0 4px 20px rgba(255,100,100,0.08);">
+        <div style="font-size:32px;margin-bottom:16px;">🚫</div>
+        <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
+            Akses Tidak Ditemukan
+        </div>
+        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
+            Email <b>{email}</b> belum terdaftar di sistem.<br>
+            Hubungi OD Team untuk mendapatkan akses.
+        </div>
+        <div style="font-size:12px;color:#9e9ea0;">
+            Mekari People Analytics · OD Team
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if st.button("↩  Logout", key="btn_denied_logout"):
+        log_activity(action_type="logout", detail=f"Akses ditolak · email tidak terdaftar: {email}")
+        st.logout()
+    st.stop()
+
+
+# ── Auth gate utama ────────────────────────────────────────────────
+if not st.experimental_user.is_logged_in:
+    _render_google_login()
+
+# User sudah login Google — ambil email
+_google_email = st.experimental_user.email or ""
+
+# Cek email di app_users sheet
+_user_info = get_user_info(_google_email)
+
+if not _user_info:
+    _render_access_denied(_google_email)
+
+# User valid — set session state
+if st.session_state.get("user_email") != _google_email:
+    st.session_state.user_email  = _google_email
+    st.session_state.user_info   = _user_info
+    st.session_state.session_id  = str(_uuid.uuid4())[:8]
+    log_activity(
+        action_type="login",
+        detail=f"Google OAuth login · role={_user_info.get('role','')}",
+    )
+
 _user_role = _user_info.get("role", "employee")
 _is_admin  = _user_role == "admin"
 _is_cxo    = _user_role in ("admin", "cxo")
@@ -2304,9 +2412,9 @@ with st.sidebar:
     st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
     if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
         log_activity(action_type="logout", detail="User logout")
-        for k in ["authenticated","user_email","user_info","active_tab"]:
+        for k in ["authenticated","user_email","user_info","active_tab","session_id"]:
             st.session_state.pop(k, None)
-        st.rerun()
+        st.logout()
 
     st.markdown(f"""
     <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
