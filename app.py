@@ -1826,6 +1826,7 @@ def _render_google_login():
     st.button(
         "🔐  Login dengan Google",
         on_click=st.login,
+        args=("google",),
         use_container_width=True,
         key="google_login_btn",
     )
@@ -1873,11 +1874,11 @@ def _render_access_denied(email: str):
 
 
 # ── Auth gate utama ────────────────────────────────────────────────
-if not st.experimental_user.is_logged_in:
+if not st.user.is_logged_in:
     _render_google_login()
 
 # User sudah login Google — ambil email
-_google_email = st.experimental_user.email or ""
+_google_email = st.user.email or ""
 
 # Cek email di app_users sheet
 _user_info = get_user_info(_google_email)
