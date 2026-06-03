@@ -1732,7 +1732,6 @@ def _render_google_login():
     st.button(
         "🔐  Login dengan Google",
         on_click=st.login,
-        args=("google",),
         use_container_width=True,
         key="google_login_btn",
     )
@@ -1743,8 +1742,6 @@ def _render_google_login():
         Akses dikelola oleh OD Team · Mekari People Analytics
     </div>
     """, unsafe_allow_html=True)
-    # st.stop() tidak dipanggil di sini agar OAuth callback bisa diproses
-    # st.stop() dipanggil di auth gate setelah fungsi ini selesai
 
 
 def _render_access_denied(email: str):
@@ -1786,13 +1783,13 @@ def _render_access_denied(email: str):
 # Email di-cek ke app_users sheet untuk RBAC
 if not st.user.is_logged_in:
     _render_google_login()
-    st.stop()  # stop di sini, bukan di dalam fungsi
+    st.stop()
 
 # User sudah login Google — ambil email
 _google_email = st.user.email or ""
 
 # Validasi domain — hanya @mekari.com
-if not _google_email.endswith("@mekari.com"):
+if _google_email and not _google_email.endswith("@mekari.com"):
     _render_access_denied(_google_email)
     st.stop()
 
