@@ -1684,100 +1684,6 @@ st.set_page_config(page_title="Mekari", layout="wide", page_icon="⭐", initial_
 # ══════════════════════════════════════════════════════════════════
 # AUTH GATE — Login Page
 # ══════════════════════════════════════════════════════════════════
-def _render_login_page():
-    """
-    Login page — Email + Password.
-    Password di-assign oleh Super Admin (OD Tim) via Admin Panel.
-    Autentikasi via authenticate_user() yang mengecek:
-      1. Streamlit Secrets (production)
-      2. Google Sheets app_users (primary ACL)
-      3. _ACL_FALLBACK (bootstrap)
-    """
-    st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
-    .stApp { background: #f5f5ff !important; }
-    .block-container { max-width: 420px !important; padding-top: 12vh !important; margin: 0 auto !important; }
-    header, #MainMenu, footer { visibility: hidden !important; }
-    [data-testid="stTextInput"] input {
-        background: #ffffff !important;
-        border: 1.5px solid #e0e0f0 !important;
-        border-radius: 8px !important; font-size: 14px !important; padding: 12px 16px !important;
-        color: #1a1a2e !important; font-family: 'Inter', sans-serif !important;
-        box-shadow: 0 1px 4px rgba(142,148,242,0.08) !important;
-    }
-    [data-testid="stTextInput"] input:focus {
-        border-color: #8E94F2 !important;
-        box-shadow: 0 0 0 3px rgba(142,148,242,0.18) !important;
-        outline: none !important;
-    }
-    [data-testid="stFormSubmitButton"] button {
-        background: #8E94F2 !important;
-        color: white !important; border: none !important; border-radius: 8px !important;
-        font-weight: 600 !important; font-size: 14px !important; padding: 14px 28px !important;
-        width: 100% !important;
-        box-shadow: 0 4px 16px rgba(142,148,242,0.35) !important;
-        font-family: 'Inter', sans-serif !important;
-        letter-spacing: 0.01em !important;
-        transition: all 0.2s ease !important;
-    }
-    [data-testid="stFormSubmitButton"] button:hover {
-        background: #7a80e8 !important;
-        box-shadow: 0 6px 24px rgba(142,148,242,0.45) !important;
-        transform: translateY(-1px) !important;
-    }
-    [data-testid="stWidgetLabel"] p {
-        color: #3d3d5c !important; font-size: 13px !important;
-        font-weight: 500 !important; font-family: 'Inter', sans-serif !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="text-align:center; margin-bottom:40px;">
-        <div style="width:52px;height:52px;border-radius:14px;background:#8E94F2;
-            display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 20px;
-            box-shadow:0 6px 24px rgba(142,148,242,0.4);">&#127962;</div>
-        <div style="font-size:24px;font-weight:700;color:#1a1a2e;font-family:'Inter',sans-serif;letter-spacing:-0.02em;">Mekari</div>
-        <div style="font-size:12px;color:#7b7b9d;margin-top:6px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;">People Dashboard</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.form("login_form", clear_on_submit=False):
-        email_input = st.text_input("Email", placeholder="nama@mekari.com")
-        pass_input  = st.text_input("Password", type="password", placeholder="Kata sandi")
-        submitted   = st.form_submit_button("Masuk", use_container_width=True)
-
-    if submitted:
-        if not email_input.strip() or not pass_input.strip():
-            st.error("Email dan password tidak boleh kosong.")
-            st.stop()
-
-        user_info = authenticate_user(email_input.strip(), pass_input.strip())
-
-        if user_info and user_info.get("is_active", True):
-            st.session_state.authenticated = True
-            st.session_state.user_email    = email_input.strip().lower()
-            st.session_state.user_info     = user_info
-            # Log aktivitas login ke activity_log
-            st.session_state["session_id"] = str(_uuid.uuid4())[:8]
-            log_activity(
-                action_type="login",
-                detail=f"Login berhasil · role={user_info.get('role','')}",
-            )
-            st.rerun()
-        else:
-            st.error("Email atau password salah, atau akun Anda tidak aktif. Hubungi OD Admin.")
-            st.stop()
-
-    st.markdown("""
-    <div style="text-align:center;margin-top:24px;font-size:11px;color:#9e9ea0;">
-        Akses dikelola oleh OD Team &middot; Mekari People Analytics
-    </div>
-    """, unsafe_allow_html=True)
-    st.stop()
-
 
 # ══════════════════════════════════════════════════════════════════
 # GOOGLE OAUTH AUTH GATE
@@ -1837,7 +1743,8 @@ def _render_google_login():
         Akses dikelola oleh OD Team · Mekari People Analytics
     </div>
     """, unsafe_allow_html=True)
-    st.stop()
+    # st.stop() tidak dipanggil di sini agar OAuth callback bisa diproses
+    # st.stop() dipanggil di auth gate setelah fungsi ini selesai
 
 
 def _render_access_denied(email: str):
@@ -1879,7 +1786,7 @@ def _render_access_denied(email: str):
 # Email di-cek ke app_users sheet untuk RBAC
 if not st.user.is_logged_in:
     _render_google_login()
-    st.stop()
+    st.stop()  # stop di sini, bukan di dalam fungsi
 
 # User sudah login Google — ambil email
 _google_email = st.user.email or ""
