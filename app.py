@@ -1873,29 +1873,16 @@ def _render_access_denied(email: str):
     st.stop()
 
 
-# ── Auth gate utama ────────────────────────────────────────────────
-if not st.user.is_logged_in:
-    _render_google_login()
+# ── Auth gate utama (email + password) ────────────────────────────
+# Google OAuth sementara dinonaktifkan — menunggu perbaikan GCP credentials.
+# TODO: Ganti kembali ke Google OAuth setelah Client ID dikonfirmasi (Selasa).
+if not st.session_state.get("authenticated", False):
+    _render_login_page()
 
-# User sudah login Google — ambil email
-_google_email = st.user.email or ""
-
-# Cek email di app_users sheet
-_user_info = get_user_info(_google_email)
-
-if not _user_info:
-    _render_access_denied(_google_email)
-
-# User valid — set session state
-if st.session_state.get("user_email") != _google_email:
-    st.session_state.user_email  = _google_email
-    st.session_state.user_info   = _user_info
-    st.session_state.session_id  = str(_uuid.uuid4())[:8]
-    log_activity(
-        action_type="login",
-        detail=f"Google OAuth login · role={_user_info.get('role','')}",
-    )
-
+_user_info = st.session_state.get("user_info", {
+    "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
+    "name": "User", "employee_id": "",
+})
 _user_role = _user_info.get("role", "employee")
 _is_admin  = _user_role == "admin"
 _is_cxo    = _user_role in ("admin", "cxo")
@@ -2415,7 +2402,7 @@ with st.sidebar:
         log_activity(action_type="logout", detail="User logout")
         for k in ["authenticated","user_email","user_info","active_tab","session_id"]:
             st.session_state.pop(k, None)
-        st.logout()
+        st.rerun()
 
     st.markdown(f"""
     <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
