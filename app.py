@@ -1873,18 +1873,28 @@ def _render_access_denied(email: str):
     st.stop()
 
 
-# ── Auth gate utama ────────────────────────────────────────────────
+# ── Auth gate utama — Google OAuth ───────────────────────────────
+# Autentikasi via Google Workspace (st.login / st.user)
+# User harus login dengan email @mekari.com
+# Email di-cek ke app_users sheet untuk RBAC
 if not st.user.is_logged_in:
     _render_google_login()
+    st.stop()
 
 # User sudah login Google — ambil email
 _google_email = st.user.email or ""
+
+# Validasi domain — hanya @mekari.com
+if not _google_email.endswith("@mekari.com"):
+    _render_access_denied(_google_email)
+    st.stop()
 
 # Cek email di app_users sheet
 _user_info = get_user_info(_google_email)
 
 if not _user_info:
     _render_access_denied(_google_email)
+    st.stop()
 
 # User valid — set session state
 if st.session_state.get("user_email") != _google_email:
@@ -1896,6 +1906,7 @@ if st.session_state.get("user_email") != _google_email:
         detail=f"Google OAuth login · role={_user_info.get('role','')}",
     )
 
+_user_info = st.session_state.get("user_info", _user_info)
 _user_role = _user_info.get("role", "employee")
 _is_admin  = _user_role == "admin"
 _is_cxo    = _user_role in ("admin", "cxo")
