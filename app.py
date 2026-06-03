@@ -1684,6 +1684,100 @@ st.set_page_config(page_title="Mekari", layout="wide", page_icon="⭐", initial_
 # ══════════════════════════════════════════════════════════════════
 # AUTH GATE — Login Page
 # ══════════════════════════════════════════════════════════════════
+def _render_login_page():
+    """
+    Login page — Email + Password.
+    Password di-assign oleh Super Admin (OD Tim) via Admin Panel.
+    Autentikasi via authenticate_user() yang mengecek:
+      1. Streamlit Secrets (production)
+      2. Google Sheets app_users (primary ACL)
+      3. _ACL_FALLBACK (bootstrap)
+    """
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
+    .stApp { background: #f5f5ff !important; }
+    .block-container { max-width: 420px !important; padding-top: 12vh !important; margin: 0 auto !important; }
+    header, #MainMenu, footer { visibility: hidden !important; }
+    [data-testid="stTextInput"] input {
+        background: #ffffff !important;
+        border: 1.5px solid #e0e0f0 !important;
+        border-radius: 8px !important; font-size: 14px !important; padding: 12px 16px !important;
+        color: #1a1a2e !important; font-family: 'Inter', sans-serif !important;
+        box-shadow: 0 1px 4px rgba(142,148,242,0.08) !important;
+    }
+    [data-testid="stTextInput"] input:focus {
+        border-color: #8E94F2 !important;
+        box-shadow: 0 0 0 3px rgba(142,148,242,0.18) !important;
+        outline: none !important;
+    }
+    [data-testid="stFormSubmitButton"] button {
+        background: #8E94F2 !important;
+        color: white !important; border: none !important; border-radius: 8px !important;
+        font-weight: 600 !important; font-size: 14px !important; padding: 14px 28px !important;
+        width: 100% !important;
+        box-shadow: 0 4px 16px rgba(142,148,242,0.35) !important;
+        font-family: 'Inter', sans-serif !important;
+        letter-spacing: 0.01em !important;
+        transition: all 0.2s ease !important;
+    }
+    [data-testid="stFormSubmitButton"] button:hover {
+        background: #7a80e8 !important;
+        box-shadow: 0 6px 24px rgba(142,148,242,0.45) !important;
+        transform: translateY(-1px) !important;
+    }
+    [data-testid="stWidgetLabel"] p {
+        color: #3d3d5c !important; font-size: 13px !important;
+        font-weight: 500 !important; font-family: 'Inter', sans-serif !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    <div style="text-align:center; margin-bottom:40px;">
+        <div style="width:52px;height:52px;border-radius:14px;background:#8E94F2;
+            display:flex;align-items:center;justify-content:center;font-size:26px;margin:0 auto 20px;
+            box-shadow:0 6px 24px rgba(142,148,242,0.4);">&#127962;</div>
+        <div style="font-size:24px;font-weight:700;color:#1a1a2e;font-family:'Inter',sans-serif;letter-spacing:-0.02em;">Mekari</div>
+        <div style="font-size:12px;color:#7b7b9d;margin-top:6px;font-weight:500;letter-spacing:0.06em;text-transform:uppercase;">People Dashboard</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    with st.form("login_form", clear_on_submit=False):
+        email_input = st.text_input("Email", placeholder="nama@mekari.com")
+        pass_input  = st.text_input("Password", type="password", placeholder="Kata sandi")
+        submitted   = st.form_submit_button("Masuk", use_container_width=True)
+
+    if submitted:
+        if not email_input.strip() or not pass_input.strip():
+            st.error("Email dan password tidak boleh kosong.")
+            st.stop()
+
+        user_info = authenticate_user(email_input.strip(), pass_input.strip())
+
+        if user_info and user_info.get("is_active", True):
+            st.session_state.authenticated = True
+            st.session_state.user_email    = email_input.strip().lower()
+            st.session_state.user_info     = user_info
+            # Log aktivitas login ke activity_log
+            st.session_state["session_id"] = str(_uuid.uuid4())[:8]
+            log_activity(
+                action_type="login",
+                detail=f"Login berhasil · role={user_info.get('role','')}",
+            )
+            st.rerun()
+        else:
+            st.error("Email atau password salah, atau akun Anda tidak aktif. Hubungi OD Admin.")
+            st.stop()
+
+    st.markdown("""
+    <div style="text-align:center;margin-top:24px;font-size:11px;color:#9e9ea0;">
+        Akses dikelola oleh OD Team &middot; Mekari People Analytics
+    </div>
+    """, unsafe_allow_html=True)
+    st.stop()
+
 
 # ══════════════════════════════════════════════════════════════════
 # GOOGLE OAUTH AUTH GATE
@@ -1697,38 +1791,8 @@ st.set_page_config(page_title="Mekari", layout="wide", page_icon="⭐", initial_
 # 5. Ada & aktif → masuk sesuai role | Tidak ada → ditolak
 # ══════════════════════════════════════════════════════════════════
 
-# ══════════════════════════════════════════════════════════════════
-# AUTH GATE — streamlit-google-auth
-# Menggunakan library streamlit-google-auth sebagai pengganti
-# st.login() bawaan Streamlit yang bermasalah di Community Cloud
-# (known bug: "Missing provider for OAuth callback" di multi-instance)
-#
-# Cara kerja:
-# 1. Authenticator baca credentials dari Streamlit Secrets
-# 2. check_authentification() tangkap callback dari Google
-# 3. Jika belum login → tampilkan halaman login + tombol Google
-# 4. Jika sudah login → baca email dari session_state['user_info']
-# 5. Validasi email @mekari.com + cek di app_users sheet
-# ══════════════════════════════════════════════════════════════════
-
-from streamlit_google_auth import Authenticate as _GoogleAuth
-
-# Inisialisasi authenticator dari Streamlit Secrets
-_google_auth = _GoogleAuth(
-    secret_credentials_path   = None,          # tidak pakai file, pakai secrets
-    cookie_name               = "mekari_od_auth",
-    cookie_key                = st.secrets.get("auth", {}).get("cookie_secret", "mekari_od_2026_fallback"),
-    redirect_uri              = "https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app",
-    client_id                 = st.secrets.get("auth", {}).get("client_id", ""),
-    client_secret             = st.secrets.get("auth", {}).get("client_secret", ""),
-)
-
-# Tangkap callback dari Google (harus dipanggil sebelum check login)
-_google_auth.check_authentification()
-
-# Belum login — tampilkan halaman login
-if not st.session_state.get("connected", False):
-    # Render halaman login
+def _render_google_login():
+    """Halaman login Google OAuth."""
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -1759,8 +1823,13 @@ if not st.session_state.get("connected", False):
         </div>
     """, unsafe_allow_html=True)
 
-    _auth_url = _google_auth.get_authorization_url()
-    st.link_button("🔐  Login dengan Google", _auth_url, use_container_width=True)
+    st.button(
+        "🔐  Login dengan Google",
+        on_click=st.login,
+        args=("google",),
+        use_container_width=True,
+        key="google_login_btn",
+    )
 
     st.markdown("""
     </div>
@@ -1770,11 +1839,9 @@ if not st.session_state.get("connected", False):
     """, unsafe_allow_html=True)
     st.stop()
 
-# User sudah login — ambil email dari session_state
-_google_email = st.session_state.get("user_info", {}).get("email", "")
 
-# Validasi domain — hanya @mekari.com
-if not _google_email or not _google_email.endswith("@mekari.com"):
+def _render_access_denied(email: str):
+    """Halaman tolak akses — email tidak ada di app_users."""
     st.markdown("""
     <style>
     .stApp { background: #f5f5ff !important; }
@@ -1782,43 +1849,16 @@ if not _google_email or not _google_email.endswith("@mekari.com"):
     header, #MainMenu, footer { visibility: hidden !important; }
     </style>
     """, unsafe_allow_html=True)
+
     st.markdown(f"""
     <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
-        padding:32px;text-align:center;margin-top:8vh;">
-        <div style="font-size:32px;margin-bottom:16px;">🚫</div>
-        <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
-            Domain Tidak Diizinkan
-        </div>
-        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
-            Email <b>{_google_email}</b> bukan akun @mekari.com.<br>
-            Dashboard ini hanya untuk karyawan Mekari.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("↩  Logout", key="btn_domain_logout"):
-        _google_auth.logout()
-    st.stop()
-
-# Cek email di app_users sheet
-_user_info = get_user_info(_google_email)
-
-if not _user_info:
-    st.markdown("""
-    <style>
-    .stApp { background: #f5f5ff !important; }
-    .block-container { max-width: 480px !important; padding-top: 14vh !important; margin: 0 auto !important; }
-    header, #MainMenu, footer { visibility: hidden !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    st.markdown(f"""
-    <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
-        padding:32px;text-align:center;margin-top:8vh;">
+        padding:32px;text-align:center;box-shadow:0 4px 20px rgba(255,100,100,0.08);">
         <div style="font-size:32px;margin-bottom:16px;">🚫</div>
         <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
             Akses Tidak Ditemukan
         </div>
         <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
-            Email <b>{_google_email}</b> belum terdaftar di sistem.<br>
+            Email <b>{email}</b> belum terdaftar di sistem.<br>
             Hubungi OD Team untuk mendapatkan akses.
         </div>
         <div style="font-size:12px;color:#9e9ea0;">
@@ -1826,22 +1866,23 @@ if not _user_info:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
     if st.button("↩  Logout", key="btn_denied_logout"):
-        log_activity(action_type="logout", detail=f"Akses ditolak: {_google_email}")
-        _google_auth.logout()
+        log_activity(action_type="logout", detail=f"Akses ditolak · email tidak terdaftar: {email}")
+        st.logout()
     st.stop()
 
-# User valid — set session state
-if st.session_state.get("user_email") != _google_email:
-    st.session_state.user_email  = _google_email
-    st.session_state.user_info   = _user_info
-    st.session_state.session_id  = str(_uuid.uuid4())[:8]
-    log_activity(
-        action_type="login",
-        detail=f"Google OAuth login · role={_user_info.get('role','')}",
-    )
 
-_user_info = st.session_state.get("user_info", _user_info)
+# ── Auth gate utama (email + password) ────────────────────────────
+# Google OAuth sementara dinonaktifkan — menunggu perbaikan GCP credentials.
+# TODO: Ganti kembali ke Google OAuth setelah Client ID dikonfirmasi (Selasa).
+if not st.session_state.get("authenticated", False):
+    _render_login_page()
+
+_user_info = st.session_state.get("user_info", {
+    "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
+    "name": "User", "employee_id": "",
+})
 _user_role = _user_info.get("role", "employee")
 _is_admin  = _user_role == "admin"
 _is_cxo    = _user_role in ("admin", "cxo")
@@ -2359,9 +2400,9 @@ with st.sidebar:
     st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
     if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
         log_activity(action_type="logout", detail="User logout")
-        for k in ["authenticated","user_email","user_info","active_tab","session_id","connected"]:
+        for k in ["authenticated","user_email","user_info","active_tab","session_id"]:
             st.session_state.pop(k, None)
-        _google_auth.logout()
+        st.rerun()
 
     st.markdown(f"""
     <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
