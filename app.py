@@ -1743,7 +1743,25 @@ _google_auth = _GoogleAuth(
 )
 
 # Tangkap callback dari Google (harus dipanggil sebelum check login)
-_google_auth.check_authentification()
+# Wrapped dengan error handler untuk menangani:
+# 1. InvalidGrantError — PKCE conflict / expired code (google-auth-oauthlib >= 1.0)
+# 2. Stale callback — user pakai browser back/forward setelah login
+try:
+    _google_auth.check_authentification()
+except Exception as _auth_exc:
+    _auth_exc_str = str(_auth_exc).lower()
+    _is_grant_err   = "invalid_grant" in _auth_exc_str or "missing code verifier" in _auth_exc_str
+    _is_stale_err   = "missing provider" in _auth_exc_str or "stale" in _auth_exc_str or "mismatch" in _auth_exc_str
+    if _is_grant_err or _is_stale_err:
+        # Bersihkan session OAuth yang corrupt lalu redirect ke login bersih
+        for _k in ["connected", "oauth_state", "user_info", "token"]:
+            st.session_state.pop(_k, None)
+        st.query_params.clear()
+        st.rerun()
+    else:
+        # Error lain yang tidak dikenal — tampilkan pesan informatif
+        st.error(f"Terjadi kesalahan autentikasi. Silakan coba lagi atau hubungi OD Admin. ({type(_auth_exc).__name__})")
+        st.stop()
 
 # Belum login — tampilkan halaman login
 if not st.session_state.get("connected", False):
@@ -2378,9 +2396,14 @@ with st.sidebar:
     st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
     if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
         log_activity(action_type="logout", detail="User logout")
-        for k in ["authenticated","user_email","user_info","active_tab","session_id","connected"]:
+        for k in ["authenticated","user_email","user_info","active_tab","session_id","connected","oauth_state","token"]:
             st.session_state.pop(k, None)
-        _google_auth.logout()
+        st.query_params.clear()
+        try:
+            _google_auth.logout()
+        except Exception:
+            pass
+        st.rerun()
 
     st.markdown(f"""
     <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
