@@ -1712,15 +1712,34 @@ st.set_page_config(page_title="Mekari", layout="wide", page_icon="⭐", initial_
 # ══════════════════════════════════════════════════════════════════
 
 from streamlit_google_auth import Authenticate as _GoogleAuth
+import json as _json
+import tempfile as _tempfile
 
-# Inisialisasi authenticator dari Streamlit Secrets
+# streamlit-google-auth hanya support file JSON untuk credentials
+# Solusi: tulis credentials dari Streamlit Secrets ke temp file saat runtime
+_auth_secrets = st.secrets.get("auth", {})
+_google_creds = {
+    "web": {
+        "client_id":                  _auth_secrets.get("client_id", ""),
+        "client_secret":              _auth_secrets.get("client_secret", ""),
+        "auth_uri":                   "https://accounts.google.com/o/oauth2/auth",
+        "token_uri":                  "https://oauth2.googleapis.com/token",
+        "redirect_uris":              ["https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app"],
+        "javascript_origins":         ["https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app"],
+    }
+}
+_creds_tmp = _tempfile.NamedTemporaryFile(
+    mode="w", suffix=".json", delete=False
+)
+_json.dump(_google_creds, _creds_tmp)
+_creds_tmp.flush()
+
+# Inisialisasi authenticator
 _google_auth = _GoogleAuth(
-    secret_credentials_path   = None,          # tidak pakai file, pakai secrets
-    cookie_name               = "mekari_od_auth",
-    cookie_key                = st.secrets.get("auth", {}).get("cookie_secret", "mekari_od_2026_fallback"),
-    redirect_uri              = "https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app",
-    client_id                 = st.secrets.get("auth", {}).get("client_id", ""),
-    client_secret             = st.secrets.get("auth", {}).get("client_secret", ""),
+    secret_credentials_path = _creds_tmp.name,
+    cookie_name             = "mekari_od_auth",
+    cookie_key              = _auth_secrets.get("cookie_secret", "mekari_od_2026_fallback"),
+    redirect_uri            = "https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app",
 )
 
 # Tangkap callback dari Google (harus dipanggil sebelum check login)
