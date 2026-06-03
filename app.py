@@ -1754,7 +1754,7 @@ except Exception as _auth_exc:
     _is_stale_err   = "missing provider" in _auth_exc_str or "stale" in _auth_exc_str or "mismatch" in _auth_exc_str
     if _is_grant_err or _is_stale_err:
         # Bersihkan session OAuth yang corrupt lalu redirect ke login bersih
-        for _k in ["connected", "oauth_state", "user_info", "token"]:
+        for _k in ["connected", "oauth_state", "user_info", "token", "google_email"]:
             st.session_state.pop(_k, None)
         st.query_params.clear()
         st.rerun()
@@ -1808,7 +1808,18 @@ if not st.session_state.get("connected", False):
     st.stop()
 
 # User sudah login — ambil email dari session_state
-_google_email = st.session_state.get("user_info", {}).get("email", "")
+# Ambil email dari Google OAuth session
+# streamlit-google-auth menyimpan di session_state["user_info"]["email"]
+# Kita juga simpan backup di session_state["google_email"] agar tidak hilang saat overwrite
+_google_email = (
+    st.session_state.get("google_email", "")
+    or st.session_state.get("user_info", {}).get("email", "")
+    or st.session_state.get("email", "")
+)
+# Simpan ke dedicated key agar tidak hilang saat user_info di-overwrite ACL lookup
+if _google_email:
+    st.session_state["google_email"] = _google_email.strip().lower()
+_google_email = st.session_state.get("google_email", "")
 
 # Validasi domain — hanya @mekari.com
 if not _google_email or not _google_email.endswith("@mekari.com"):
@@ -1870,9 +1881,10 @@ if not _user_info:
 
 # User valid — set session state
 if st.session_state.get("user_email") != _google_email:
-    st.session_state.user_email  = _google_email
-    st.session_state.user_info   = _user_info
-    st.session_state.session_id  = str(_uuid.uuid4())[:8]
+    st.session_state.user_email   = _google_email
+    st.session_state.google_email = _google_email  # preserve agar tidak hilang
+    st.session_state.user_info    = _user_info
+    st.session_state.session_id   = str(_uuid.uuid4())[:8]
     log_activity(
         action_type="login",
         detail=f"Google OAuth login · role={_user_info.get('role','')}",
@@ -2396,7 +2408,7 @@ with st.sidebar:
     st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
     if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
         log_activity(action_type="logout", detail="User logout")
-        for k in ["authenticated","user_email","user_info","active_tab","session_id","connected","oauth_state","token"]:
+        for k in ["authenticated","user_email","user_info","active_tab","session_id","connected","oauth_state","token","google_email"]:
             st.session_state.pop(k, None)
         st.query_params.clear()
         try:
