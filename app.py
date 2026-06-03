@@ -380,11 +380,23 @@ def authenticate_user(email: str, password: str) -> dict | None:
 
     # 2. Google Sheets ACL
     acl = load_acl_table()
+    print(f"[authenticate_user] ACL keys: {list(acl.keys())}")
     user = acl.get(email_lower)
-    if user and user.get("is_active", True):
+    print(f"[authenticate_user] email_lower={email_lower}, user_found={user is not None}")
+    if user:
         stored_pw = user.get("password", "").strip()
-        if stored_pw and stored_pw == password:
+        is_active = user.get("is_active", True)
+        print(f"[authenticate_user] is_active={is_active}, pw_match={stored_pw == password}, stored_pw_len={len(stored_pw)}")
+        if is_active and stored_pw and stored_pw == password:
             return user
+
+    # 3. Fallback hardcoded bootstrap
+    fallback_user = _ACL_FALLBACK.get(email_lower)
+    if fallback_user:
+        stored_pw = fallback_user.get("password", "").strip()
+        print(f"[authenticate_user] Trying fallback, pw_match={stored_pw == password}")
+        if stored_pw == password:
+            return fallback_user
 
     return None
 
