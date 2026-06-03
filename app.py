@@ -380,23 +380,11 @@ def authenticate_user(email: str, password: str) -> dict | None:
 
     # 2. Google Sheets ACL
     acl = load_acl_table()
-    print(f"[authenticate_user] ACL keys: {list(acl.keys())}")
     user = acl.get(email_lower)
-    print(f"[authenticate_user] email_lower={email_lower}, user_found={user is not None}")
-    if user:
+    if user and user.get("is_active", True):
         stored_pw = user.get("password", "").strip()
-        is_active = user.get("is_active", True)
-        print(f"[authenticate_user] is_active={is_active}, pw_match={stored_pw == password}, stored_pw_len={len(stored_pw)}")
-        if is_active and stored_pw and stored_pw == password:
+        if stored_pw and stored_pw == password:
             return user
-
-    # 3. Fallback hardcoded bootstrap
-    fallback_user = _ACL_FALLBACK.get(email_lower)
-    if fallback_user:
-        stored_pw = fallback_user.get("password", "").strip()
-        print(f"[authenticate_user] Trying fallback, pw_match={stored_pw == password}")
-        if stored_pw == password:
-            return fallback_user
 
     return None
 
@@ -1710,37 +1698,63 @@ st.set_page_config(page_title="Mekari", layout="wide", page_icon="⭐", initial_
 # ══════════════════════════════════════════════════════════════════
 
 # ══════════════════════════════════════════════════════════════════
-# AUTH GATE — Email + Password (sementara)
-# Google OAuth sedang dalam proses konfigurasi redirect URI dengan
-# PIC People Analytics. Akan diganti kembali ke Google OAuth setelah
-# redirect_uri_mismatch di GCP terselesaikan.
-# TODO: Switch ke Google OAuth (streamlit-google-auth) setelah fix.
+# AUTH GATE — streamlit-google-auth
+# Menggunakan library streamlit-google-auth sebagai pengganti
+# st.login() bawaan Streamlit yang bermasalah di Community Cloud
+# (known bug: "Missing provider for OAuth callback" di multi-instance)
+#
+# Cara kerja:
+# 1. Authenticator baca credentials dari Streamlit Secrets
+# 2. check_authentification() tangkap callback dari Google
+# 3. Jika belum login → tampilkan halaman login + tombol Google
+# 4. Jika sudah login → baca email dari session_state['user_info']
+# 5. Validasi email @mekari.com + cek di app_users sheet
 # ══════════════════════════════════════════════════════════════════
 
-def _render_login_page():
+from streamlit_google_auth import Authenticate as _GoogleAuth
+import json as _json
+import tempfile as _tempfile
+
+# streamlit-google-auth hanya support file JSON untuk credentials
+# Solusi: tulis credentials dari Streamlit Secrets ke temp file saat runtime
+_auth_secrets = st.secrets.get("auth", {})
+_google_creds = {
+    "web": {
+        "client_id":                  _auth_secrets.get("client_id", ""),
+        "client_secret":              _auth_secrets.get("client_secret", ""),
+        "auth_uri":                   "https://accounts.google.com/o/oauth2/auth",
+        "token_uri":                  "https://oauth2.googleapis.com/token",
+        "redirect_uris":              ["https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app"],
+        "javascript_origins":         ["https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app"],
+    }
+}
+_creds_tmp = _tempfile.NamedTemporaryFile(
+    mode="w", suffix=".json", delete=False
+)
+_json.dump(_google_creds, _creds_tmp)
+_creds_tmp.flush()
+
+# Inisialisasi authenticator
+_google_auth = _GoogleAuth(
+    secret_credentials_path = _creds_tmp.name,
+    cookie_name             = "mekari_od_auth",
+    cookie_key              = _auth_secrets.get("cookie_secret", "mekari_od_2026_fallback"),
+    redirect_uri            = "https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app",
+)
+
+# Tangkap callback dari Google (harus dipanggil sebelum check login)
+_google_auth.check_authentification()
+
+# Belum login — tampilkan halaman login
+if not st.session_state.get("connected", False):
+    # Render halaman login
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
     .stApp { background: #f5f5ff !important; }
-    .block-container { max-width: 420px !important; padding-top: 12vh !important; margin: 0 auto !important; }
+    .block-container { max-width: 420px !important; padding-top: 14vh !important; margin: 0 auto !important; }
     header, #MainMenu, footer { visibility: hidden !important; }
-    [data-testid="stTextInput"] input {
-        background: #ffffff !important; border: 1.5px solid #e0e0f0 !important;
-        border-radius: 8px !important; font-size: 14px !important; padding: 12px 16px !important;
-        color: #1a1a2e !important; box-shadow: 0 1px 4px rgba(142,148,242,0.08) !important;
-    }
-    [data-testid="stTextInput"] input:focus {
-        border-color: #8E94F2 !important;
-        box-shadow: 0 0 0 3px rgba(142,148,242,0.18) !important;
-    }
-    [data-testid="stFormSubmitButton"] button {
-        background: #8E94F2 !important; color: white !important;
-        border: none !important; border-radius: 8px !important;
-        font-weight: 600 !important; font-size: 14px !important;
-        padding: 14px 28px !important; width: 100% !important;
-        box-shadow: 0 4px 16px rgba(142,148,242,0.35) !important;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -1755,48 +1769,99 @@ def _render_login_page():
     </div>
     """, unsafe_allow_html=True)
 
-    with st.form("login_form", clear_on_submit=False):
-        email_input = st.text_input("Email", placeholder="nama@mekari.com")
-        pass_input  = st.text_input("Password", type="password", placeholder="Kata sandi")
-        submitted   = st.form_submit_button("Masuk", use_container_width=True)
+    st.markdown("""
+    <div style="background:#fff;border:1.5px solid #e0e0f0;border-radius:12px;
+        padding:28px 32px;text-align:center;box-shadow:0 4px 20px rgba(142,148,242,0.10);">
+        <div style="font-size:14px;color:#3d3d5c;margin-bottom:20px;line-height:1.6;">
+            Gunakan akun Google perusahaan Anda<br>
+            <span style="color:#8E94F2;font-weight:600;">@mekari.com</span> untuk masuk
+        </div>
+    """, unsafe_allow_html=True)
 
-    if submitted:
-        if not email_input.strip() or not pass_input.strip():
-            st.error("Email dan password tidak boleh kosong.")
-            st.stop()
-        user_info = authenticate_user(email_input.strip(), pass_input.strip())
-        if user_info and user_info.get("is_active", True):
-            st.session_state.authenticated = True
-            st.session_state.user_email    = email_input.strip().lower()
-            st.session_state.user_info     = user_info
-            st.session_state.session_id    = str(_uuid.uuid4())[:8]
-            log_activity(
-                action_type="login",
-                detail=f"Email+password login · role={user_info.get('role','')}",
-            )
-            st.rerun()
-        else:
-            st.error("Email atau password salah, atau akun tidak aktif. Hubungi OD Admin.")
-            st.stop()
+    _auth_url = _google_auth.get_authorization_url()
+    st.link_button("🔐  Login dengan Google", _auth_url, use_container_width=True)
 
     st.markdown("""
-    <div style="text-align:center;margin-top:24px;font-size:11px;color:#9e9ea0;">
+    </div>
+    <div style="text-align:center;margin-top:20px;font-size:11px;color:#9e9ea0;">
         Akses dikelola oleh OD Team · Mekari People Analytics
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
+# User sudah login — ambil email dari session_state
+_google_email = st.session_state.get("user_info", {}).get("email", "")
 
-if not st.session_state.get("authenticated", False):
-    _render_login_page()
+# Validasi domain — hanya @mekari.com
+if not _google_email or not _google_email.endswith("@mekari.com"):
+    st.markdown("""
+    <style>
+    .stApp { background: #f5f5ff !important; }
+    .block-container { max-width: 480px !important; padding-top: 14vh !important; margin: 0 auto !important; }
+    header, #MainMenu, footer { visibility: hidden !important; }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
+        padding:32px;text-align:center;margin-top:8vh;">
+        <div style="font-size:32px;margin-bottom:16px;">🚫</div>
+        <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
+            Domain Tidak Diizinkan
+        </div>
+        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
+            Email <b>{_google_email}</b> bukan akun @mekari.com.<br>
+            Dashboard ini hanya untuk karyawan Mekari.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("↩  Logout", key="btn_domain_logout"):
+        _google_auth.logout()
+    st.stop()
 
-_user_info = st.session_state.get("user_info", {
-    "role": "admin", "allowed_bus": "*", "allowed_sbus": "*",
-    "name": "User", "employee_id": "",
-})
+# Cek email di app_users sheet
+_user_info = get_user_info(_google_email)
+
+if not _user_info:
+    st.markdown("""
+    <style>
+    .stApp { background: #f5f5ff !important; }
+    .block-container { max-width: 480px !important; padding-top: 14vh !important; margin: 0 auto !important; }
+    header, #MainMenu, footer { visibility: hidden !important; }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
+        padding:32px;text-align:center;margin-top:8vh;">
+        <div style="font-size:32px;margin-bottom:16px;">🚫</div>
+        <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
+            Akses Tidak Ditemukan
+        </div>
+        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
+            Email <b>{_google_email}</b> belum terdaftar di sistem.<br>
+            Hubungi OD Team untuk mendapatkan akses.
+        </div>
+        <div style="font-size:12px;color:#9e9ea0;">
+            Mekari People Analytics · OD Team
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("↩  Logout", key="btn_denied_logout"):
+        log_activity(action_type="logout", detail=f"Akses ditolak: {_google_email}")
+        _google_auth.logout()
+    st.stop()
+
+# User valid — set session state
+if st.session_state.get("user_email") != _google_email:
+    st.session_state.user_email  = _google_email
+    st.session_state.user_info   = _user_info
+    st.session_state.session_id  = str(_uuid.uuid4())[:8]
+    log_activity(
+        action_type="login",
+        detail=f"Google OAuth login · role={_user_info.get('role','')}",
+    )
+
+_user_info = st.session_state.get("user_info", _user_info)
 _user_role = _user_info.get("role", "employee")
-_is_admin  = _user_role == "admin"
-_is_cxo    = _user_role in ("admin", "cxo")
 _is_admin  = _user_role == "admin"
 _is_cxo    = _user_role in ("admin", "cxo")
 
@@ -2315,7 +2380,7 @@ with st.sidebar:
         log_activity(action_type="logout", detail="User logout")
         for k in ["authenticated","user_email","user_info","active_tab","session_id","connected"]:
             st.session_state.pop(k, None)
-        st.rerun()
+        _google_auth.logout()
 
     st.markdown(f"""
     <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
