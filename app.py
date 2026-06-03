@@ -1697,8 +1697,38 @@ st.set_page_config(page_title="Mekari", layout="wide", page_icon="⭐", initial_
 # 5. Ada & aktif → masuk sesuai role | Tidak ada → ditolak
 # ══════════════════════════════════════════════════════════════════
 
-def _render_google_login():
-    """Halaman login Google OAuth."""
+# ══════════════════════════════════════════════════════════════════
+# AUTH GATE — streamlit-google-auth
+# Menggunakan library streamlit-google-auth sebagai pengganti
+# st.login() bawaan Streamlit yang bermasalah di Community Cloud
+# (known bug: "Missing provider for OAuth callback" di multi-instance)
+#
+# Cara kerja:
+# 1. Authenticator baca credentials dari Streamlit Secrets
+# 2. check_authentification() tangkap callback dari Google
+# 3. Jika belum login → tampilkan halaman login + tombol Google
+# 4. Jika sudah login → baca email dari session_state['user_info']
+# 5. Validasi email @mekari.com + cek di app_users sheet
+# ══════════════════════════════════════════════════════════════════
+
+from streamlit_google_auth import Authenticate as _GoogleAuth
+
+# Inisialisasi authenticator dari Streamlit Secrets
+_google_auth = _GoogleAuth(
+    secret_credentials_path   = None,          # tidak pakai file, pakai secrets
+    cookie_name               = "mekari_od_auth",
+    cookie_key                = st.secrets.get("auth", {}).get("cookie_secret", "mekari_od_2026_fallback"),
+    redirect_uri              = "https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app",
+    client_id                 = st.secrets.get("auth", {}).get("client_id", ""),
+    client_secret             = st.secrets.get("auth", {}).get("client_secret", ""),
+)
+
+# Tangkap callback dari Google (harus dipanggil sebelum check login)
+_google_auth.check_authentification()
+
+# Belum login — tampilkan halaman login
+if not st.session_state.get("connected", False):
+    # Render halaman login
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -1729,12 +1759,8 @@ def _render_google_login():
         </div>
     """, unsafe_allow_html=True)
 
-    st.button(
-        "🔐  Login dengan Google",
-        on_click=st.login,
-        use_container_width=True,
-        key="google_login_btn",
-    )
+    _auth_url = _google_auth.get_authorization_url()
+    st.link_button("🔐  Login dengan Google", _auth_url, use_container_width=True)
 
     st.markdown("""
     </div>
@@ -1742,10 +1768,13 @@ def _render_google_login():
         Akses dikelola oleh OD Team · Mekari People Analytics
     </div>
     """, unsafe_allow_html=True)
+    st.stop()
 
+# User sudah login — ambil email dari session_state
+_google_email = st.session_state.get("user_info", {}).get("email", "")
 
-def _render_access_denied(email: str):
-    """Halaman tolak akses — email tidak ada di app_users."""
+# Validasi domain — hanya @mekari.com
+if not _google_email or not _google_email.endswith("@mekari.com"):
     st.markdown("""
     <style>
     .stApp { background: #f5f5ff !important; }
@@ -1753,16 +1782,43 @@ def _render_access_denied(email: str):
     header, #MainMenu, footer { visibility: hidden !important; }
     </style>
     """, unsafe_allow_html=True)
-
     st.markdown(f"""
     <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
-        padding:32px;text-align:center;box-shadow:0 4px 20px rgba(255,100,100,0.08);">
+        padding:32px;text-align:center;margin-top:8vh;">
+        <div style="font-size:32px;margin-bottom:16px;">🚫</div>
+        <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
+            Domain Tidak Diizinkan
+        </div>
+        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
+            Email <b>{_google_email}</b> bukan akun @mekari.com.<br>
+            Dashboard ini hanya untuk karyawan Mekari.
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("↩  Logout", key="btn_domain_logout"):
+        _google_auth.logout()
+    st.stop()
+
+# Cek email di app_users sheet
+_user_info = get_user_info(_google_email)
+
+if not _user_info:
+    st.markdown("""
+    <style>
+    .stApp { background: #f5f5ff !important; }
+    .block-container { max-width: 480px !important; padding-top: 14vh !important; margin: 0 auto !important; }
+    header, #MainMenu, footer { visibility: hidden !important; }
+    </style>
+    """, unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
+        padding:32px;text-align:center;margin-top:8vh;">
         <div style="font-size:32px;margin-bottom:16px;">🚫</div>
         <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
             Akses Tidak Ditemukan
         </div>
         <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
-            Email <b>{email}</b> belum terdaftar di sistem.<br>
+            Email <b>{_google_email}</b> belum terdaftar di sistem.<br>
             Hubungi OD Team untuk mendapatkan akses.
         </div>
         <div style="font-size:12px;color:#9e9ea0;">
@@ -1770,34 +1826,9 @@ def _render_access_denied(email: str):
         </div>
     </div>
     """, unsafe_allow_html=True)
-
     if st.button("↩  Logout", key="btn_denied_logout"):
-        log_activity(action_type="logout", detail=f"Akses ditolak · email tidak terdaftar: {email}")
-        st.logout()
-    st.stop()
-
-
-# ── Auth gate utama — Google OAuth ───────────────────────────────
-# Autentikasi via Google Workspace (st.login / st.user)
-# User harus login dengan email @mekari.com
-# Email di-cek ke app_users sheet untuk RBAC
-if not st.user.is_logged_in:
-    _render_google_login()
-    st.stop()
-
-# User sudah login Google — ambil email
-_google_email = st.user.email or ""
-
-# Validasi domain — hanya @mekari.com
-if _google_email and not _google_email.endswith("@mekari.com"):
-    _render_access_denied(_google_email)
-    st.stop()
-
-# Cek email di app_users sheet
-_user_info = get_user_info(_google_email)
-
-if not _user_info:
-    _render_access_denied(_google_email)
+        log_activity(action_type="logout", detail=f"Akses ditolak: {_google_email}")
+        _google_auth.logout()
     st.stop()
 
 # User valid — set session state
@@ -2328,9 +2359,9 @@ with st.sidebar:
     st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
     if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
         log_activity(action_type="logout", detail="User logout")
-        for k in ["authenticated","user_email","user_info","active_tab","session_id"]:
+        for k in ["authenticated","user_email","user_info","active_tab","session_id","connected"]:
             st.session_state.pop(k, None)
-        st.logout()
+        _google_auth.logout()
 
     st.markdown(f"""
     <div style="padding:12px 20px;font-size:10px;color:{T['sidebar_text2']};text-align:center;letter-spacing:0.03em;">
