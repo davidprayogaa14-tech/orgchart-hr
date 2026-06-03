@@ -7,3 +7,4 @@ openpyxl
 reportlab
 authlib
 httpx
+streamlit-google-auth
