@@ -845,7 +845,8 @@ def log_activity(
         filters_applied: dict filter aktif saat aksi terjadi
     """
     try:
-        user_info  = st.session_state.get("user_info", {})
+        user_info  = st.session_state.get("acl_user_info",
+                      st.session_state.get("user_info", {}))
         session_id = st.session_state.get("session_id", "")
 
         # Generate session_id sekali per session login
@@ -1679,7 +1680,16 @@ if (!highlightId) {{ setTimeout(fitView, 300); }}
 # ══════════════════════════════════════════════════════════════════
 # STREAMLIT PAGE CONFIG
 # ══════════════════════════════════════════════════════════════════
-st.set_page_config(page_title="Mekari", layout="wide", page_icon="⭐", initial_sidebar_state="expanded")
+# ── Favicon: SVG periwinkle icon ─────────────────────────────────
+import base64 as _b64
+_FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#8E94F2"/>
+  <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle"
+        font-size="36" font-family="Arial" fill="white">M</text>
+</svg>"""
+_favicon_b64 = "data:image/svg+xml;base64," + _b64.b64encode(_FAVICON_SVG.encode()).decode()
+
+st.set_page_config(page_title="Mekari", layout="wide", page_icon=_favicon_b64, initial_sidebar_state="expanded")
 
 # ══════════════════════════════════════════════════════════════════
 # AUTH GATE — Login Page
@@ -1778,9 +1788,11 @@ if not st.session_state.get("connected", False):
 
     st.markdown("""
     <div style="text-align:center; margin-bottom:40px;">
-        <div style="width:52px;height:52px;border-radius:14px;background:#8E94F2;
-            display:flex;align-items:center;justify-content:center;font-size:26px;
-            margin:0 auto 20px;box-shadow:0 6px 24px rgba(142,148,242,0.4);">&#127962;</div>
+        <div style="width:52px;height:52px;border-radius:14px;background:#ffffff;
+            display:flex;align-items:center;justify-content:center;
+            margin:0 auto 20px;box-shadow:0 6px 24px rgba(142,148,242,0.4);
+            overflow:hidden;padding:6px;">
+            <img src="data:image/jpeg;base64,{_MEKARI_LOGO_B64}" style="width:100%;height:100%;object-fit:contain;" /></div>
         <div style="font-size:24px;font-weight:700;color:#1a1a2e;letter-spacing:-0.02em;">Mekari</div>
         <div style="font-size:12px;color:#7b7b9d;margin-top:6px;font-weight:500;
             letter-spacing:0.06em;text-transform:uppercase;">People Dashboard</div>
@@ -1880,17 +1892,19 @@ if not _user_info:
     st.stop()
 
 # User valid — set session state
+# PENTING: gunakan key "acl_user_info" agar tidak konflik dengan
+# session_state["user_info"] milik streamlit-google-auth library
 if st.session_state.get("user_email") != _google_email:
-    st.session_state.user_email   = _google_email
-    st.session_state.google_email = _google_email  # preserve agar tidak hilang
-    st.session_state.user_info    = _user_info
-    st.session_state.session_id   = str(_uuid.uuid4())[:8]
+    st.session_state.user_email    = _google_email
+    st.session_state.google_email  = _google_email
+    st.session_state.acl_user_info = _user_info   # key terpisah dari library
+    st.session_state.session_id    = str(_uuid.uuid4())[:8]
     log_activity(
         action_type="login",
         detail=f"Google OAuth login · role={_user_info.get('role','')}",
     )
 
-_user_info = st.session_state.get("user_info", _user_info)
+_user_info = st.session_state.get("acl_user_info", _user_info)
 _user_role = _user_info.get("role", "employee")
 _is_admin  = _user_role == "admin"
 _is_cxo    = _user_role in ("admin", "cxo")
@@ -2408,7 +2422,7 @@ with st.sidebar:
     st.markdown(f"""<div style="padding:4px 20px 0 20px;"><div style="height:1px;background:{T['outline']};"></div></div>""", unsafe_allow_html=True)
     if st.button(f"🚪  {L['btn_logout']}", use_container_width=True, key="logout_btn"):
         log_activity(action_type="logout", detail="User logout")
-        for k in ["authenticated","user_email","user_info","active_tab","session_id","connected","oauth_state","token","google_email"]:
+        for k in ["authenticated","user_email","user_info","acl_user_info","active_tab","session_id","connected","oauth_state","token","google_email"]:
             st.session_state.pop(k, None)
         st.query_params.clear()
         try:
@@ -2458,6 +2472,15 @@ _active = st.session_state.get("active_tab", 0)
 # TAB 1 — ORG CHART
 # ══════════════════════════════════════════════════════════════════
 if _active == 0:
+    # Log activity view org chart — sekali per session
+    if not st.session_state.get("_logged_orgchart_view", False):
+        log_activity(
+            action_type="view_orgchart",
+            detail=f"Org Chart dibuka · role={_user_role}",
+            record_count=len(df),
+        )
+        st.session_state["_logged_orgchart_view"] = True
+
     st.markdown(f"""
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;
         letter-spacing:0.09em;color:{T['text3']};margin-bottom:10px;">MODE TAMPILAN</div>
@@ -2535,8 +2558,30 @@ if _active == 0:
         st.session_state["sel_sbu"]    = "Semua SBU"
         st.session_state["sel_leader"] = "Semua (divisi penuh)"
 
+    # ── Auto-highlight: lookup Employee ID dari email login ─────────
+    # Jika user belum search manual, otomatis highlight node mereka sendiri
+    _login_email      = st.session_state.get("google_email", "")
+    _auto_highlight_id = None
+    if _login_email and "Email" in df.columns:
+        _self_row = df[df["Email"].str.lower() == _login_email.lower()]
+        if not _self_row.empty:
+            _auto_highlight_id = str(_self_row.iloc[0].get("Employee ID", ""))
+            # Auto-set filter ke divisi user sendiri saat pertama kali buka
+            if not st.session_state.get("_auto_filter_set", False) and selected_emp_row is None:
+                _tbu_self  = str(_self_row.iloc[0].get("Business Unit", ""))
+                _tdiv_self = str(_self_row.iloc[0].get("Division", ""))
+                _bu_list_all = sorted(df["Business Unit"].dropna().unique().tolist())
+                if _tbu_self in _bu_list_all:
+                    st.session_state["sel_bu"]  = _tbu_self
+                    st.session_state["sel_div"] = _tdiv_self
+                st.session_state["_auto_filter_set"] = True
+
     # ID karyawan target untuk highlight di tree
-    search_highlight_id = str(selected_emp_row.get("Employee ID", "")) if selected_emp_row is not None else None
+    # Prioritas: search manual > auto-highlight dari login
+    search_highlight_id = (
+        str(selected_emp_row.get("Employee ID", "")) if selected_emp_row is not None
+        else _auto_highlight_id
+    )
     if view_mode == "Per Divisi":
         st.markdown(f"""
         <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
