@@ -2621,6 +2621,23 @@ if _active == 0:
                     to_visit.extend(df[df["Manager ID"] == curr]["Employee ID"].tolist())
                 filtered = df[df["Employee ID"].isin(sub_ids)].copy()
 
+        # ── Cross-division subordinate fix ────────────────────────────
+        # Ketika user search nama seseorang, subordinate mereka yang ada
+        # di divisi lain tidak masuk ke filtered (karena filter by Division).
+        # Fix: BFS downward dari search target di SELURUH df, lalu gabungkan
+        # hasilnya dengan filtered agar semua subordinate lintas divisi muncul.
+        if search_highlight_id and selected_emp_row is not None:
+            _cross_ids  = set()
+            _cross_q    = [search_highlight_id]
+            while _cross_q:
+                _curr = _cross_q.pop()
+                _cross_ids.add(_curr)
+                _cross_q.extend(df[df["Manager ID"] == _curr]["Employee ID"].tolist())
+            # Gabungkan dengan filtered (union), bukan replace
+            _cross_df   = df[df["Employee ID"].isin(_cross_ids)].copy()
+            filtered    = pd.concat([filtered, _cross_df]).drop_duplicates(
+                              subset=["Employee ID"], keep="last").reset_index(drop=True)
+
         col_lv, col_info = st.columns([2, 4])
         with col_lv:
             level_opt = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"],
