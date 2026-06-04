@@ -1689,7 +1689,7 @@ _FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 </svg>"""
 _favicon_b64 = "data:image/svg+xml;base64," + _b64.b64encode(_FAVICON_SVG.encode()).decode()
 
-st.set_page_config(page_title="Mekari", layout="wide", page_icon=_favicon_b64, initial_sidebar_state="expanded")
+st.set_page_config(page_title="Mekari", layout="wide", page_icon=_favicon_b64, initial_sidebar_state="auto")
 
 # ══════════════════════════════════════════════════════════════════
 # AUTH GATE — Login Page
