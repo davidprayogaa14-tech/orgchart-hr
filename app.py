@@ -2627,7 +2627,12 @@ if _active == 0:
                                      help="Atur berapa level yang ditampilkan secara default")
         with col_info:
             if search_highlight_id and search_highlight_id in filtered["Employee ID"].values:
-                _emp_name_hl = selected_emp_row["Employee Name"]
+                # Ambil nama dari selected_emp_row (search manual) atau lookup dari df (auto-highlight)
+                if selected_emp_row is not None:
+                    _emp_name_hl = selected_emp_row["Employee Name"]
+                else:
+                    _hl_row = df[df["Employee ID"] == search_highlight_id]
+                    _emp_name_hl = _hl_row.iloc[0]["Employee Name"] if not _hl_row.empty else search_highlight_id
                 st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan — 🎯 **{_emp_name_hl}** ada di divisi ini")
             else:
                 st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan di divisi ini")
