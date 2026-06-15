@@ -600,7 +600,7 @@ _PEOPLE_DB_DROP_COLS = [
 # Filter kriteria — dua kolom terpisah:
 #   Employment Status      : Active, Resigned
 #   Employment Type Status : Permanent, Intern, Probation, Contract
-_EMPLOYMENT_STATUS_VALUES = {"active", "resigned"}
+_EMPLOYMENT_STATUS_VALUES = {"active"}
 _EMPLOYMENT_TYPE_VALUES   = {"permanent", "intern", "probation", "contract"}
 
 
