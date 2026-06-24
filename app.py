@@ -50,7 +50,7 @@ _MEKARI_LOGO_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAA
 LANG = {
     "id": {
         "nav_org":"Org Chart","nav_data":"Data Karyawan","nav_compliance":"Compliance Check",
-        "nav_manager":"Daftar Manager","nav_cr":"Change Request",
+        "nav_manager":"Daftar Manager","nav_cr":"Change Request","nav_builder":"Org Builder",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Keluar",
         "lang_toggle":"🇬🇧 English","data_source_live":"Live · Google Sheets",
         "data_source_local":"Lokal · CSV","auto_refresh":"Auto-refresh setiap 5 menit",
@@ -88,7 +88,7 @@ LANG = {
     },
     "en": {
         "nav_org":"Org Chart","nav_data":"Employee Data","nav_compliance":"Compliance Check",
-        "nav_manager":"Manager List","nav_cr":"Change Request",
+        "nav_manager":"Manager List","nav_cr":"Change Request","nav_builder":"Org Builder",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Sign Out",
         "lang_toggle":"🇮🇩 Bahasa","data_source_live":"Live · Google Sheets",
         "data_source_local":"Local · CSV","auto_refresh":"Auto-refresh every 5 minutes",
@@ -272,7 +272,7 @@ _ACL_FALLBACK = {
 # leader  : hanya tab 0
 # employee: hanya tab 0
 _ROLE_TAB_ACCESS = {
-    "admin":    {0, 1, 2, 3, 4, 99},
+    "admin":    {0, 1, 2, 3, 4, 5, 99},
     "cxo":      {0},
     "leader":   {0},
     "employee": {0},
@@ -2191,6 +2191,7 @@ with st.sidebar:
     # TODO: Kembalikan nav_items lengkap setelah SSO aktif.
     nav_items = [
         ("🌳", L["nav_org"], 0),
+        ("✏️", L["nav_builder"], 5),
     ]
 
     active_idx = st.session_state.active_tab
@@ -3207,6 +3208,580 @@ elif _active == 4:
                 with col_hd2:
                     st.download_button("📊 Excel", to_excel(view_hist), "cr_history.xlsx",
                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 5 — ORG CHART BUILDER (BETA)
+# Canvas interaktif untuk draft proposal struktur organisasi.
+# MVP Scope:
+#   - Panel kiri: daftar karyawan dari data aktif
+#   - Canvas: drag karyawan → muncul sebagai kotak
+#   - Connect: klik dua kotak untuk buat garis hierarki
+#   - Save: simpan draft ke Google Sheets (worksheet: org_builder_drafts)
+#   - Load: tarik draft yang pernah disimpan
+# ══════════════════════════════════════════════════════════════════
+elif _active == 5:
+    if not _is_admin:
+        st.error("🚫 Akses ditolak — fitur ini hanya untuk Admin.")
+        st.stop()
+
+    # ── Header ───────────────────────────────────────────────────
+    st.markdown(f"""
+    <div style="margin-bottom:4px;">
+        <div style="font-size:20px;font-weight:700;color:{T['text1']};letter-spacing:-0.02em;">
+            ✏️  Org Chart Builder
+        </div>
+        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
+            Draft proposal perubahan struktur organisasi secara visual
+        </div>
+    </div>
+    <hr style="border:none;border-top:1px solid {T['outline']};margin:16px 0;">
+    """, unsafe_allow_html=True)
+
+    # ── Draft management toolbar ──────────────────────────────────
+    col_dname, col_dsave, col_dload, col_dclear = st.columns([3, 1, 1, 1])
+    with col_dname:
+        draft_name = st.text_input(
+            "Nama Draft", placeholder="Contoh: Proposal Restrukturisasi Q3 2026",
+            label_visibility="collapsed", key="builder_draft_name"
+        )
+    with col_dsave:
+        save_btn = st.button("💾  Simpan", use_container_width=True, key="builder_save")
+    with col_dload:
+        load_btn = st.button("📂  Muat", use_container_width=True, key="builder_load")
+    with col_dclear:
+        clear_btn = st.button("🗑️  Reset", use_container_width=True, key="builder_clear")
+
+    # ── Build employee list for panel ────────────────────────────
+    emp_list = []
+    if df is not None and not df.empty:
+        for _, row in df.iterrows():
+            emp_list.append({
+                "id":       str(row.get("Employee ID", "")),
+                "name":     str(row.get("Employee Name", "")),
+                "title":    str(row.get("Job Position", "")),
+                "division": str(row.get("Division", "")),
+                "bu":       str(row.get("Business Unit", "")),
+            })
+
+    # ── Session state for canvas ──────────────────────────────────
+    if "builder_nodes" not in st.session_state:
+        st.session_state.builder_nodes = []
+    if "builder_edges" not in st.session_state:
+        st.session_state.builder_edges = []
+
+    # ── Save handler ──────────────────────────────────────────────
+    if save_btn:
+        if not draft_name.strip():
+            st.warning("⚠️ Isi nama draft terlebih dahulu.")
+        else:
+            import json as _json_b
+            try:
+                client_b = get_gspread_client()
+                sh_b = client_b.open_by_key(SHEET_ID)
+                try:
+                    ws_b = sh_b.worksheet("org_builder_drafts")
+                except Exception:
+                    ws_b = sh_b.add_worksheet(
+                        title="org_builder_drafts", rows=1000, cols=6
+                    )
+                    ws_b.append_row(
+                        ["draft_id", "draft_name", "created_by", "created_at", "nodes_json", "edges_json"]
+                    )
+                import uuid as _uuid_b
+                from datetime import datetime as _dt_b
+                ws_b.append_row([
+                    str(_uuid_b.uuid4())[:8],
+                    draft_name.strip(),
+                    _user_info.get("name", "Beta Developer"),
+                    _dt_b.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    _json_b.dumps(st.session_state.builder_nodes),
+                    _json_b.dumps(st.session_state.builder_edges),
+                ])
+                st.success(f"✅ Draft **{draft_name}** berhasil disimpan.")
+            except Exception as e_save:
+                st.error(f"❌ Gagal menyimpan: {e_save}")
+
+    # ── Load handler ──────────────────────────────────────────────
+    if load_btn:
+        try:
+            import json as _json_b
+            client_b = get_gspread_client()
+            ws_b = client_b.open_by_key(SHEET_ID).worksheet("org_builder_drafts")
+            rows_b = ws_b.get_all_records()
+            if not rows_b:
+                st.info("Belum ada draft yang tersimpan.")
+            else:
+                st.session_state["builder_drafts_list"] = rows_b
+        except Exception as e_load:
+            st.error(f"❌ Gagal memuat daftar draft: {e_load}")
+
+    # ── Clear handler ─────────────────────────────────────────────
+    if clear_btn:
+        st.session_state.builder_nodes = []
+        st.session_state.builder_edges = []
+        st.rerun()
+
+    # ── Draft picker (shown after load) ──────────────────────────
+    if "builder_drafts_list" in st.session_state and st.session_state["builder_drafts_list"]:
+        import json as _json_b
+        drafts = st.session_state["builder_drafts_list"]
+        draft_options = {f"{d['draft_name']} ({d['created_at']})": d for d in drafts}
+        chosen = st.selectbox("Pilih draft:", list(draft_options.keys()), key="builder_draft_picker")
+        if st.button("✅ Buka Draft Ini", key="builder_open_draft"):
+            selected_draft = draft_options[chosen]
+            st.session_state.builder_nodes = _json_b.loads(selected_draft.get("nodes_json", "[]"))
+            st.session_state.builder_edges = _json_b.loads(selected_draft.get("edges_json", "[]"))
+            del st.session_state["builder_drafts_list"]
+            st.rerun()
+
+    # ── Inject canvas data into JS ────────────────────────────────
+    import json as _json_b
+    nodes_json   = _json_b.dumps(st.session_state.builder_nodes)
+    edges_json   = _json_b.dumps(st.session_state.builder_edges)
+    emplist_json = _json_b.dumps(emp_list)
+
+    # Theme colors
+    node_bg     = T.get("card",    "#FFFFFF")
+    node_border = T.get("primary", "#8E94F2")
+    node_text   = T.get("text1",   "#1a1a2e")
+    canvas_bg   = T.get("bg",      "#F5F5FF")
+    panel_bg    = T.get("sidebar", "#F0F0FF")
+    edge_color  = T.get("primary", "#8E94F2")
+
+    builder_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: 'Inter', sans-serif; background: {canvas_bg}; overflow: hidden; }}
+
+  #app {{ display: flex; height: 680px; width: 100%; }}
+
+  /* ── Left panel ── */
+  #panel {{
+    width: 220px; min-width: 220px;
+    background: {panel_bg};
+    border-right: 1.5px solid #e0e0f0;
+    display: flex; flex-direction: column;
+    padding: 12px 0;
+  }}
+  #panel-title {{
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: #7b7b9d;
+    padding: 0 14px 8px; border-bottom: 1px solid #e0e0f0; margin-bottom: 8px;
+  }}
+  #panel-search {{
+    margin: 0 10px 8px;
+    padding: 6px 10px; border: 1.5px solid #e0e0f0; border-radius: 6px;
+    font-size: 12px; background: #fff; color: #1a1a2e; width: calc(100% - 20px);
+  }}
+  #panel-list {{ overflow-y: auto; flex: 1; padding: 0 8px; }}
+  .emp-card {{
+    padding: 8px 10px; margin-bottom: 5px;
+    background: #fff; border: 1.5px solid #e0e0f0;
+    border-radius: 7px; cursor: grab;
+    transition: all 0.15s ease;
+    user-select: none;
+  }}
+  .emp-card:hover {{ border-color: {node_border}; box-shadow: 0 2px 8px rgba(142,148,242,0.15); }}
+  .emp-card .emp-name {{ font-size: 12px; font-weight: 600; color: {node_text}; }}
+  .emp-card .emp-title {{ font-size: 10px; color: #7b7b9d; margin-top: 2px; }}
+
+  /* ── Canvas area ── */
+  #canvas-wrap {{
+    flex: 1; position: relative; overflow: hidden;
+    background: {canvas_bg};
+    background-image: radial-gradient(circle, #d0d0e8 1px, transparent 1px);
+    background-size: 24px 24px;
+  }}
+  #canvas {{
+    position: absolute; top: 0; left: 0;
+    width: 100%; height: 100%;
+    cursor: default;
+  }}
+
+  /* ── Toolbar overlay ── */
+  #toolbar {{
+    position: absolute; top: 10px; right: 10px;
+    display: flex; gap: 6px; z-index: 10;
+  }}
+  .tool-btn {{
+    padding: 5px 10px; font-size: 11px; font-weight: 600;
+    border: 1.5px solid #e0e0f0; border-radius: 6px;
+    background: #fff; cursor: pointer; color: #3d3d5c;
+    transition: all 0.15s;
+  }}
+  .tool-btn:hover {{ background: {node_border}; color: #fff; border-color: {node_border}; }}
+  .tool-btn.active {{ background: {node_border}; color: #fff; border-color: {node_border}; }}
+
+  /* ── Status bar ── */
+  #statusbar {{
+    position: absolute; bottom: 8px; left: 12px;
+    font-size: 10px; color: #9e9ea0; pointer-events: none;
+  }}
+
+  /* ── Context hint ── */
+  #hint {{
+    position: absolute; bottom: 8px; right: 12px;
+    font-size: 10px; color: #9e9ea0; pointer-events: none;
+  }}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Left panel -->
+  <div id="panel">
+    <div id="panel-title">📋 Daftar Karyawan</div>
+    <input id="panel-search" type="text" placeholder="🔍 Cari nama..." oninput="filterPanel(this.value)">
+    <div id="panel-list"></div>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvas-wrap">
+    <div id="toolbar">
+      <button class="tool-btn" id="btn-select" onclick="setMode('select')" title="Pilih & pindah node">↖ Select</button>
+      <button class="tool-btn active" id="btn-connect" onclick="setMode('connect')" title="Klik dua node untuk buat garis">⟶ Connect</button>
+      <button class="tool-btn" id="btn-delete" onclick="deleteSelected()" title="Hapus node/edge yang dipilih">🗑 Hapus</button>
+      <button class="tool-btn" id="btn-fitview" onclick="fitView()" title="Sesuaikan tampilan">⊡ Fit</button>
+    </div>
+    <svg id="canvas">
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L8,3 z" fill="{edge_color}" opacity="0.8"/>
+        </marker>
+      </defs>
+      <g id="zoom-group">
+        <g id="edges-layer"></g>
+        <g id="nodes-layer"></g>
+      </g>
+    </svg>
+    <div id="statusbar">Nodes: <span id="node-count">0</span> · Edges: <span id="edge-count">0</span></div>
+    <div id="hint" id="hint-text">Mode: Connect — klik node pertama lalu node kedua</div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────
+const EMP_LIST   = {emplist_json};
+let nodes        = {nodes_json};
+let edges        = {edges_json};
+let mode         = "connect";   // "select" | "connect"
+let selected     = null;        // selected node id (for connect mode first click)
+let dragNode     = null;        // node being dragged
+let dragOffset   = {{x:0,y:0}};
+let isPanning    = false;
+let panStart     = {{x:0,y:0}};
+let viewTransform = {{x:0, y:0, scale:1}};
+let nodeIdCounter = nodes.length > 0 ? Math.max(...nodes.map(n => n.nid || 0)) + 1 : 1;
+
+// ── Init ──────────────────────────────────────────────────────────
+window.onload = () => {{
+  buildPanel(EMP_LIST);
+  renderAll();
+  setupCanvasEvents();
+}};
+
+// ── Panel ─────────────────────────────────────────────────────────
+function buildPanel(list) {{
+  const container = document.getElementById("panel-list");
+  container.innerHTML = "";
+  list.forEach(emp => {{
+    const card = document.createElement("div");
+    card.className = "emp-card";
+    card.draggable = true;
+    card.innerHTML = `<div class="emp-name">${{emp.name}}</div><div class="emp-title">${{emp.title}}</div>`;
+    card.addEventListener("dragstart", e => {{
+      e.dataTransfer.setData("emp", JSON.stringify(emp));
+    }});
+    container.appendChild(card);
+  }});
+}}
+
+function filterPanel(q) {{
+  const q2 = q.toLowerCase();
+  const cards = document.querySelectorAll(".emp-card");
+  cards.forEach((c, i) => {{
+    const emp = EMP_LIST[i];
+    const match = emp.name.toLowerCase().includes(q2) || emp.title.toLowerCase().includes(q2);
+    c.style.display = match ? "" : "none";
+  }});
+}}
+
+// ── Zoom/Pan ──────────────────────────────────────────────────────
+function getZoomGroup() {{ return document.getElementById("zoom-group"); }}
+
+function applyTransform() {{
+  const g = getZoomGroup();
+  g.setAttribute("transform", `translate(${{viewTransform.x}},${{viewTransform.y}}) scale(${{viewTransform.scale}})`);
+}}
+
+function svgPoint(clientX, clientY) {{
+  const svg = document.getElementById("canvas");
+  const rect = svg.getBoundingClientRect();
+  return {{
+    x: (clientX - rect.left - viewTransform.x) / viewTransform.scale,
+    y: (clientY - rect.top  - viewTransform.y) / viewTransform.scale,
+  }};
+}}
+
+function fitView() {{
+  if (nodes.length === 0) {{ viewTransform = {{x:40,y:40,scale:1}}; applyTransform(); return; }}
+  const svg = document.getElementById("canvas");
+  const W = svg.clientWidth, H = svg.clientHeight;
+  const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
+  const minX = Math.min(...xs)-20, maxX = Math.max(...xs)+160;
+  const minY = Math.min(...ys)-20, maxY = Math.max(...ys)+80;
+  const scale = Math.min(0.95, Math.min(W/(maxX-minX), H/(maxY-minY)));
+  viewTransform = {{ x: -minX*scale + (W-(maxX-minX)*scale)/2,
+                     y: -minY*scale + (H-(maxY-minY)*scale)/2,
+                     scale }};
+  applyTransform();
+}}
+
+// ── Mode ──────────────────────────────────────────────────────────
+function setMode(m) {{
+  mode = m;
+  selected = null;
+  document.querySelectorAll(".tool-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById("btn-"+m).classList.add("active");
+  document.getElementById("hint").textContent =
+    m === "connect" ? "Mode: Connect — klik node pertama lalu node kedua"
+                    : "Mode: Select — drag node untuk pindah posisi";
+  renderAll();
+}}
+
+// ── Render ────────────────────────────────────────────────────────
+function renderAll() {{
+  renderEdges();
+  renderNodes();
+  document.getElementById("node-count").textContent = nodes.length;
+  document.getElementById("edge-count").textContent = edges.length;
+}}
+
+function renderEdges() {{
+  const layer = document.getElementById("edges-layer");
+  layer.innerHTML = "";
+  edges.forEach(e => {{
+    const src = nodes.find(n => n.nid === e.src);
+    const tgt = nodes.find(n => n.nid === e.tgt);
+    if (!src || !tgt) return;
+    const x1 = src.x + 80, y1 = src.y + 36;
+    const x2 = tgt.x + 80, y2 = tgt.y;
+    const cy = (y1 + y2) / 2;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", `M${{x1}},${{y1}} C${{x1}},${{cy}} ${{x2}},${{cy}} ${{x2}},${{y2}}`);
+    path.setAttribute("stroke", "{edge_color}");
+    path.setAttribute("stroke-width", "1.8");
+    path.setAttribute("fill", "none");
+    path.setAttribute("opacity", "0.75");
+    path.setAttribute("marker-end", "url(#arrow)");
+    layer.appendChild(path);
+  }});
+}}
+
+function renderNodes() {{
+  const layer = document.getElementById("nodes-layer");
+  layer.innerHTML = "";
+  nodes.forEach(n => {{
+    const isSelected = (n.nid === selected);
+    const g = document.createElementNS("http://www.w3.org/2000/svg","g");
+    g.setAttribute("transform", `translate(${{n.x}},${{n.y}})`);
+    g.setAttribute("cursor", mode === "select" ? "move" : "pointer");
+    g.dataset.nid = n.nid;
+
+    // Shadow
+    const shadow = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    shadow.setAttribute("x","2"); shadow.setAttribute("y","4");
+    shadow.setAttribute("width","160"); shadow.setAttribute("height","60");
+    shadow.setAttribute("rx","8");
+    shadow.setAttribute("fill", "rgba(142,148,242,0.12)");
+    g.appendChild(shadow);
+
+    // Card
+    const rect = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    rect.setAttribute("width","160"); rect.setAttribute("height","60");
+    rect.setAttribute("rx","8");
+    rect.setAttribute("fill", "{node_bg}");
+    rect.setAttribute("stroke", isSelected ? "#FF6B6B" : "{node_border}");
+    rect.setAttribute("stroke-width", isSelected ? "2.5" : "1.5");
+    g.appendChild(rect);
+
+    // Left accent bar
+    const bar = document.createElementNS("http://www.w3.org/2000/svg","rect");
+    bar.setAttribute("x","0"); bar.setAttribute("y","0");
+    bar.setAttribute("width","4"); bar.setAttribute("height","60");
+    bar.setAttribute("rx","8");
+    bar.setAttribute("fill", "{node_border}");
+    g.appendChild(bar);
+
+    // Name text
+    const tname = document.createElementNS("http://www.w3.org/2000/svg","text");
+    tname.setAttribute("x","14"); tname.setAttribute("y","22");
+    tname.setAttribute("font-size","11"); tname.setAttribute("font-weight","600");
+    tname.setAttribute("fill", "{node_text}");
+    tname.textContent = truncate(n.name, 18);
+    g.appendChild(tname);
+
+    // Title text
+    const ttitle = document.createElementNS("http://www.w3.org/2000/svg","text");
+    ttitle.setAttribute("x","14"); ttitle.setAttribute("y","38");
+    ttitle.setAttribute("font-size","9.5"); ttitle.setAttribute("fill","#7b7b9d");
+    ttitle.textContent = truncate(n.title, 22);
+    g.appendChild(ttitle);
+
+    // Division text
+    const tdiv = document.createElementNS("http://www.w3.org/2000/svg","text");
+    tdiv.setAttribute("x","14"); tdiv.setAttribute("y","52");
+    tdiv.setAttribute("font-size","8.5"); tdiv.setAttribute("fill","#a0a0b8");
+    tdiv.textContent = truncate(n.division, 24);
+    g.appendChild(tdiv);
+
+    // Events
+    g.addEventListener("mousedown", e => onNodeMousedown(e, n));
+    g.addEventListener("click",     e => onNodeClick(e, n));
+
+    layer.appendChild(g);
+  }});
+}}
+
+function truncate(str, max) {{
+  return str && str.length > max ? str.slice(0,max)+"…" : (str||"");
+}}
+
+// ── Node events ───────────────────────────────────────────────────
+function onNodeMousedown(e, n) {{
+  if (mode !== "select") return;
+  e.stopPropagation();
+  const pt = svgPoint(e.clientX, e.clientY);
+  dragNode = n;
+  dragOffset = {{ x: pt.x - n.x, y: pt.y - n.y }};
+}}
+
+function onNodeClick(e, n) {{
+  if (mode !== "connect") return;
+  e.stopPropagation();
+  if (selected === null) {{
+    selected = n.nid;
+    renderAll();
+  }} else if (selected !== n.nid) {{
+    // Avoid duplicate edges
+    const exists = edges.some(ed => ed.src === selected && ed.tgt === n.nid);
+    if (!exists) {{
+      edges.push({{ src: selected, tgt: n.nid }});
+    }}
+    selected = null;
+    renderAll();
+    pushState();
+  }} else {{
+    selected = null;
+    renderAll();
+  }}
+}}
+
+// ── Canvas events ─────────────────────────────────────────────────
+function setupCanvasEvents() {{
+  const svg = document.getElementById("canvas");
+  const wrap = document.getElementById("canvas-wrap");
+
+  // Drop from panel
+  wrap.addEventListener("dragover", e => e.preventDefault());
+  wrap.addEventListener("drop", e => {{
+    e.preventDefault();
+    const emp = JSON.parse(e.dataTransfer.getData("emp"));
+    const pt  = svgPoint(e.clientX, e.clientY);
+    nodes.push({{ nid: nodeIdCounter++, x: pt.x-80, y: pt.y-30,
+                  id: emp.id, name: emp.name, title: emp.title, division: emp.division }});
+    renderAll();
+    pushState();
+  }});
+
+  // Pan (middle mouse / right click / empty space drag)
+  svg.addEventListener("mousedown", e => {{
+    if (e.target === svg || e.target.id === "zoom-group") {{
+      if (mode === "select") {{
+        isPanning = true;
+        panStart = {{ x: e.clientX - viewTransform.x, y: e.clientY - viewTransform.y }};
+      }}
+    }}
+  }});
+
+  window.addEventListener("mousemove", e => {{
+    if (dragNode && mode === "select") {{
+      const pt = svgPoint(e.clientX, e.clientY);
+      dragNode.x = pt.x - dragOffset.x;
+      dragNode.y = pt.y - dragOffset.y;
+      renderAll();
+    }} else if (isPanning) {{
+      viewTransform.x = e.clientX - panStart.x;
+      viewTransform.y = e.clientY - panStart.y;
+      applyTransform();
+    }}
+  }});
+
+  window.addEventListener("mouseup", e => {{
+    if (dragNode) {{ pushState(); dragNode = null; }}
+    isPanning = false;
+  }});
+
+  // Zoom with wheel
+  svg.addEventListener("wheel", e => {{
+    e.preventDefault();
+    const pt = svgPoint(e.clientX, e.clientY);
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    const newScale = Math.min(3, Math.max(0.2, viewTransform.scale * delta));
+    viewTransform.x = e.clientX - pt.x * newScale - (svg.getBoundingClientRect().left);
+    viewTransform.y = e.clientY - pt.y * newScale - (svg.getBoundingClientRect().top);
+    viewTransform.scale = newScale;
+    applyTransform();
+  }}, {{passive: false}});
+
+  // Click empty canvas → deselect
+  svg.addEventListener("click", e => {{
+    if (e.target === svg || e.target.id === "zoom-group") {{
+      selected = null;
+      renderAll();
+    }}
+  }});
+}}
+
+// ── Delete ────────────────────────────────────────────────────────
+function deleteSelected() {{
+  if (selected !== null) {{
+    nodes  = nodes.filter(n => n.nid !== selected);
+    edges  = edges.filter(e => e.src !== selected && e.tgt !== selected);
+    selected = null;
+    renderAll();
+    pushState();
+  }} else {{
+    alert("Pilih node terlebih dahulu (klik node, lalu klik Hapus).");
+  }}
+}}
+
+// ── Push state to Streamlit ───────────────────────────────────────
+function pushState() {{
+  // Encode state in URL hash so Streamlit can read it via query params
+  // We use a hidden input approach via postMessage to parent
+  const state = JSON.stringify({{ nodes, edges }});
+  window.parent.postMessage({{ type: "builder_state", data: state }}, "*");
+}}
+
+applyTransform();
+</script>
+</body>
+</html>
+"""
+
+    st.components.v1.html(builder_html, height=680, scrolling=False)
+
+    # ── State sync note ───────────────────────────────────────────
+    st.caption(
+        "💡 Tip: Gunakan mode **Connect** untuk buat garis hierarki (klik node satu → node dua). "
+        "Gunakan mode **Select** untuk drag & pindah posisi node. "
+        "Klik **Simpan** untuk menyimpan draft ke Google Sheets."
+    )
 
 
 # ══════════════════════════════════════════════════════════════════
