@@ -24,8 +24,8 @@ except Exception:
 # CONSTANTS
 # ══════════════════════════════════════════════════════════════════
 # ── People Database (source of truth resmi) ───────────────────────
-SHEET_ID        = "1AHuIlmgUayU9bDMNHuh_z5O4EkZkoG6bvaFafGHRO2M"
-SHEET_EMP_NAME  = "Employment Information"   # worksheet utama employee
+SHEET_ID        = "1LaZpDfmFZJvIARf0RYoX-DtcbkjgOMlwT74nbamnvqM"  # BETA
+SHEET_EMP_NAME  = "employee_data"            # worksheet utama beta
 SHEET_LOG_NAME  = "activity_log"             # worksheet activity log
 SHEET_ACL_NAME  = "app_users"                # worksheet ACL
 SHEET_CR_NAME   = "change_requests"          # worksheet change requests
@@ -1692,222 +1692,32 @@ _favicon_b64 = "data:image/svg+xml;base64," + _b64.b64encode(_FAVICON_SVG.encode
 st.set_page_config(page_title="Mekari", layout="wide", page_icon=_favicon_b64, initial_sidebar_state="auto")
 
 # ══════════════════════════════════════════════════════════════════
-# AUTH GATE — Login Page
+# BETA MODE — Auth dinonaktifkan
+# App langsung masuk sebagai admin tanpa login
 # ══════════════════════════════════════════════════════════════════
 
-# ══════════════════════════════════════════════════════════════════
-# GOOGLE OAUTH AUTH GATE
-# ══════════════════════════════════════════════════════════════════
-# Alur:
-# 1. User klik "Login dengan Google"
-# 2. Google konfirmasi identitas (SSO — tidak perlu login ulang
-#    jika sudah login Google di People Database)
-# 3. Dashboard baca email dari Google session
-# 4. Cek email di app_users sheet
-# 5. Ada & aktif → masuk sesuai role | Tidak ada → ditolak
-# ══════════════════════════════════════════════════════════════════
-
-# ══════════════════════════════════════════════════════════════════
-# AUTH GATE — streamlit-google-auth
-# Menggunakan library streamlit-google-auth sebagai pengganti
-# st.login() bawaan Streamlit yang bermasalah di Community Cloud
-# (known bug: "Missing provider for OAuth callback" di multi-instance)
-#
-# Cara kerja:
-# 1. Authenticator baca credentials dari Streamlit Secrets
-# 2. check_authentification() tangkap callback dari Google
-# 3. Jika belum login → tampilkan halaman login + tombol Google
-# 4. Jika sudah login → baca email dari session_state['user_info']
-# 5. Validasi email @mekari.com + cek di app_users sheet
-# ══════════════════════════════════════════════════════════════════
-
-from streamlit_google_auth import Authenticate as _GoogleAuth
-import json as _json
-import tempfile as _tempfile
-
-# streamlit-google-auth hanya support file JSON untuk credentials
-# Solusi: tulis credentials dari Streamlit Secrets ke temp file saat runtime
-_auth_secrets = st.secrets.get("auth", {})
-_google_creds = {
-    "web": {
-        "client_id":                  _auth_secrets.get("client_id", ""),
-        "client_secret":              _auth_secrets.get("client_secret", ""),
-        "auth_uri":                   "https://accounts.google.com/o/oauth2/auth",
-        "token_uri":                  "https://oauth2.googleapis.com/token",
-        "redirect_uris":              ["https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app"],
-        "javascript_origins":         ["https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app"],
-    }
+# Set dummy user info sebagai admin penuh
+_user_info = {
+    "email":       "beta@developer.local",
+    "name":        "Beta Developer",
+    "role":        "admin",
+    "is_active":   True,
+    "allowed_bus": "*",
+    "allowed_sbus":"*",
+    "employee_id": "",
+    "scope_note":  "Beta environment — no auth",
 }
-_creds_tmp = _tempfile.NamedTemporaryFile(
-    mode="w", suffix=".json", delete=False
-)
-_json.dump(_google_creds, _creds_tmp)
-_creds_tmp.flush()
 
-# Inisialisasi authenticator
-_google_auth = _GoogleAuth(
-    secret_credentials_path = _creds_tmp.name,
-    cookie_name             = "mekari_od_auth",
-    cookie_key              = _auth_secrets.get("cookie_secret", "mekari_od_2026_fallback"),
-    redirect_uri            = "https://orgchart-hr-eajasa62ryaazvy8gu9enn.streamlit.app",
-)
-
-# Tangkap callback dari Google (harus dipanggil sebelum check login)
-# Wrapped dengan error handler untuk menangani:
-# 1. InvalidGrantError — PKCE conflict / expired code (google-auth-oauthlib >= 1.0)
-# 2. Stale callback — user pakai browser back/forward setelah login
-try:
-    _google_auth.check_authentification()
-except Exception as _auth_exc:
-    _auth_exc_str = str(_auth_exc).lower()
-    _is_grant_err   = "invalid_grant" in _auth_exc_str or "missing code verifier" in _auth_exc_str
-    _is_stale_err   = "missing provider" in _auth_exc_str or "stale" in _auth_exc_str or "mismatch" in _auth_exc_str
-    if _is_grant_err or _is_stale_err:
-        # Bersihkan session OAuth yang corrupt lalu redirect ke login bersih
-        for _k in ["connected", "oauth_state", "user_info", "token", "google_email"]:
-            st.session_state.pop(_k, None)
-        st.query_params.clear()
-        st.rerun()
-    else:
-        # Error lain yang tidak dikenal — tampilkan pesan informatif
-        st.error(f"Terjadi kesalahan autentikasi. Silakan coba lagi atau hubungi OD Admin. ({type(_auth_exc).__name__})")
-        st.stop()
-
-# Belum login — tampilkan halaman login
-if not st.session_state.get("connected", False):
-    # Render halaman login
-    st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif !important; }
-    .stApp { background: #f5f5ff !important; }
-    .block-container { max-width: 420px !important; padding-top: 14vh !important; margin: 0 auto !important; }
-    header, #MainMenu, footer { visibility: hidden !important; }
-    </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="text-align:center; margin-bottom:40px;">
-        <div style="width:52px;height:52px;border-radius:14px;background:#ffffff;
-            display:flex;align-items:center;justify-content:center;
-            margin:0 auto 20px;box-shadow:0 6px 24px rgba(142,148,242,0.4);
-            overflow:hidden;padding:6px;">
-            <img src="data:image/jpeg;base64,{_MEKARI_LOGO_B64}" style="width:100%;height:100%;object-fit:contain;" /></div>
-        <div style="font-size:24px;font-weight:700;color:#1a1a2e;letter-spacing:-0.02em;">Mekari</div>
-        <div style="font-size:12px;color:#7b7b9d;margin-top:6px;font-weight:500;
-            letter-spacing:0.06em;text-transform:uppercase;">People Dashboard</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("""
-    <div style="background:#fff;border:1.5px solid #e0e0f0;border-radius:12px;
-        padding:28px 32px;text-align:center;box-shadow:0 4px 20px rgba(142,148,242,0.10);">
-        <div style="font-size:14px;color:#3d3d5c;margin-bottom:20px;line-height:1.6;">
-            Gunakan akun Google perusahaan Anda<br>
-            <span style="color:#8E94F2;font-weight:600;">@mekari.com</span> untuk masuk
-        </div>
-    """, unsafe_allow_html=True)
-
-    _auth_url = _google_auth.get_authorization_url()
-    st.link_button("🔐  Login dengan Google", _auth_url, use_container_width=True)
-
-    st.markdown("""
-    </div>
-    <div style="text-align:center;margin-top:20px;font-size:11px;color:#9e9ea0;">
-        Akses dikelola oleh OD Team · Mekari People Analytics
-    </div>
-    """, unsafe_allow_html=True)
-    st.stop()
-
-# User sudah login — ambil email dari session_state
-# Ambil email dari Google OAuth session
-# streamlit-google-auth menyimpan di session_state["user_info"]["email"]
-# Kita juga simpan backup di session_state["google_email"] agar tidak hilang saat overwrite
-_google_email = (
-    st.session_state.get("google_email", "")
-    or st.session_state.get("user_info", {}).get("email", "")
-    or st.session_state.get("email", "")
-)
-# Simpan ke dedicated key agar tidak hilang saat user_info di-overwrite ACL lookup
-if _google_email:
-    st.session_state["google_email"] = _google_email.strip().lower()
-_google_email = st.session_state.get("google_email", "")
-
-# Validasi domain — hanya @mekari.com
-if not _google_email or not _google_email.endswith("@mekari.com"):
-    st.markdown("""
-    <style>
-    .stApp { background: #f5f5ff !important; }
-    .block-container { max-width: 480px !important; padding-top: 14vh !important; margin: 0 auto !important; }
-    header, #MainMenu, footer { visibility: hidden !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    st.markdown(f"""
-    <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
-        padding:32px;text-align:center;margin-top:8vh;">
-        <div style="font-size:32px;margin-bottom:16px;">🚫</div>
-        <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
-            Domain Tidak Diizinkan
-        </div>
-        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
-            Email <b>{_google_email}</b> bukan akun @mekari.com.<br>
-            Dashboard ini hanya untuk karyawan Mekari.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("↩  Logout", key="btn_domain_logout"):
-        _google_auth.logout()
-    st.stop()
-
-# Cek email di app_users sheet
-_user_info = get_user_info(_google_email)
-
-if not _user_info:
-    st.markdown("""
-    <style>
-    .stApp { background: #f5f5ff !important; }
-    .block-container { max-width: 480px !important; padding-top: 14vh !important; margin: 0 auto !important; }
-    header, #MainMenu, footer { visibility: hidden !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    st.markdown(f"""
-    <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
-        padding:32px;text-align:center;margin-top:8vh;">
-        <div style="font-size:32px;margin-bottom:16px;">🚫</div>
-        <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
-            Akses Tidak Ditemukan
-        </div>
-        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
-            Email <b>{_google_email}</b> belum terdaftar di sistem.<br>
-            Hubungi OD Team untuk mendapatkan akses.
-        </div>
-        <div style="font-size:12px;color:#9e9ea0;">
-            Mekari People Analytics · OD Team
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("↩  Logout", key="btn_denied_logout"):
-        log_activity(action_type="logout", detail=f"Akses ditolak: {_google_email}")
-        _google_auth.logout()
-    st.stop()
-
-# User valid — set session state
-# PENTING: gunakan key "acl_user_info" agar tidak konflik dengan
-# session_state["user_info"] milik streamlit-google-auth library
-if st.session_state.get("user_email") != _google_email:
-    st.session_state.user_email    = _google_email
-    st.session_state.google_email  = _google_email
-    st.session_state.acl_user_info = _user_info   # key terpisah dari library
-    st.session_state.session_id    = str(_uuid.uuid4())[:8]
-    log_activity(
-        action_type="login",
-        detail=f"Google OAuth login · role={_user_info.get('role','')}",
-    )
+if "acl_user_info" not in st.session_state:
+    st.session_state.acl_user_info = _user_info
+    st.session_state.user_email    = _user_info["email"]
+    st.session_state.google_email  = _user_info["email"]
+    st.session_state.session_id    = "beta-session"
 
 _user_info = st.session_state.get("acl_user_info", _user_info)
-_user_role = _user_info.get("role", "employee")
-_is_admin  = _user_role == "admin"
-_is_cxo    = _user_role in ("admin", "cxo")
+_user_role = _user_info.get("role", "admin")
+_is_admin  = True
+_is_cxo    = True
 
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
@@ -2426,7 +2236,7 @@ with st.sidebar:
             st.session_state.pop(k, None)
         st.query_params.clear()
         try:
-            _google_auth.logout()
+            st.session_state.clear(); st.rerun()
         except Exception:
             pass
         st.rerun()
