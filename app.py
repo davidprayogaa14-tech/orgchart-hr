@@ -3226,16 +3226,19 @@ elif _active == 5:
         st.stop()
 
     # ── Header ───────────────────────────────────────────────────
+    _t1  = T.get('text1',  '#1a1a2e')
+    _t3  = T.get('text3',  '#7b7b9d')
+    _tol = T.get('outline','#e0e0f0')
     st.markdown(f"""
     <div style="margin-bottom:4px;">
-        <div style="font-size:20px;font-weight:700;color:{T['text1']};letter-spacing:-0.02em;">
+        <div style="font-size:20px;font-weight:700;color:{_t1};letter-spacing:-0.02em;">
             ✏️  Org Chart Builder
         </div>
-        <div style="font-size:13px;color:{T['text3']};margin-top:4px;">
+        <div style="font-size:13px;color:{_t3};margin-top:4px;">
             Draft proposal perubahan struktur organisasi secara visual
         </div>
     </div>
-    <hr style="border:none;border-top:1px solid {T['outline']};margin:16px 0;">
+    <hr style="border:none;border-top:1px solid {_tol};margin:16px 0;">
     """, unsafe_allow_html=True)
 
     # ── Draft management toolbar ──────────────────────────────────
