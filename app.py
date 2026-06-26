@@ -3234,7 +3234,6 @@ elif _active == 5:
 
     import json as _jb
 
-    # Pre-extract theme colors
     _c_primary = T.get('primary', '#8E94F2')
     _c_bg      = T.get('bg',      '#F5F5FF')
     _c_card    = T.get('card',    '#FFFFFF')
@@ -3243,7 +3242,6 @@ elif _active == 5:
     _c_outline = T.get('outline', '#e0e0f0')
     _c_sidebar = T.get('sidebar', '#F0F0FF')
 
-    # Header
     st.markdown(f"""
     <div style="margin-bottom:4px;">
       <div style="font-size:20px;font-weight:700;color:{_c_text1};letter-spacing:-0.02em;">
@@ -3256,19 +3254,14 @@ elif _active == 5:
     <hr style="border:none;border-top:1px solid {_c_outline};margin:14px 0 10px;">
     """, unsafe_allow_html=True)
 
-    # Toolbar
     col_n, col_s, col_l, col_r = st.columns([3,1,1,1])
     with col_n:
         draft_name = st.text_input("nama", placeholder="Nama draft — contoh: Proposal Q3 2026",
                                    label_visibility="collapsed", key="builder_draft_name")
-    with col_s:
-        do_save  = st.button("💾 Simpan",  use_container_width=True, key="bld_save")
-    with col_l:
-        do_load  = st.button("📂 Muat",    use_container_width=True, key="bld_load")
-    with col_r:
-        do_reset = st.button("🗑️ Reset",   use_container_width=True, key="bld_reset")
+    with col_s: do_save  = st.button("💾 Simpan",  use_container_width=True, key="bld_save")
+    with col_l: do_load  = st.button("📂 Muat",    use_container_width=True, key="bld_load")
+    with col_r: do_reset = st.button("🗑️ Reset",   use_container_width=True, key="bld_reset")
 
-    # Employee list
     emp_list = []
     if df is not None and not df.empty:
         for _, _row in df.iterrows():
@@ -3279,11 +3272,9 @@ elif _active == 5:
                 "div":   str(_row.get("Division",      "")),
             })
 
-    # Session state
     if "bld_nodes" not in st.session_state: st.session_state.bld_nodes = []
     if "bld_edges" not in st.session_state: st.session_state.bld_edges = []
 
-    # Save
     if do_save:
         if not draft_name.strip():
             st.warning("⚠️ Isi nama draft terlebih dahulu.")
@@ -3308,7 +3299,6 @@ elif _active == 5:
             except Exception as _es:
                 st.error(f"❌ Gagal simpan: {_es}")
 
-    # Load
     if do_load:
         try:
             _gcl  = get_gspread_client()
@@ -3319,13 +3309,11 @@ elif _active == 5:
         except Exception as _el:
             st.error(f"❌ Gagal muat: {_el}")
 
-    # Reset
     if do_reset:
         st.session_state.bld_nodes = []
         st.session_state.bld_edges = []
         st.rerun()
 
-    # Draft picker
     if st.session_state.get("bld_draft_list"):
         _drafts = st.session_state["bld_draft_list"]
         _opts   = {f"{d['draft_name']}  ({d['created_at']})": d for d in _drafts}
@@ -3337,7 +3325,6 @@ elif _active == 5:
             del st.session_state["bld_draft_list"]
             st.rerun()
 
-    # Serialize for JS
     _nodes_j = _jb.dumps(st.session_state.bld_nodes)
     _edges_j = _jb.dumps(st.session_state.bld_edges)
     _emps_j  = _jb.dumps(emp_list)
@@ -3349,10 +3336,11 @@ elif _active == 5:
 <style>
 *{{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',sans-serif;}}
 html,body{{height:100%;overflow:hidden;background:{_c_bg};}}
-#wrap{{display:flex;height:660px;width:100%;}}
+#wrap{{display:flex;height:680px;width:100%;}}
 
+/* ── Panel ── */
 #panel{{
-  width:210px;min-width:210px;background:{_c_sidebar};
+  width:200px;min-width:200px;background:{_c_sidebar};
   border-right:1.5px solid {_c_outline};
   display:flex;flex-direction:column;
 }}
@@ -3374,53 +3362,83 @@ html,body{{height:100%;overflow:hidden;background:{_c_bg};}}
   border-radius:7px;cursor:grab;user-select:none;
   transition:border-color .12s,box-shadow .12s;
 }}
-.ecard:hover{{border-color:{_c_primary};box-shadow:0 2px 8px rgba(142,148,242,.18);}}
+.ecard:hover{{
+  border-color:{_c_primary};
+  box-shadow:0 2px 8px rgba(142,148,242,.18);
+}}
 .en{{font-size:11.5px;font-weight:600;color:{_c_text1};}}
 .et{{font-size:10px;color:{_c_text3};margin-top:2px;}}
 
+/* ── Canvas ── */
 #canvas-area{{flex:1;position:relative;overflow:hidden;}}
-#cvs{{width:100%;height:100%;cursor:default;}}
-#cvs.panning{{cursor:grabbing;}}
+#cvs{{width:100%;height:100%;display:block;}}
+#cvs.grabbing{{cursor:grabbing;}}
 
-/* Controls */
+/* ── Toolbar overlay ── */
+#toolbar{{
+  position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  display:flex;gap:6px;z-index:20;
+  background:rgba(255,255,255,.95);
+  border:1.5px solid {_c_outline};
+  border-radius:10px;padding:6px 10px;
+  box-shadow:0 2px 12px rgba(0,0,0,.08);
+}}
+.tbtn{{
+  padding:5px 12px;font-size:11px;font-weight:600;
+  border:1.5px solid {_c_outline};border-radius:6px;
+  background:#fff;cursor:pointer;color:#3d3d5c;
+  transition:all .12s;white-space:nowrap;
+}}
+.tbtn:hover{{background:{_c_primary};color:#fff;border-color:{_c_primary};}}
+.tbtn.active{{background:{_c_primary};color:#fff;border-color:{_c_primary};}}
+.tbtn.del:hover{{background:#ff4d4f;border-color:#ff4d4f;color:#fff;}}
+.tsep{{width:1px;background:{_c_outline};margin:0 2px;}}
+
+/* ── Mode badge ── */
+#modebadge{{
+  position:absolute;top:56px;left:50%;transform:translateX(-50%);
+  background:rgba(255,255,255,.92);border:1.5px solid {_c_outline};
+  border-radius:20px;padding:4px 14px;font-size:11px;
+  color:{_c_text3};z-index:15;pointer-events:none;
+  white-space:nowrap;
+}}
+
+/* ── Controls ── */
 #ctrl{{
-  position:absolute;bottom:36px;left:10px;
+  position:absolute;bottom:40px;left:10px;
   display:flex;flex-direction:column;gap:4px;z-index:10;
 }}
 .cbtn{{
-  width:28px;height:28px;background:#fff;
-  border:1.5px solid {_c_outline};border-radius:6px;
-  font-size:14px;cursor:pointer;display:flex;
-  align-items:center;justify-content:center;
-  transition:border-color .12s;
+  width:30px;height:30px;background:#fff;
+  border:1.5px solid {_c_outline};border-radius:7px;
+  font-size:15px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:border-color .12s;color:#3d3d5c;
 }}
-.cbtn:hover{{border-color:{_c_primary};}}
+.cbtn:hover{{border-color:{_c_primary};color:{_c_primary};}}
 
-/* MiniMap */
-#minimap{{
-  position:absolute;bottom:36px;right:10px;
-  width:120px;height:80px;
-  background:rgba(255,255,255,.9);
-  border:1.5px solid {_c_outline};border-radius:8px;
-  overflow:hidden;z-index:10;
-}}
-
-/* Hint */
+/* ── Hint bar ── */
 #hint{{
   position:absolute;bottom:0;left:0;right:0;
-  background:rgba(255,255,255,.88);
+  background:rgba(255,255,255,.9);
   border-top:1px solid {_c_outline};
   padding:5px 14px;font-size:10.5px;color:{_c_text3};
-  pointer-events:none;
+  pointer-events:none;line-height:1.5;
 }}
 
-/* Selection ring */
-.node-sel rect.card{{stroke:#ff4d4f !important;stroke-width:2.5px !important;}}
-.edge-sel{{stroke:#ff4d4f !important;stroke-width:2.5px !important;}}
+/* ── Connection tooltip on handle hover ── */
+.conn-tip{{
+  position:absolute;
+  background:{_c_primary};color:#fff;
+  font-size:10px;padding:3px 7px;border-radius:4px;
+  pointer-events:none;white-space:nowrap;z-index:30;
+}}
 </style>
 </head>
 <body>
 <div id="wrap">
+
+  <!-- Left panel -->
   <div id="panel">
     <div id="panel-title">📋 Daftar Karyawan</div>
     <input id="psearch" placeholder="🔍 Cari nama atau jabatan..."
@@ -3428,156 +3446,264 @@ html,body{{height:100%;overflow:hidden;background:{_c_bg};}}
     <div id="plist"></div>
   </div>
 
+  <!-- Canvas -->
   <div id="canvas-area"
        ondragover="event.preventDefault()"
        ondrop="onDrop(event)">
+
+    <!-- Toolbar -->
+    <div id="toolbar">
+      <button class="tbtn active" id="btn-move"    onclick="setMode('move')"
+              title="Pilih dan pindah node">↖ Pilih</button>
+      <button class="tbtn"        id="btn-connect" onclick="setMode('connect')"
+              title="Buat garis koneksi antar node">⟶ Hubungkan</button>
+      <div class="tsep"></div>
+      <button class="tbtn del"    id="btn-del"     onclick="deleteSelected()"
+              title="Hapus yang dipilih (Del)">🗑 Hapus</button>
+      <div class="tsep"></div>
+      <button class="tbtn"        id="btn-fit"     onclick="fitView()"
+              title="Sesuaikan tampilan">⊡ Fit</button>
+      <button class="tbtn"        id="btn-export"  onclick="exportPNG()"
+              title="Export sebagai gambar PNG">📷 Export</button>
+    </div>
+
+    <!-- Mode badge -->
+    <div id="modebadge">↖ Mode Pilih — klik node untuk seleksi, drag untuk pindah</div>
+
     <svg id="cvs">
       <defs>
         <marker id="arr" markerWidth="10" markerHeight="10"
                 refX="8" refY="3" orient="auto">
-          <path d="M0,0 L0,6 L10,3 z"
-                fill="{_c_primary}" opacity=".85"/>
+          <path d="M0,0 L0,6 L10,3 z" fill="{_c_primary}"/>
         </marker>
-        <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
-          <circle cx="1" cy="1" r="1" fill="#d0d0e8"/>
+        <marker id="arr-sel" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L10,3 z" fill="#ff4d4f"/>
+        </marker>
+        <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="1.2" fill="#d0d0e8"/>
         </pattern>
+        <filter id="shadow">
+          <feDropShadow dx="2" dy="3" stdDeviation="3" flood-opacity="0.08"/>
+        </filter>
       </defs>
-      <rect width="100%" height="100%" fill="url(#grid)"/>
+      <rect width="100%" height="100%" fill="url(#dots)"/>
       <g id="zg">
         <g id="el"></g>
         <g id="nl"></g>
+        <!-- Connection handles rendered on top -->
+        <g id="hl"></g>
       </g>
     </svg>
 
-    <!-- Controls -->
+    <!-- Zoom controls -->
     <div id="ctrl">
       <button class="cbtn" onclick="zoom(1.2)" title="Zoom in">+</button>
-      <button class="cbtn" onclick="zoom(0.8)" title="Zoom out">−</button>
-      <button class="cbtn" onclick="fitView()" title="Fit view">⊡</button>
+      <button class="cbtn" onclick="zoom(0.85)" title="Zoom out">−</button>
+      <button class="cbtn" onclick="fitView()" title="Fit">⊡</button>
     </div>
 
-    <!-- MiniMap -->
-    <canvas id="minimap"></canvas>
-
-    <div id="hint">
-      💡 <b>Drag</b> kartu ke canvas &nbsp;·&nbsp;
-      <b>Hover tepi node</b> → drag untuk koneksi &nbsp;·&nbsp;
-      <b>Klik</b> node/garis lalu tekan <b>Delete</b> untuk hapus
+    <!-- Hint bar -->
+    <div id="hint" id="hintbar">
+      💡 Drag kartu karyawan dari panel kiri ke canvas untuk menambah node
     </div>
+
+    <!-- Connection tooltip (hidden by default) -->
+    <div class="conn-tip" id="conn-tip" style="display:none"></div>
   </div>
 </div>
 
 <script>
-// ── Data ──────────────────────────────────────────────────────────
-const EMPS       = {_emps_j};
-const NW = 168, NH = 64;
-const PRIMARY    = '{_c_primary}';
-const NODE_BG    = '{_c_card}';
-const NODE_TEXT  = '{_c_text1}';
-const NODE_SUB   = '{_c_text3}';
+// ════════════════════════════════════════════════════════
+// DATA
+// ════════════════════════════════════════════════════════
+const EMPS      = {_emps_j};
+const NW = 170, NH = 68;
+const COL_PRI   = '{_c_primary}';
+const COL_BG    = '{_c_card}';
+const COL_TEXT  = '{_c_text1}';
+const COL_SUB   = '{_c_text3}';
+const COL_SEL   = '#ff4d4f';
+const COL_CONN  = '#f5a623';
 
-// ── State ─────────────────────────────────────────────────────────
-let nodes   = {_nodes_j}.map(n => ({{...n, x:n.x||n.position?.x||100, y:n.y||n.position?.y||100}}));
-let edges   = {_edges_j};
-let nid     = nodes.length ? Math.max(...nodes.map(n=>parseInt(n.id)||0))+1 : 1;
-let vt      = {{x:0,y:0,s:1}};
-let selNode = null, selEdge = null;
+// ════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════
+let nodes    = {_nodes_j}.map(n=>normalize(n));
+let edges    = {_edges_j}.map(e=>normalizeEdge(e));
+let nid      = nodes.length ? Math.max(...nodes.map(n=>parseInt(n.id)||0))+1 : 1;
+let eid      = edges.length ? Math.max(...edges.map(e=>parseInt(e.id)||0))+1 : 1;
 
-// Drag node
-let dragNode=null, dragOff={{x:0,y:0}}, didDrag=false;
+let mode     = 'move';    // 'move' | 'connect'
+let selNode  = null;
+let selEdge  = null;
+
+// Drag
+let dragN=null, dragOff={{x:0,y:0}}, didDrag=false;
 // Pan
 let panning=false, panStart={{x:0,y:0}};
+// View
+let vt={{x:0,y:0,s:1}};
 // Connect
-let connSrc=null, connPreview=null;
-// Handle hover
-let hoverHandle=null; // {{nid, side:'top'|'bottom'}}
+let connSrc=null, connPrev=null;
+// Hover
+let hovNode=null;
 
-// ── DOM ───────────────────────────────────────────────────────────
-const svg = document.getElementById('cvs');
-const zg  = document.getElementById('zg');
-const el  = document.getElementById('el');
-const nl  = document.getElementById('nl');
-function mk(t){{ return document.createElementNS('http://www.w3.org/2000/svg',t); }}
-function trunc(s,n){{ return s&&s.length>n?s.slice(0,n)+'…':(s||''); }}
-
-// ── Transform ─────────────────────────────────────────────────────
-function applyVT(){{
-  zg.setAttribute('transform',`translate(${{vt.x.toFixed(1)}},${{vt.y.toFixed(1)}}) scale(${{vt.s.toFixed(3)}})`) ;
+function normalize(n){{
+  return {{
+    id:   String(n.id||nid),
+    x:    n.x ?? n.position?.x ?? 100,
+    y:    n.y ?? n.position?.y ?? 100,
+    name: n.name || n.data?.name || '',
+    title:n.title|| n.data?.title|| '',
+    div:  n.div  || n.data?.div  || '',
+    status: n.status || 'default', // default|new|vacant|promoted|removed
+  }};
 }}
+function normalizeEdge(e){{
+  return {{
+    id:  String(e.id||eid),
+    src: String(e.src||e.source||''),
+    tgt: String(e.tgt||e.target||''),
+  }};
+}}
+
+// Status color map
+const STATUS_COLORS = {{
+  default:  {{ fill:'#fff',          stroke: COL_PRI,  label:'' }},
+  new:      {{ fill:'#e8f5e9',       stroke:'#43a047', label:'🆕 Posisi Baru' }},
+  vacant:   {{ fill:'#fff8e1',       stroke:'#f9a825', label:'⬜ Vacant' }},
+  promoted: {{ fill:'#e3f2fd',       stroke:'#1e88e5', label:'⬆ Promoted' }},
+  removed:  {{ fill:'#fce4ec',       stroke:'#e53935', label:'❌ Dihapus' }},
+}};
+
+// ════════════════════════════════════════════════════════
+// DOM
+// ════════════════════════════════════════════════════════
+const svg  = document.getElementById('cvs');
+const zg   = document.getElementById('zg');
+const el   = document.getElementById('el');
+const nl   = document.getElementById('nl');
+const hl   = document.getElementById('hl');
+const hint = document.getElementById('hint');
+const tip  = document.getElementById('conn-tip');
+const badge= document.getElementById('modebadge');
+
+function mk(t){{ return document.createElementNS('http://www.w3.org/2000/svg',t); }}
+function trunc(s,n){{ s=s||''; return s.length>n?s.slice(0,n)+'…':s; }}
 function svgPt(cx,cy){{
   const r=svg.getBoundingClientRect();
   return {{x:(cx-r.left-vt.x)/vt.s, y:(cy-r.top-vt.y)/vt.s}};
 }}
+function screenPt(x,y){{
+  const r=svg.getBoundingClientRect();
+  return {{x:x*vt.s+vt.x+r.left, y:y*vt.s+vt.y+r.top}};
+}}
+
+// ════════════════════════════════════════════════════════
+// VIEW
+// ════════════════════════════════════════════════════════
+function applyVT(){{
+  zg.setAttribute('transform',
+    `translate(${{vt.x.toFixed(1)}},${{vt.y.toFixed(1)}}) scale(${{vt.s.toFixed(4)}})`);
+}}
 function zoom(f){{
   const W=svg.clientWidth,H=svg.clientHeight;
-  const cx=W/2,cy=H/2;
-  const pt=svgPt(cx,cy);
-  const ns=Math.min(3,Math.max(0.1,vt.s*f));
-  vt.x=cx-pt.x*ns; vt.y=cy-pt.y*ns; vt.s=ns;
+  const pt=svgPt(W/2,H/2);
+  vt.s=Math.min(3,Math.max(0.1,vt.s*f));
+  vt.x=W/2-pt.x*vt.s; vt.y=H/2-pt.y*vt.s;
   applyVT();
 }}
 function fitView(){{
   if(!nodes.length){{vt={{x:20,y:20,s:1}};applyVT();return;}}
   const W=svg.clientWidth,H=svg.clientHeight;
-  const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y);
-  const minX=Math.min(...xs)-20,maxX=Math.max(...xs)+NW+20;
-  const minY=Math.min(...ys)-20,maxY=Math.max(...ys)+NH+20;
-  const s=Math.min(1.2,Math.min((W-40)/(maxX-minX),(H-40)/(maxY-minY)));
+  const xs=nodes.map(n=>n.x), ys=nodes.map(n=>n.y);
+  const minX=Math.min(...xs)-24, maxX=Math.max(...xs)+NW+24;
+  const minY=Math.min(...ys)-24, maxY=Math.max(...ys)+NH+24;
+  const s=Math.min(1.4,Math.min((W-48)/(maxX-minX),(H-48)/(maxY-minY)));
   vt={{x:-minX*s+(W-(maxX-minX)*s)/2, y:-minY*s+(H-(maxY-minY)*s)/2, s}};
   applyVT();
 }}
 
-// ── Render ────────────────────────────────────────────────────────
-function render(){{renderEdges();renderNodes();drawMinimap();}}
+// ════════════════════════════════════════════════════════
+// MODE
+// ════════════════════════════════════════════════════════
+function setMode(m){{
+  mode=m; connSrc=null; connPrev=null; selNode=null; selEdge=null;
+  document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn-'+m).classList.add('active');
+
+  if(m==='move'){{
+    badge.textContent='↖ Mode Pilih — klik node untuk seleksi, drag untuk pindah';
+    hint.innerHTML='💡 Klik node untuk memilih · Drag node untuk memindahkan · Tekan <b>Delete</b> untuk menghapus yang dipilih';
+    svg.style.cursor='default';
+  }} else {{
+    badge.textContent='⟶ Mode Hubungkan — klik node ASAL, lalu klik node TUJUAN';
+    hint.innerHTML='⟶ <b>Klik node pertama</b> (akan berubah warna oranye) → <b>klik node kedua</b> untuk membuat garis · Tekan <b>Esc</b> untuk batal';
+    svg.style.cursor='crosshair';
+  }}
+  render();
+}}
+
+// ════════════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════════════
+function render(){{
+  renderEdges();
+  renderNodes();
+  renderHandles();
+}}
 
 function renderEdges(){{
   el.innerHTML='';
   edges.forEach((e,idx)=>{{
-    const s=nodes.find(n=>n.id===e.src||n.id===e.source);
-    const t=nodes.find(n=>n.id===e.tgt||n.id===e.target);
+    const s=nodes.find(n=>n.id===e.src);
+    const t=nodes.find(n=>n.id===e.tgt);
     if(!s||!t) return;
-    const x1=s.x+NW/2, y1=s.y+NH;
-    const x2=t.x+NW/2, y2=t.y;
-    const cy=(y1+y2)/2;
     const isSel=(idx===selEdge);
+    const x1=s.x+NW/2, y1=s.y+NH+2;
+    const x2=t.x+NW/2, y2=t.y-2;
+    const cy=(y1+y2)/2;
+    const d=`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{x2}},${{cy}} ${{x2}},${{y2}}`;
 
-    // Wide invisible hit area
+    // Hit area
     const hit=mk('path');
-    hit.setAttribute('d',`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{x2}},${{cy}} ${{x2}},${{y2}}`);
+    hit.setAttribute('d',d);
     hit.setAttribute('stroke','transparent');
-    hit.setAttribute('stroke-width','14');
+    hit.setAttribute('stroke-width','16');
     hit.setAttribute('fill','none');
     hit.setAttribute('cursor','pointer');
-    hit.addEventListener('click', ev=>{{ev.stopPropagation();selEdge=idx;selNode=null;connSrc=null;render();}});
+    hit.addEventListener('click',ev=>{{
+      ev.stopPropagation();
+      if(mode!=='connect'){{ selEdge=idx; selNode=null; render(); }}
+    }});
     el.appendChild(hit);
 
-    // Visible edge
+    // Visible
     const path=mk('path');
-    path.setAttribute('d',`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{x2}},${{cy}} ${{x2}},${{y2}}`);
-    path.setAttribute('stroke', isSel?'#ff4d4f':PRIMARY);
-    path.setAttribute('stroke-width', isSel?'2.5':'1.8');
+    path.setAttribute('d',d);
+    path.setAttribute('stroke',isSel?COL_SEL:COL_PRI);
+    path.setAttribute('stroke-width',isSel?'2.5':'1.8');
     path.setAttribute('fill','none');
-    path.setAttribute('opacity', isSel?'1':'0.8');
-    path.setAttribute('marker-end','url(#arr)');
+    path.setAttribute('opacity',isSel?'1':'0.75');
+    path.setAttribute('marker-end',`url(#arr${{isSel?'-sel':''}})`);
     path.setAttribute('pointer-events','none');
-    if(isSel) path.setAttribute('class','edge-sel');
     el.appendChild(path);
   }});
 
-  // Connect preview line
-  if(connPreview&&connSrc!==null){{
+  // Preview line while connecting
+  if(connSrc&&connPrev){{
     const s=nodes.find(n=>n.id===connSrc);
     if(s){{
       const x1=s.x+NW/2,y1=s.y+NH;
-      const x2=connPreview.x,y2=connPreview.y;
-      const cy=(y1+y2)/2;
+      const cy=(y1+connPrev.y)/2;
       const prev=mk('path');
-      prev.setAttribute('d',`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{x2}},${{cy}} ${{x2}},${{y2}}`);
-      prev.setAttribute('stroke',PRIMARY);
-      prev.setAttribute('stroke-width','1.5');
-      prev.setAttribute('stroke-dasharray','5,4');
+      prev.setAttribute('d',`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{connPrev.x}},${{cy}} ${{connPrev.x}},${{connPrev.y}}`);
+      prev.setAttribute('stroke',COL_PRI);
+      prev.setAttribute('stroke-width','2');
+      prev.setAttribute('stroke-dasharray','6,4');
       prev.setAttribute('fill','none');
-      prev.setAttribute('opacity','0.6');
+      prev.setAttribute('opacity','0.5');
       prev.setAttribute('pointer-events','none');
       el.appendChild(prev);
     }}
@@ -3587,25 +3713,31 @@ function renderEdges(){{
 function renderNodes(){{
   nl.innerHTML='';
   nodes.forEach(n=>{{
-    const isSel=(n.id===selNode);
-    const isConn=(n.id===connSrc);
+    const isSel  =(n.id===selNode);
+    const isConn =(n.id===connSrc);
+    const isHov  =(n.id===hovNode);
+    const sc     = STATUS_COLORS[n.status]||STATUS_COLORS.default;
+
     const g=mk('g');
     g.setAttribute('transform',`translate(${{n.x}},${{n.y}})`);
+    g.setAttribute('cursor', mode==='move'?'move':'pointer');
     g.dataset.nid=n.id;
 
     // Shadow
     const sh=mk('rect');
-    sh.setAttribute('x','3');sh.setAttribute('y','5');
+    sh.setAttribute('x','2');sh.setAttribute('y','4');
     sh.setAttribute('width',NW);sh.setAttribute('height',NH);
-    sh.setAttribute('rx','9');sh.setAttribute('fill','rgba(142,148,242,.10)');
+    sh.setAttribute('rx','10');sh.setAttribute('fill','rgba(0,0,0,.07)');
+    sh.setAttribute('pointer-events','none');
     g.appendChild(sh);
 
-    // Card
-    const rc=mk('rect');rc.setAttribute('class','card');
-    rc.setAttribute('width',NW);rc.setAttribute('height',NH);rc.setAttribute('rx','9');
-    rc.setAttribute('fill',NODE_BG);
-    rc.setAttribute('stroke', isConn?'#f5a623':isSel?'#ff4d4f':PRIMARY);
-    rc.setAttribute('stroke-width',(isSel||isConn)?'2.5':'1.5');
+    // Card background
+    const rc=mk('rect');
+    rc.setAttribute('width',NW);rc.setAttribute('height',NH);rc.setAttribute('rx','10');
+    rc.setAttribute('fill', sc.fill);
+    rc.setAttribute('stroke', isConn?COL_CONN:isSel?COL_SEL:isHov?COL_PRI:sc.stroke);
+    rc.setAttribute('stroke-width',(isConn||isSel)?'2.5':isHov?'2':'1.5');
+    rc.setAttribute('filter','url(#shadow)');
     g.appendChild(rc);
 
     // Accent bar
@@ -3613,161 +3745,314 @@ function renderNodes(){{
     bar.setAttribute('x','0');bar.setAttribute('y','0');
     bar.setAttribute('width','5');bar.setAttribute('height',NH);
     bar.setAttribute('rx','4');
-    bar.setAttribute('fill',isConn?'#f5a623':PRIMARY);
+    bar.setAttribute('fill',isConn?COL_CONN:isSel?COL_SEL:sc.stroke);
+    bar.setAttribute('pointer-events','none');
     g.appendChild(bar);
 
-    // Texts
-    const tn=mk('text');tn.setAttribute('x','14');tn.setAttribute('y','23');
-    tn.setAttribute('font-size','11.5');tn.setAttribute('font-weight','700');
-    tn.setAttribute('fill',NODE_TEXT);tn.textContent=trunc(n.name||n.data?.name,19);
+    // Status badge
+    if(sc.label){{
+      const bg=mk('rect');
+      bg.setAttribute('x',NW-60);bg.setAttribute('y','4');
+      bg.setAttribute('width','56');bg.setAttribute('height','14');
+      bg.setAttribute('rx','4');bg.setAttribute('fill',sc.stroke);bg.setAttribute('opacity','.15');
+      g.appendChild(bg);
+      const lb=mk('text');
+      lb.setAttribute('x',NW-32);lb.setAttribute('y','14');
+      lb.setAttribute('font-size','7.5');lb.setAttribute('fill',sc.stroke);
+      lb.setAttribute('text-anchor','middle');lb.setAttribute('font-weight','700');
+      lb.textContent=sc.label;
+      g.appendChild(lb);
+    }}
+
+    // Name
+    const tn=mk('text');
+    tn.setAttribute('x','14');tn.setAttribute('y','25');
+    tn.setAttribute('font-size','12');tn.setAttribute('font-weight','700');
+    tn.setAttribute('fill',COL_TEXT);tn.setAttribute('pointer-events','none');
+    tn.textContent=trunc(n.name,18);
     g.appendChild(tn);
 
-    const tt=mk('text');tt.setAttribute('x','14');tt.setAttribute('y','38');
-    tt.setAttribute('font-size','9.5');tt.setAttribute('fill',NODE_SUB);
-    tt.textContent=trunc(n.title||n.data?.title,24);g.appendChild(tt);
+    // Title
+    const tt=mk('text');
+    tt.setAttribute('x','14');tt.setAttribute('y','40');
+    tt.setAttribute('font-size','10');tt.setAttribute('fill',COL_SUB);
+    tt.setAttribute('pointer-events','none');
+    tt.textContent=trunc(n.title,22);
+    g.appendChild(tt);
 
-    const td=mk('text');td.setAttribute('x','14');td.setAttribute('y','53');
-    td.setAttribute('font-size','8.5');td.setAttribute('fill','#b0b0c8');
-    td.textContent=trunc(n.div||n.data?.div,26);g.appendChild(td);
+    // Division
+    const td=mk('text');
+    td.setAttribute('x','14');td.setAttribute('y','55');
+    td.setAttribute('font-size','9');td.setAttribute('fill','#b0b0c8');
+    td.setAttribute('pointer-events','none');
+    td.textContent=trunc(n.div,24);
+    g.appendChild(td);
 
-    // Handle top (target)
-    const htop=mk('circle');
-    htop.setAttribute('cx',NW/2);htop.setAttribute('cy','0');
-    htop.setAttribute('r','5');
-    htop.setAttribute('fill','#fff');htop.setAttribute('stroke',PRIMARY);
-    htop.setAttribute('stroke-width','2');
-    htop.setAttribute('opacity', hoverHandle?.nid===n.id&&hoverHandle?.side==='top'?'1':'0');
-    htop.setAttribute('cursor','crosshair');htop.setAttribute('class','handle');
-    htop.addEventListener('mouseenter',()=>{{hoverHandle={{nid:n.id,side:'top'}};renderNodes();}});
-    htop.addEventListener('mouseleave',()=>{{hoverHandle=null;renderNodes();}});
-    htop.addEventListener('mousedown',ev=>{{ev.stopPropagation();connSrc=n.id;connPreview=null;}});
-    g.appendChild(htop);
-
-    // Handle bottom (source)
-    const hbot=mk('circle');
-    hbot.setAttribute('cx',NW/2);hbot.setAttribute('cy',NH);
-    hbot.setAttribute('r','5');
-    hbot.setAttribute('fill',PRIMARY);hbot.setAttribute('stroke','#fff');
-    hbot.setAttribute('stroke-width','2');
-    hbot.setAttribute('opacity', hoverHandle?.nid===n.id&&hoverHandle?.side==='bot'?'1':'0');
-    hbot.setAttribute('cursor','crosshair');hbot.setAttribute('class','handle');
-    hbot.addEventListener('mouseenter',()=>{{hoverHandle={{nid:n.id,side:'bot'}};renderNodes();}});
-    hbot.addEventListener('mouseleave',()=>{{hoverHandle=null;renderNodes();}});
-    hbot.addEventListener('mousedown',ev=>{{ev.stopPropagation();connSrc=n.id;connPreview=null;}});
-    g.appendChild(hbot);
-
-    // Node hover — show handles
-    g.addEventListener('mouseenter',()=>{{
-      htop.setAttribute('opacity','1');
-      hbot.setAttribute('opacity','1');
-    }});
-    g.addEventListener('mouseleave',()=>{{
-      if(hoverHandle?.nid!==n.id){{
-        htop.setAttribute('opacity','0');
-        hbot.setAttribute('opacity','0');
+    // Events
+    g.addEventListener('mouseenter',()=>{{ hovNode=n.id; renderHandles(); renderNodes(); }});
+    g.addEventListener('mouseleave',()=>{{ hovNode=null; renderHandles(); renderNodes(); }});
+    g.addEventListener('mousedown', ev=>{{
+      ev.stopPropagation();
+      if(mode==='move'){{
+        const pt=svgPt(ev.clientX,ev.clientY);
+        dragN=n; dragOff={{x:pt.x-n.x,y:pt.y-n.y}}; didDrag=false;
+        selNode=n.id; selEdge=null; render();
       }}
     }});
-
-    // Drag / click
-    g.addEventListener('mousedown', ev=>{{
-      if(ev.target.classList.contains('handle')) return;
-      ev.stopPropagation();
-      const pt=svgPt(ev.clientX,ev.clientY);
-      dragNode=n; dragOff={{x:pt.x-n.x,y:pt.y-n.y}}; didDrag=false;
-    }});
-
     g.addEventListener('click', ev=>{{
       ev.stopPropagation();
-      if(didDrag) return;
-      if(connSrc!==null && connSrc!==n.id){{
-        // Complete connection
-        if(!edges.some(e=>(e.src===connSrc||e.source===connSrc)&&(e.tgt===n.id||e.target===n.id))){{
-          edges.push({{id:`e${{Date.now()}}`,src:connSrc,tgt:n.id,source:connSrc,target:n.id}});
-        }}
-        connSrc=null; connPreview=null;
+      if(mode==='move'){{
+        if(!didDrag){{ selNode=n.id; selEdge=null; render(); }}
       }} else {{
-        selNode=n.id; selEdge=null; connSrc=null;
+        // Connect mode
+        if(connSrc===null){{
+          connSrc=n.id; connPrev=null;
+          hint.innerHTML=`⟶ <b>"${{n.name}}"</b> dipilih sebagai ASAL → sekarang klik node TUJUAN · <b>Esc</b> untuk batal`;
+          render();
+        }} else if(connSrc!==n.id){{
+          if(!edges.some(e=>e.src===connSrc&&e.tgt===n.id)){{
+            edges.push({{id:String(eid++),src:connSrc,tgt:n.id}});
+          }}
+          const srcName=(nodes.find(nd=>nd.id===connSrc)||{{}}).name||'';
+          hint.innerHTML=`✅ Koneksi <b>${{srcName}}</b> → <b>${{n.name}}</b> berhasil dibuat · Klik node lain untuk lanjut menghubungkan`;
+          connSrc=null; connPrev=null; render();
+        }} else {{
+          connSrc=null; connPrev=null; render();
+        }}
       }}
-      render();
+    }});
+
+    // Right-click context menu for status
+    g.addEventListener('contextmenu', ev=>{{
+      ev.preventDefault(); ev.stopPropagation();
+      showContextMenu(ev.clientX, ev.clientY, n.id);
     }});
 
     nl.appendChild(g);
   }});
 }}
 
-// ── Canvas events ─────────────────────────────────────────────────
-svg.addEventListener('mousedown', ev=>{{
-  if(ev.target===svg||ev.target.parentElement===zg){{
-    if(connSrc!==null){{ connSrc=null; connPreview=null; render(); return; }}
-    selNode=null; selEdge=null;
-    panning=true;
-    panStart={{x:ev.clientX-vt.x, y:ev.clientY-vt.y}};
-    svg.classList.add('panning');
-    render();
+// ── Connection handles (shown on hover, big and obvious) ──────────
+function renderHandles(){{
+  hl.innerHTML='';
+  if(!hovNode && !connSrc) return;
+  const targetId = connSrc || hovNode;
+  const n=nodes.find(nd=>nd.id===targetId);
+  if(!n) return;
+
+  // We show TWO big handles: top and bottom
+  const handleDefs=[
+    {{cx:n.x+NW/2, cy:n.y-1,   label:'Dari sini'}},  // top (source going up)
+    {{cx:n.x+NW/2, cy:n.y+NH+1, label:'Dari sini'}},  // bottom (source going down)
+  ];
+
+  handleDefs.forEach(h=>{{
+    // Outer glow ring
+    const glow=mk('circle');
+    glow.setAttribute('cx',h.cx);glow.setAttribute('cy',h.cy);
+    glow.setAttribute('r','10');
+    glow.setAttribute('fill',COL_PRI);glow.setAttribute('opacity','0.15');
+    glow.setAttribute('pointer-events','none');
+    hl.appendChild(glow);
+
+    // Inner dot
+    const dot=mk('circle');
+    dot.setAttribute('cx',h.cx);dot.setAttribute('cy',h.cy);
+    dot.setAttribute('r','6');
+    dot.setAttribute('fill',connSrc===targetId?COL_CONN:COL_PRI);
+    dot.setAttribute('stroke','#fff');dot.setAttribute('stroke-width','2');
+    dot.setAttribute('cursor','crosshair');
+    dot.setAttribute('opacity','0.95');
+
+    dot.addEventListener('mouseenter',()=>{{
+      tip.style.display='block';
+      tip.textContent='Drag atau klik untuk mulai koneksi';
+      const r=svg.getBoundingClientRect();
+      tip.style.left=(h.cx*vt.s+vt.x+r.left-60)+'px';
+      tip.style.top=(h.cy*vt.s+vt.y+r.top-28)+'px';
+    }});
+    dot.addEventListener('mouseleave',()=>{{ tip.style.display='none'; }});
+    dot.addEventListener('mousedown',ev=>{{
+      ev.stopPropagation();
+      setMode('connect');
+      connSrc=targetId; connPrev=null;
+      const srcN=nodes.find(nd=>nd.id===targetId);
+      hint.innerHTML=`⟶ <b>"${{srcN?.name||''}}"</b> dipilih → sekarang klik node TUJUAN · <b>Esc</b> untuk batal`;
+      render();
+    }});
+    hl.appendChild(dot);
+  }});
+}}
+
+// ════════════════════════════════════════════════════════
+// CONTEXT MENU (right-click on node → change status)
+// ════════════════════════════════════════════════════════
+let ctxMenu=null;
+function showContextMenu(cx,cy,nodeId){{
+  removeContextMenu();
+  const menu=document.createElement('div');
+  menu.id='ctx';
+  menu.style.cssText=`position:fixed;left:${{cx}}px;top:${{cy}}px;
+    background:#fff;border:1.5px solid #e0e0f0;border-radius:8px;
+    box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:999;
+    padding:6px 0;min-width:160px;font-size:12px;`;
+
+  const items=[
+    {{key:'default',  icon:'⬜', label:'Normal'}},
+    {{key:'new',      icon:'🆕', label:'Posisi Baru'}},
+    {{key:'vacant',   icon:'📭', label:'Vacant / Kosong'}},
+    {{key:'promoted', icon:'⬆',  label:'Promoted'}},
+    {{key:'removed',  icon:'❌', label:'Dihapus / Removed'}},
+  ];
+
+  const title=document.createElement('div');
+  title.style.cssText='padding:4px 14px 6px;font-size:10px;font-weight:700;color:#9e9ea0;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #f0f0f0;margin-bottom:4px;';
+  title.textContent='Tandai Status Node';
+  menu.appendChild(title);
+
+  items.forEach(it=>{{
+    const row=document.createElement('div');
+    row.style.cssText=`padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;
+      color:#1a1a2e;transition:background .1s;`;
+    row.innerHTML=`<span>${{it.icon}}</span><span>${{it.label}}</span>`;
+    row.addEventListener('mouseenter',()=>row.style.background='#f5f5ff');
+    row.addEventListener('mouseleave',()=>row.style.background='');
+    row.addEventListener('click',()=>{{
+      const n=nodes.find(nd=>nd.id===nodeId);
+      if(n) n.status=it.key;
+      removeContextMenu(); render();
+    }});
+    menu.appendChild(row);
+  }});
+
+  // Delete option
+  const sep=document.createElement('div');
+  sep.style.cssText='height:1px;background:#f0f0f0;margin:4px 0;';
+  menu.appendChild(sep);
+
+  const delRow=document.createElement('div');
+  delRow.style.cssText='padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#e53935;';
+  delRow.innerHTML='<span>🗑</span><span>Hapus Node Ini</span>';
+  delRow.addEventListener('mouseenter',()=>delRow.style.background='#fff5f5');
+  delRow.addEventListener('mouseleave',()=>delRow.style.background='');
+  delRow.addEventListener('click',()=>{{
+    nodes=nodes.filter(n=>n.id!==nodeId);
+    edges=edges.filter(e=>e.src!==nodeId&&e.tgt!==nodeId);
+    selNode=null; removeContextMenu(); render();
+  }});
+  menu.appendChild(delRow);
+
+  document.body.appendChild(menu);
+  ctxMenu=menu;
+  setTimeout(()=>document.addEventListener('click',removeContextMenu,{{once:true}}),10);
+}}
+function removeContextMenu(){{
+  if(ctxMenu){{ ctxMenu.remove(); ctxMenu=null; }}
+}}
+
+// ════════════════════════════════════════════════════════
+// DELETE
+// ════════════════════════════════════════════════════════
+function deleteSelected(){{
+  if(selNode!==null){{
+    nodes=nodes.filter(n=>n.id!==selNode);
+    edges=edges.filter(e=>e.src!==selNode&&e.tgt!==selNode);
+    selNode=null;
+  }} else if(selEdge!==null){{
+    edges.splice(selEdge,1); selEdge=null;
   }}
-}});
+  render();
+}}
 
-window.addEventListener('mousemove', ev=>{{
-  if(dragNode){{
-    const pt=svgPt(ev.clientX,ev.clientY);
-    dragNode.x=pt.x-dragOff.x; dragNode.y=pt.y-dragOff.y;
-    didDrag=true; render();
-  }} else if(panning){{
-    vt.x=ev.clientX-panStart.x; vt.y=ev.clientY-panStart.y;
-    applyVT(); drawMinimap();
-  }} else if(connSrc!==null){{
-    connPreview=svgPt(ev.clientX,ev.clientY); render();
-  }}
-}});
+// ════════════════════════════════════════════════════════
+// EXPORT PNG
+// ════════════════════════════════════════════════════════
+function exportPNG(){{
+  const svgEl=document.getElementById('cvs');
+  const data=new XMLSerializer().serializeToString(svgEl);
+  const blob=new Blob([data],{{type:'image/svg+xml'}});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='org-chart-draft.svg';
+  a.click(); URL.revokeObjectURL(url);
+}}
 
-window.addEventListener('mouseup', ()=>{{
-  dragNode=null; panning=false;
-  svg.classList.remove('panning');
-}});
-
-svg.addEventListener('wheel', ev=>{{
-  ev.preventDefault();
-  const r=svg.getBoundingClientRect();
-  const pt=svgPt(ev.clientX,ev.clientY);
-  const f=ev.deltaY>0?0.88:1.14;
-  const ns=Math.min(3,Math.max(0.1,vt.s*f));
-  vt.x=ev.clientX-r.left-pt.x*ns;
-  vt.y=ev.clientY-r.top -pt.y*ns;
-  vt.s=ns; applyVT(); drawMinimap();
-}},{{passive:false}});
-
-svg.addEventListener('click', ev=>{{
-  if(ev.target===svg){{ selNode=null; selEdge=null; render(); }}
-}});
-
-window.addEventListener('keydown', ev=>{{
-  if(ev.target.tagName==='INPUT') return;
-  if(ev.key==='Delete'||ev.key==='Backspace'){{
-    if(selNode!==null){{
-      nodes=nodes.filter(n=>n.id!==selNode);
-      edges=edges.filter(e=>(e.src||e.source)!==selNode&&(e.tgt||e.target)!==selNode);
-      selNode=null;
-    }} else if(selEdge!==null){{
-      edges.splice(selEdge,1); selEdge=null;
-    }}
-    render();
-  }}
-  if(ev.key==='Escape'){{ connSrc=null; connPreview=null; render(); }}
-}});
-
-// ── Drop ──────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════
+// DROP FROM PANEL
+// ════════════════════════════════════════════════════════
 function onDrop(ev){{
   ev.preventDefault();
   const emp=JSON.parse(ev.dataTransfer.getData('emp'));
   const pt=svgPt(ev.clientX,ev.clientY);
   nodes.push({{
     id:String(nid++), x:pt.x-NW/2, y:pt.y-NH/2,
-    name:emp.name, title:emp.title, div:emp.div,
+    name:emp.name, title:emp.title, div:emp.div, status:'default',
   }});
   render();
 }}
 
-// ── Panel ─────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════
+// CANVAS EVENTS
+// ════════════════════════════════════════════════════════
+svg.addEventListener('mousedown',ev=>{{
+  const onBg=ev.target===svg||ev.target.id==='zg'||
+             ev.target.parentElement?.id==='zg'||ev.target.tagName==='rect'&&ev.target.getAttribute('fill')==='url(#dots)';
+  if(onBg){{
+    if(connSrc){{ connSrc=null; connPrev=null; render(); return; }}
+    selNode=null; selEdge=null;
+    panning=true;
+    panStart={{x:ev.clientX-vt.x,y:ev.clientY-vt.y}};
+    svg.classList.add('grabbing');
+    render();
+  }}
+}});
+
+window.addEventListener('mousemove',ev=>{{
+  if(dragN&&mode==='move'){{
+    const pt=svgPt(ev.clientX,ev.clientY);
+    dragN.x=pt.x-dragOff.x; dragN.y=pt.y-dragOff.y;
+    didDrag=true; render();
+  }} else if(panning){{
+    vt.x=ev.clientX-panStart.x; vt.y=ev.clientY-panStart.y;
+    applyVT();
+  }} else if(connSrc){{
+    connPrev=svgPt(ev.clientX,ev.clientY); render();
+  }}
+}});
+
+window.addEventListener('mouseup',()=>{{
+  dragN=null; panning=false;
+  svg.classList.remove('grabbing');
+}});
+
+svg.addEventListener('wheel',ev=>{{
+  ev.preventDefault();
+  const r=svg.getBoundingClientRect();
+  const pt=svgPt(ev.clientX,ev.clientY);
+  const f=ev.deltaY>0?0.88:1.14;
+  vt.s=Math.min(3,Math.max(0.1,vt.s*f));
+  vt.x=ev.clientX-r.left-pt.x*vt.s;
+  vt.y=ev.clientY-r.top -pt.y*vt.s;
+  applyVT();
+}},{{passive:false}});
+
+svg.addEventListener('click',ev=>{{
+  if(ev.target===svg){{ selNode=null; selEdge=null; render(); }}
+}});
+
+window.addEventListener('keydown',ev=>{{
+  if(ev.target.tagName==='INPUT') return;
+  if(ev.key==='Delete'||ev.key==='Backspace') deleteSelected();
+  if(ev.key==='Escape'){{
+    connSrc=null; connPrev=null;
+    setMode('move');
+  }}
+  if(ev.key==='h'||ev.key==='H') setMode('connect');
+}});
+
+// ════════════════════════════════════════════════════════
+// PANEL
+// ════════════════════════════════════════════════════════
 function buildPanel(){{
   const list=document.getElementById('plist');
   EMPS.forEach(e=>{{
@@ -3786,36 +4071,14 @@ function filterCards(q){{
   const lq=q.toLowerCase();
   document.querySelectorAll('.ecard').forEach((c,i)=>{{
     const e=EMPS[i];
-    c.style.display=(e.name.toLowerCase().includes(lq)||e.title.toLowerCase().includes(lq))?'':'none';
+    c.style.display=(e.name.toLowerCase().includes(lq)||
+                     e.title.toLowerCase().includes(lq))?'':'none';
   }});
 }}
 
-// ── MiniMap ───────────────────────────────────────────────────────
-function drawMinimap(){{
-  const mm=document.getElementById('minimap');
-  if(!mm||!nodes.length) return;
-  const ctx=mm.getContext('2d');
-  mm.width=120; mm.height=80;
-  ctx.clearRect(0,0,120,80);
-  const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y);
-  const minX=Math.min(...xs),maxX=Math.max(...xs)+NW;
-  const minY=Math.min(...ys),maxY=Math.max(...ys)+NH;
-  const sc=Math.min(110/(maxX-minX||1),70/(maxY-minY||1));
-  const ox=5-(minX*sc),oy=5-(minY*sc);
-  nodes.forEach(n=>{{
-    ctx.fillStyle=PRIMARY+'33';
-    ctx.strokeStyle=PRIMARY;
-    ctx.lineWidth=1;
-    ctx.beginPath();
-    ctx.roundRect(n.x*sc+ox,n.y*sc+oy,NW*sc,NH*sc,2);
-    ctx.fill(); ctx.stroke();
-  }});
-}}
-
-// ── Expose state for save ─────────────────────────────────────────
-window.__getFlowState = () => ({{nodes, edges}});
-
-// ── Init ──────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════
 buildPanel();
 render();
 if(nodes.length) fitView();
@@ -3823,12 +4086,12 @@ if(nodes.length) fitView();
 </body>
 </html>"""
 
-    st.components.v1.html(_html, height=700, scrolling=False)
+    st.components.v1.html(_html, height=720, scrolling=False)
     st.caption(
-        "💡 **Drag** kartu karyawan ke canvas · "
-        "**Hover tepi node** → muncul handle biru → drag untuk buat koneksi · "
-        "**Klik** node/garis lalu tekan **Delete** untuk hapus · "
-        "Tekan **Esc** untuk batalkan koneksi yang sedang dibuat"
+        "💡 **Drag** kartu dari panel kiri ke canvas · "
+        "**Hover node** → muncul titik biru → klik untuk mulai koneksi · "
+        "**Klik kanan node** → ubah status (New, Vacant, Promoted, Removed) · "
+        "**Klik garis/node** lalu tekan Delete untuk hapus"
     )
 
 
