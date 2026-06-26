@@ -3234,7 +3234,7 @@ elif _active == 5:
 
     import json as _jb
 
-    # ── Theme colors (pre-extract to avoid f-string key conflicts) ─
+    # Pre-extract theme colors
     _c_primary = T.get('primary', '#8E94F2')
     _c_bg      = T.get('bg',      '#F5F5FF')
     _c_card    = T.get('card',    '#FFFFFF')
@@ -3243,7 +3243,7 @@ elif _active == 5:
     _c_outline = T.get('outline', '#e0e0f0')
     _c_sidebar = T.get('sidebar', '#F0F0FF')
 
-    # ── Header ────────────────────────────────────────────────────
+    # Header
     st.markdown(f"""
     <div style="margin-bottom:4px;">
       <div style="font-size:20px;font-weight:700;color:{_c_text1};letter-spacing:-0.02em;">
@@ -3256,7 +3256,7 @@ elif _active == 5:
     <hr style="border:none;border-top:1px solid {_c_outline};margin:14px 0 10px;">
     """, unsafe_allow_html=True)
 
-    # ── Draft toolbar ─────────────────────────────────────────────
+    # Toolbar
     col_n, col_s, col_l, col_r = st.columns([3,1,1,1])
     with col_n:
         draft_name = st.text_input("nama", placeholder="Nama draft — contoh: Proposal Q3 2026",
@@ -3268,7 +3268,7 @@ elif _active == 5:
     with col_r:
         do_reset = st.button("🗑️ Reset",   use_container_width=True, key="bld_reset")
 
-    # ── Build employee list ───────────────────────────────────────
+    # Employee list
     emp_list = []
     if df is not None and not df.empty:
         for _, _row in df.iterrows():
@@ -3279,11 +3279,11 @@ elif _active == 5:
                 "div":   str(_row.get("Division",      "")),
             })
 
-    # ── Session state ─────────────────────────────────────────────
+    # Session state
     if "bld_nodes" not in st.session_state: st.session_state.bld_nodes = []
     if "bld_edges" not in st.session_state: st.session_state.bld_edges = []
 
-    # ── Save ──────────────────────────────────────────────────────
+    # Save
     if do_save:
         if not draft_name.strip():
             st.warning("⚠️ Isi nama draft terlebih dahulu.")
@@ -3293,12 +3293,10 @@ elif _active == 5:
                 from datetime import datetime as _dtb
                 _gcl = get_gspread_client()
                 _sh  = _gcl.open_by_key(SHEET_ID)
-                try:
-                    _ws = _sh.worksheet("org_builder_drafts")
+                try:    _ws = _sh.worksheet("org_builder_drafts")
                 except Exception:
                     _ws = _sh.add_worksheet("org_builder_drafts", rows=1000, cols=6)
-                    _ws.append_row(["draft_id","draft_name","created_by",
-                                    "created_at","nodes_json","edges_json"])
+                    _ws.append_row(["draft_id","draft_name","created_by","created_at","nodes_json","edges_json"])
                 _ws.append_row([
                     str(_ub.uuid4())[:8], draft_name.strip(),
                     _user_info.get("name","Beta Developer"),
@@ -3310,26 +3308,24 @@ elif _active == 5:
             except Exception as _es:
                 st.error(f"❌ Gagal simpan: {_es}")
 
-    # ── Load ──────────────────────────────────────────────────────
+    # Load
     if do_load:
         try:
             _gcl  = get_gspread_client()
             _ws   = _gcl.open_by_key(SHEET_ID).worksheet("org_builder_drafts")
             _rows = _ws.get_all_records()
-            if _rows:
-                st.session_state["bld_draft_list"] = _rows
-            else:
-                st.info("Belum ada draft tersimpan.")
+            if _rows: st.session_state["bld_draft_list"] = _rows
+            else:     st.info("Belum ada draft tersimpan.")
         except Exception as _el:
             st.error(f"❌ Gagal muat: {_el}")
 
-    # ── Reset ─────────────────────────────────────────────────────
+    # Reset
     if do_reset:
         st.session_state.bld_nodes = []
         st.session_state.bld_edges = []
         st.rerun()
 
-    # ── Draft picker ──────────────────────────────────────────────
+    # Draft picker
     if st.session_state.get("bld_draft_list"):
         _drafts = st.session_state["bld_draft_list"]
         _opts   = {f"{d['draft_name']}  ({d['created_at']})": d for d in _drafts}
@@ -3341,314 +3337,498 @@ elif _active == 5:
             del st.session_state["bld_draft_list"]
             st.rerun()
 
-    # ── Serialize state for JS ────────────────────────────────────
+    # Serialize for JS
     _nodes_j = _jb.dumps(st.session_state.bld_nodes)
     _edges_j = _jb.dumps(st.session_state.bld_edges)
     _emps_j  = _jb.dumps(emp_list)
 
-    # ── React Flow canvas ─────────────────────────────────────────
     _html = f"""<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
 <style>
-  *{{ box-sizing:border-box; margin:0; padding:0; font-family:'Inter',sans-serif; }}
-  html,body{{ height:100%; background:{_c_bg}; }}
-  #root{{ display:flex; height:660px; width:100%; }}
+*{{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',sans-serif;}}
+html,body{{height:100%;overflow:hidden;background:{_c_bg};}}
+#wrap{{display:flex;height:660px;width:100%;}}
 
-  /* ── Left panel ── */
-  #panel{{
-    width:210px; min-width:210px; height:100%;
-    background:{_c_sidebar};
-    border-right:1.5px solid {_c_outline};
-    display:flex; flex-direction:column;
-    padding:10px 0 0;
-  }}
-  #panel-title{{
-    font-size:10px; font-weight:700; letter-spacing:.08em;
-    text-transform:uppercase; color:{_c_text3};
-    padding:0 12px 8px; border-bottom:1px solid {_c_outline};
-  }}
-  #panel-search{{
-    margin:8px; padding:6px 10px; width:calc(100% - 16px);
-    border:1.5px solid {_c_outline}; border-radius:6px;
-    font-size:12px; color:{_c_text1}; background:#fff;
-    outline:none;
-  }}
-  #panel-search:focus{{ border-color:{_c_primary}; }}
-  #panel-list{{ overflow-y:auto; flex:1; padding:0 6px 10px; }}
-  .ecard{{
-    padding:8px 10px; margin-bottom:4px;
-    background:#fff; border:1.5px solid {_c_outline};
-    border-radius:7px; cursor:grab; user-select:none;
-    transition:border-color .12s, box-shadow .12s;
-  }}
-  .ecard:hover{{
-    border-color:{_c_primary};
-    box-shadow:0 2px 8px rgba(142,148,242,.18);
-  }}
-  .ecard-name{{ font-size:11.5px; font-weight:600; color:{_c_text1}; }}
-  .ecard-title{{ font-size:10px; color:{_c_text3}; margin-top:2px; }}
+#panel{{
+  width:210px;min-width:210px;background:{_c_sidebar};
+  border-right:1.5px solid {_c_outline};
+  display:flex;flex-direction:column;
+}}
+#panel-title{{
+  font-size:10px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:{_c_text3};
+  padding:10px 12px 8px;border-bottom:1px solid {_c_outline};
+}}
+#psearch{{
+  margin:8px;padding:6px 10px;width:calc(100% - 16px);
+  border:1.5px solid {_c_outline};border-radius:6px;
+  font-size:12px;color:{_c_text1};background:#fff;outline:none;
+}}
+#psearch:focus{{border-color:{_c_primary};}}
+#plist{{overflow-y:auto;flex:1;padding:4px 6px 10px;}}
+.ecard{{
+  padding:8px 10px;margin-bottom:4px;
+  background:#fff;border:1.5px solid {_c_outline};
+  border-radius:7px;cursor:grab;user-select:none;
+  transition:border-color .12s,box-shadow .12s;
+}}
+.ecard:hover{{border-color:{_c_primary};box-shadow:0 2px 8px rgba(142,148,242,.18);}}
+.en{{font-size:11.5px;font-weight:600;color:{_c_text1};}}
+.et{{font-size:10px;color:{_c_text3};margin-top:2px;}}
 
-  /* ── Canvas area ── */
-  #canvas-area{{
-    flex:1; height:100%; position:relative; overflow:hidden;
-  }}
-  #rf-mount{{ width:100%; height:100%; }}
+#canvas-area{{flex:1;position:relative;overflow:hidden;}}
+#cvs{{width:100%;height:100%;cursor:default;}}
+#cvs.panning{{cursor:grabbing;}}
 
-  /* ── Hint bar ── */
-  #hintbar{{
-    position:absolute; bottom:0; left:0; right:0;
-    background:rgba(255,255,255,.85);
-    border-top:1px solid {_c_outline};
-    padding:5px 14px; font-size:10.5px; color:{_c_text3};
-    pointer-events:none;
-  }}
+/* Controls */
+#ctrl{{
+  position:absolute;bottom:36px;left:10px;
+  display:flex;flex-direction:column;gap:4px;z-index:10;
+}}
+.cbtn{{
+  width:28px;height:28px;background:#fff;
+  border:1.5px solid {_c_outline};border-radius:6px;
+  font-size:14px;cursor:pointer;display:flex;
+  align-items:center;justify-content:center;
+  transition:border-color .12s;
+}}
+.cbtn:hover{{border-color:{_c_primary};}}
+
+/* MiniMap */
+#minimap{{
+  position:absolute;bottom:36px;right:10px;
+  width:120px;height:80px;
+  background:rgba(255,255,255,.9);
+  border:1.5px solid {_c_outline};border-radius:8px;
+  overflow:hidden;z-index:10;
+}}
+
+/* Hint */
+#hint{{
+  position:absolute;bottom:0;left:0;right:0;
+  background:rgba(255,255,255,.88);
+  border-top:1px solid {_c_outline};
+  padding:5px 14px;font-size:10.5px;color:{_c_text3};
+  pointer-events:none;
+}}
+
+/* Selection ring */
+.node-sel rect.card{{stroke:#ff4d4f !important;stroke-width:2.5px !important;}}
+.edge-sel{{stroke:#ff4d4f !important;stroke-width:2.5px !important;}}
 </style>
-
-<!-- React + ReactDOM + ReactFlow via CDN -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@xyflow/react@12.3.6/dist/umd/index.js"></script>
-<link  href="https://cdn.jsdelivr.net/npm/@xyflow/react@12.3.6/dist/style.css" rel="stylesheet">
 </head>
 <body>
-<div id="root">
-  <!-- Left panel -->
+<div id="wrap">
   <div id="panel">
     <div id="panel-title">📋 Daftar Karyawan</div>
-    <input id="panel-search" placeholder="🔍 Cari nama atau jabatan..."
+    <input id="psearch" placeholder="🔍 Cari nama atau jabatan..."
            oninput="filterCards(this.value)">
-    <div id="panel-list"></div>
+    <div id="plist"></div>
   </div>
 
-  <!-- Canvas -->
-  <div id="canvas-area">
-    <div id="rf-mount"></div>
-    <div id="hintbar">
-      💡 <strong>Drag</strong> kartu karyawan ke canvas &nbsp;·&nbsp;
-      <strong>Drag tepi node</strong> untuk buat koneksi &nbsp;·&nbsp;
-      <strong>Klik node/edge</strong> lalu tekan <kbd>Delete</kbd> untuk hapus
+  <div id="canvas-area"
+       ondragover="event.preventDefault()"
+       ondrop="onDrop(event)">
+    <svg id="cvs">
+      <defs>
+        <marker id="arr" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L10,3 z"
+                fill="{_c_primary}" opacity=".85"/>
+        </marker>
+        <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="1" fill="#d0d0e8"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#grid)"/>
+      <g id="zg">
+        <g id="el"></g>
+        <g id="nl"></g>
+      </g>
+    </svg>
+
+    <!-- Controls -->
+    <div id="ctrl">
+      <button class="cbtn" onclick="zoom(1.2)" title="Zoom in">+</button>
+      <button class="cbtn" onclick="zoom(0.8)" title="Zoom out">−</button>
+      <button class="cbtn" onclick="fitView()" title="Fit view">⊡</button>
+    </div>
+
+    <!-- MiniMap -->
+    <canvas id="minimap"></canvas>
+
+    <div id="hint">
+      💡 <b>Drag</b> kartu ke canvas &nbsp;·&nbsp;
+      <b>Hover tepi node</b> → drag untuk koneksi &nbsp;·&nbsp;
+      <b>Klik</b> node/garis lalu tekan <b>Delete</b> untuk hapus
     </div>
   </div>
 </div>
 
 <script>
-// ── Data dari Python ──────────────────────────────────────────────
-const EMPS        = {_emps_j};
-const INIT_NODES  = {_nodes_j};
-const INIT_EDGES  = {_edges_j};
-const PRIMARY     = '{_c_primary}';
-const NODE_BG     = '{_c_card}';
-const NODE_TEXT   = '{_c_text1}';
-const NODE_SUB    = '{_c_text3}';
-const NODE_BORDER = '{_c_primary}';
+// ── Data ──────────────────────────────────────────────────────────
+const EMPS       = {_emps_j};
+const NW = 168, NH = 64;
+const PRIMARY    = '{_c_primary}';
+const NODE_BG    = '{_c_card}';
+const NODE_TEXT  = '{_c_text1}';
+const NODE_SUB   = '{_c_text3}';
 
-// ── React Flow setup ──────────────────────────────────────────────
-const {{
-  ReactFlow, Background, Controls, MiniMap,
-  addEdge, applyNodeChanges, applyEdgeChanges,
-  Handle, Position, MarkerType,
-}} = ReactFlowLib;  // CDN exports as ReactFlowLib
+// ── State ─────────────────────────────────────────────────────────
+let nodes   = {_nodes_j}.map(n => ({{...n, x:n.x||n.position?.x||100, y:n.y||n.position?.y||100}}));
+let edges   = {_edges_j};
+let nid     = nodes.length ? Math.max(...nodes.map(n=>parseInt(n.id)||0))+1 : 1;
+let vt      = {{x:0,y:0,s:1}};
+let selNode = null, selEdge = null;
 
-const {{ useState, useCallback, useRef }} = React;
+// Drag node
+let dragNode=null, dragOff={{x:0,y:0}}, didDrag=false;
+// Pan
+let panning=false, panStart={{x:0,y:0}};
+// Connect
+let connSrc=null, connPreview=null;
+// Handle hover
+let hoverHandle=null; // {{nid, side:'top'|'bottom'}}
 
-// ── Custom node component ─────────────────────────────────────────
-function OrgNode({{ data, selected }}) {{
-  return React.createElement('div', {{
-    style: {{
-      background: NODE_BG,
-      border: `2px solid ${{selected ? '#ff4d4f' : NODE_BORDER}}`,
-      borderRadius: 9,
-      padding: '0',
-      width: 170,
-      boxShadow: selected
-        ? '0 0 0 3px rgba(255,77,79,.2)'
-        : '0 2px 8px rgba(142,148,242,.12)',
-      overflow: 'hidden',
-      transition: 'border-color .15s, box-shadow .15s',
-      cursor: 'default',
-    }}
-  }},
-    // Accent bar
-    React.createElement('div', {{
-      style: {{
-        width: 5, position: 'absolute', left: 0, top: 0, bottom: 0,
-        background: selected ? '#ff4d4f' : PRIMARY,
-        borderRadius: '9px 0 0 9px',
-        transition: 'background .15s',
-      }}
-    }}),
-    // Content
-    React.createElement('div', {{ style: {{ padding: '10px 10px 10px 14px' }} }},
-      React.createElement('div', {{
-        style: {{ fontSize: 12, fontWeight: 700, color: NODE_TEXT,
-                  lineHeight: 1.3, marginBottom: 3 }}
-      }}, data.name),
-      React.createElement('div', {{
-        style: {{ fontSize: 10, color: NODE_SUB, marginBottom: 2 }}
-      }}, data.title),
-      React.createElement('div', {{
-        style: {{ fontSize: 9.5, color: '#b0b0c8' }}
-      }}, data.div),
-    ),
-    // Handles — source (bottom) and target (top)
-    React.createElement(Handle, {{
-      type: 'target', position: Position.Top,
-      style: {{ background: PRIMARY, width: 10, height: 10,
-                border: '2px solid #fff', top: -5 }}
-    }}),
-    React.createElement(Handle, {{
-      type: 'source', position: Position.Bottom,
-      style: {{ background: PRIMARY, width: 10, height: 10,
-                border: '2px solid #fff', bottom: -5 }}
-    }}),
-  );
+// ── DOM ───────────────────────────────────────────────────────────
+const svg = document.getElementById('cvs');
+const zg  = document.getElementById('zg');
+const el  = document.getElementById('el');
+const nl  = document.getElementById('nl');
+function mk(t){{ return document.createElementNS('http://www.w3.org/2000/svg',t); }}
+function trunc(s,n){{ return s&&s.length>n?s.slice(0,n)+'…':(s||''); }}
+
+// ── Transform ─────────────────────────────────────────────────────
+function applyVT(){{
+  zg.setAttribute('transform',`translate(${{vt.x.toFixed(1)}},${{vt.y.toFixed(1)}}) scale(${{vt.s.toFixed(3)}})`) ;
+}}
+function svgPt(cx,cy){{
+  const r=svg.getBoundingClientRect();
+  return {{x:(cx-r.left-vt.x)/vt.s, y:(cy-r.top-vt.y)/vt.s}};
+}}
+function zoom(f){{
+  const W=svg.clientWidth,H=svg.clientHeight;
+  const cx=W/2,cy=H/2;
+  const pt=svgPt(cx,cy);
+  const ns=Math.min(3,Math.max(0.1,vt.s*f));
+  vt.x=cx-pt.x*ns; vt.y=cy-pt.y*ns; vt.s=ns;
+  applyVT();
+}}
+function fitView(){{
+  if(!nodes.length){{vt={{x:20,y:20,s:1}};applyVT();return;}}
+  const W=svg.clientWidth,H=svg.clientHeight;
+  const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y);
+  const minX=Math.min(...xs)-20,maxX=Math.max(...xs)+NW+20;
+  const minY=Math.min(...ys)-20,maxY=Math.max(...ys)+NH+20;
+  const s=Math.min(1.2,Math.min((W-40)/(maxX-minX),(H-40)/(maxY-minY)));
+  vt={{x:-minX*s+(W-(maxX-minX)*s)/2, y:-minY*s+(H-(maxY-minY)*s)/2, s}};
+  applyVT();
 }}
 
-const nodeTypes = {{ org: OrgNode }};
+// ── Render ────────────────────────────────────────────────────────
+function render(){{renderEdges();renderNodes();drawMinimap();}}
 
-// ── Main App ──────────────────────────────────────────────────────
-let _nid = INIT_NODES.length > 0
-  ? Math.max(...INIT_NODES.map(n => parseInt(n.id)||0)) + 1
-  : 1;
+function renderEdges(){{
+  el.innerHTML='';
+  edges.forEach((e,idx)=>{{
+    const s=nodes.find(n=>n.id===e.src||n.id===e.source);
+    const t=nodes.find(n=>n.id===e.tgt||n.id===e.target);
+    if(!s||!t) return;
+    const x1=s.x+NW/2, y1=s.y+NH;
+    const x2=t.x+NW/2, y2=t.y;
+    const cy=(y1+y2)/2;
+    const isSel=(idx===selEdge);
 
-function App() {{
-  const [nodes, setNodes] = useState(
-    INIT_NODES.map(n => ({{
-      ...n,
-      type: 'org',
-      data: n.data || {{ name:n.name, title:n.title, div:n.div }},
-      position: n.position || {{ x: n.x||100, y: n.y||100 }},
-    }}))
-  );
-  const [edges, setEdges] = useState(
-    INIT_EDGES.map(e => ({{
-      ...e,
-      markerEnd: {{ type: MarkerType.ArrowClosed, color: PRIMARY }},
-      style: {{ stroke: PRIMARY, strokeWidth: 1.8 }},
-      animated: false,
-    }}))
-  );
+    // Wide invisible hit area
+    const hit=mk('path');
+    hit.setAttribute('d',`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{x2}},${{cy}} ${{x2}},${{y2}}`);
+    hit.setAttribute('stroke','transparent');
+    hit.setAttribute('stroke-width','14');
+    hit.setAttribute('fill','none');
+    hit.setAttribute('cursor','pointer');
+    hit.addEventListener('click', ev=>{{ev.stopPropagation();selEdge=idx;selNode=null;connSrc=null;render();}});
+    el.appendChild(hit);
 
-  const rfWrapper = useRef(null);
-  const [rfInstance, setRfInstance] = useState(null);
-
-  // Node/edge change handlers
-  const onNodesChange = useCallback(
-    changes => setNodes(ns => applyNodeChanges(changes, ns)), []
-  );
-  const onEdgesChange = useCallback(
-    changes => setEdges(es => applyEdgeChanges(changes, es)), []
-  );
-  const onConnect = useCallback(
-    conn => setEdges(es => addEdge({{
-      ...conn,
-      markerEnd: {{ type: MarkerType.ArrowClosed, color: PRIMARY }},
-      style: {{ stroke: PRIMARY, strokeWidth: 1.8 }},
-    }}, es)), []
-  );
-
-  // Drop from panel
-  const onDragOver = useCallback(ev => {{
-    ev.preventDefault();
-    ev.dataTransfer.dropEffect = 'move';
-  }}, []);
-
-  const onDrop = useCallback(ev => {{
-    ev.preventDefault();
-    if (!rfInstance) return;
-    const emp = JSON.parse(ev.dataTransfer.getData('emp'));
-    const pos = rfInstance.screenToFlowPosition({{
-      x: ev.clientX, y: ev.clientY,
-    }});
-    const newNode = {{
-      id:       String(_nid++),
-      type:     'org',
-      position: {{ x: pos.x - 85, y: pos.y - 35 }},
-      data:     {{ name: emp.name, title: emp.title, div: emp.div }},
-    }};
-    setNodes(ns => [...ns, newNode]);
-  }}, [rfInstance]);
-
-  // Expose state for save button (via window)
-  window.__getFlowState = () => ({{
-    nodes: nodes.map(n => ({{
-      id: n.id, position: n.position, data: n.data,
-      name: n.data.name, title: n.data.title, div: n.data.div,
-    }})),
-    edges: edges.map(e => ({{ id:e.id, source:e.source, target:e.target }})),
+    // Visible edge
+    const path=mk('path');
+    path.setAttribute('d',`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{x2}},${{cy}} ${{x2}},${{y2}}`);
+    path.setAttribute('stroke', isSel?'#ff4d4f':PRIMARY);
+    path.setAttribute('stroke-width', isSel?'2.5':'1.8');
+    path.setAttribute('fill','none');
+    path.setAttribute('opacity', isSel?'1':'0.8');
+    path.setAttribute('marker-end','url(#arr)');
+    path.setAttribute('pointer-events','none');
+    if(isSel) path.setAttribute('class','edge-sel');
+    el.appendChild(path);
   }});
 
-  return React.createElement(ReactFlow, {{
-    nodes, edges, nodeTypes,
-    onNodesChange, onEdgesChange, onConnect,
-    onInit: setRfInstance,
-    onDragOver, onDrop,
-    fitView: true,
-    fitViewOptions: {{ padding: 0.2 }},
-    deleteKeyCode: ['Delete','Backspace'],
-    defaultEdgeOptions: {{
-      markerEnd: {{ type: MarkerType.ArrowClosed, color: PRIMARY }},
-      style: {{ stroke: PRIMARY, strokeWidth: 1.8 }},
-    }},
-    style: {{ background: '{_c_bg}' }},
-  }},
-    React.createElement(Background, {{
-      color: '#d0d0e8', gap: 24, size: 1.2,
-    }}),
-    React.createElement(Controls, {{
-      style: {{ boxShadow: '0 2px 8px rgba(0,0,0,.08)' }}
-    }}),
-    React.createElement(MiniMap, {{
-      nodeColor: PRIMARY, maskColor: 'rgba(240,240,255,.7)',
-      style: {{ border: '1.5px solid #e0e0f0', borderRadius: 8 }},
-    }}),
-  );
+  // Connect preview line
+  if(connPreview&&connSrc!==null){{
+    const s=nodes.find(n=>n.id===connSrc);
+    if(s){{
+      const x1=s.x+NW/2,y1=s.y+NH;
+      const x2=connPreview.x,y2=connPreview.y;
+      const cy=(y1+y2)/2;
+      const prev=mk('path');
+      prev.setAttribute('d',`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{x2}},${{cy}} ${{x2}},${{y2}}`);
+      prev.setAttribute('stroke',PRIMARY);
+      prev.setAttribute('stroke-width','1.5');
+      prev.setAttribute('stroke-dasharray','5,4');
+      prev.setAttribute('fill','none');
+      prev.setAttribute('opacity','0.6');
+      prev.setAttribute('pointer-events','none');
+      el.appendChild(prev);
+    }}
+  }}
+}}
+
+function renderNodes(){{
+  nl.innerHTML='';
+  nodes.forEach(n=>{{
+    const isSel=(n.id===selNode);
+    const isConn=(n.id===connSrc);
+    const g=mk('g');
+    g.setAttribute('transform',`translate(${{n.x}},${{n.y}})`);
+    g.dataset.nid=n.id;
+
+    // Shadow
+    const sh=mk('rect');
+    sh.setAttribute('x','3');sh.setAttribute('y','5');
+    sh.setAttribute('width',NW);sh.setAttribute('height',NH);
+    sh.setAttribute('rx','9');sh.setAttribute('fill','rgba(142,148,242,.10)');
+    g.appendChild(sh);
+
+    // Card
+    const rc=mk('rect');rc.setAttribute('class','card');
+    rc.setAttribute('width',NW);rc.setAttribute('height',NH);rc.setAttribute('rx','9');
+    rc.setAttribute('fill',NODE_BG);
+    rc.setAttribute('stroke', isConn?'#f5a623':isSel?'#ff4d4f':PRIMARY);
+    rc.setAttribute('stroke-width',(isSel||isConn)?'2.5':'1.5');
+    g.appendChild(rc);
+
+    // Accent bar
+    const bar=mk('rect');
+    bar.setAttribute('x','0');bar.setAttribute('y','0');
+    bar.setAttribute('width','5');bar.setAttribute('height',NH);
+    bar.setAttribute('rx','4');
+    bar.setAttribute('fill',isConn?'#f5a623':PRIMARY);
+    g.appendChild(bar);
+
+    // Texts
+    const tn=mk('text');tn.setAttribute('x','14');tn.setAttribute('y','23');
+    tn.setAttribute('font-size','11.5');tn.setAttribute('font-weight','700');
+    tn.setAttribute('fill',NODE_TEXT);tn.textContent=trunc(n.name||n.data?.name,19);
+    g.appendChild(tn);
+
+    const tt=mk('text');tt.setAttribute('x','14');tt.setAttribute('y','38');
+    tt.setAttribute('font-size','9.5');tt.setAttribute('fill',NODE_SUB);
+    tt.textContent=trunc(n.title||n.data?.title,24);g.appendChild(tt);
+
+    const td=mk('text');td.setAttribute('x','14');td.setAttribute('y','53');
+    td.setAttribute('font-size','8.5');td.setAttribute('fill','#b0b0c8');
+    td.textContent=trunc(n.div||n.data?.div,26);g.appendChild(td);
+
+    // Handle top (target)
+    const htop=mk('circle');
+    htop.setAttribute('cx',NW/2);htop.setAttribute('cy','0');
+    htop.setAttribute('r','5');
+    htop.setAttribute('fill','#fff');htop.setAttribute('stroke',PRIMARY);
+    htop.setAttribute('stroke-width','2');
+    htop.setAttribute('opacity', hoverHandle?.nid===n.id&&hoverHandle?.side==='top'?'1':'0');
+    htop.setAttribute('cursor','crosshair');htop.setAttribute('class','handle');
+    htop.addEventListener('mouseenter',()=>{{hoverHandle={{nid:n.id,side:'top'}};renderNodes();}});
+    htop.addEventListener('mouseleave',()=>{{hoverHandle=null;renderNodes();}});
+    htop.addEventListener('mousedown',ev=>{{ev.stopPropagation();connSrc=n.id;connPreview=null;}});
+    g.appendChild(htop);
+
+    // Handle bottom (source)
+    const hbot=mk('circle');
+    hbot.setAttribute('cx',NW/2);hbot.setAttribute('cy',NH);
+    hbot.setAttribute('r','5');
+    hbot.setAttribute('fill',PRIMARY);hbot.setAttribute('stroke','#fff');
+    hbot.setAttribute('stroke-width','2');
+    hbot.setAttribute('opacity', hoverHandle?.nid===n.id&&hoverHandle?.side==='bot'?'1':'0');
+    hbot.setAttribute('cursor','crosshair');hbot.setAttribute('class','handle');
+    hbot.addEventListener('mouseenter',()=>{{hoverHandle={{nid:n.id,side:'bot'}};renderNodes();}});
+    hbot.addEventListener('mouseleave',()=>{{hoverHandle=null;renderNodes();}});
+    hbot.addEventListener('mousedown',ev=>{{ev.stopPropagation();connSrc=n.id;connPreview=null;}});
+    g.appendChild(hbot);
+
+    // Node hover — show handles
+    g.addEventListener('mouseenter',()=>{{
+      htop.setAttribute('opacity','1');
+      hbot.setAttribute('opacity','1');
+    }});
+    g.addEventListener('mouseleave',()=>{{
+      if(hoverHandle?.nid!==n.id){{
+        htop.setAttribute('opacity','0');
+        hbot.setAttribute('opacity','0');
+      }}
+    }});
+
+    // Drag / click
+    g.addEventListener('mousedown', ev=>{{
+      if(ev.target.classList.contains('handle')) return;
+      ev.stopPropagation();
+      const pt=svgPt(ev.clientX,ev.clientY);
+      dragNode=n; dragOff={{x:pt.x-n.x,y:pt.y-n.y}}; didDrag=false;
+    }});
+
+    g.addEventListener('click', ev=>{{
+      ev.stopPropagation();
+      if(didDrag) return;
+      if(connSrc!==null && connSrc!==n.id){{
+        // Complete connection
+        if(!edges.some(e=>(e.src===connSrc||e.source===connSrc)&&(e.tgt===n.id||e.target===n.id))){{
+          edges.push({{id:`e${{Date.now()}}`,src:connSrc,tgt:n.id,source:connSrc,target:n.id}});
+        }}
+        connSrc=null; connPreview=null;
+      }} else {{
+        selNode=n.id; selEdge=null; connSrc=null;
+      }}
+      render();
+    }});
+
+    nl.appendChild(g);
+  }});
+}}
+
+// ── Canvas events ─────────────────────────────────────────────────
+svg.addEventListener('mousedown', ev=>{{
+  if(ev.target===svg||ev.target.parentElement===zg){{
+    if(connSrc!==null){{ connSrc=null; connPreview=null; render(); return; }}
+    selNode=null; selEdge=null;
+    panning=true;
+    panStart={{x:ev.clientX-vt.x, y:ev.clientY-vt.y}};
+    svg.classList.add('panning');
+    render();
+  }}
+}});
+
+window.addEventListener('mousemove', ev=>{{
+  if(dragNode){{
+    const pt=svgPt(ev.clientX,ev.clientY);
+    dragNode.x=pt.x-dragOff.x; dragNode.y=pt.y-dragOff.y;
+    didDrag=true; render();
+  }} else if(panning){{
+    vt.x=ev.clientX-panStart.x; vt.y=ev.clientY-panStart.y;
+    applyVT(); drawMinimap();
+  }} else if(connSrc!==null){{
+    connPreview=svgPt(ev.clientX,ev.clientY); render();
+  }}
+}});
+
+window.addEventListener('mouseup', ()=>{{
+  dragNode=null; panning=false;
+  svg.classList.remove('panning');
+}});
+
+svg.addEventListener('wheel', ev=>{{
+  ev.preventDefault();
+  const r=svg.getBoundingClientRect();
+  const pt=svgPt(ev.clientX,ev.clientY);
+  const f=ev.deltaY>0?0.88:1.14;
+  const ns=Math.min(3,Math.max(0.1,vt.s*f));
+  vt.x=ev.clientX-r.left-pt.x*ns;
+  vt.y=ev.clientY-r.top -pt.y*ns;
+  vt.s=ns; applyVT(); drawMinimap();
+}},{{passive:false}});
+
+svg.addEventListener('click', ev=>{{
+  if(ev.target===svg){{ selNode=null; selEdge=null; render(); }}
+}});
+
+window.addEventListener('keydown', ev=>{{
+  if(ev.target.tagName==='INPUT') return;
+  if(ev.key==='Delete'||ev.key==='Backspace'){{
+    if(selNode!==null){{
+      nodes=nodes.filter(n=>n.id!==selNode);
+      edges=edges.filter(e=>(e.src||e.source)!==selNode&&(e.tgt||e.target)!==selNode);
+      selNode=null;
+    }} else if(selEdge!==null){{
+      edges.splice(selEdge,1); selEdge=null;
+    }}
+    render();
+  }}
+  if(ev.key==='Escape'){{ connSrc=null; connPreview=null; render(); }}
+}});
+
+// ── Drop ──────────────────────────────────────────────────────────
+function onDrop(ev){{
+  ev.preventDefault();
+  const emp=JSON.parse(ev.dataTransfer.getData('emp'));
+  const pt=svgPt(ev.clientX,ev.clientY);
+  nodes.push({{
+    id:String(nid++), x:pt.x-NW/2, y:pt.y-NH/2,
+    name:emp.name, title:emp.title, div:emp.div,
+  }});
+  render();
 }}
 
 // ── Panel ─────────────────────────────────────────────────────────
-function buildPanel() {{
-  const list = document.getElementById('panel-list');
-  EMPS.forEach(e => {{
-    const c = document.createElement('div');
-    c.className = 'ecard';
-    c.draggable  = true;
-    c.innerHTML  = `
-      <div class="ecard-name">${{e.name}}</div>
-      <div class="ecard-title">${{e.title}}</div>`;
-    c.addEventListener('dragstart', ev => {{
-      ev.dataTransfer.setData('emp', JSON.stringify(e));
-      ev.dataTransfer.effectAllowed = 'move';
+function buildPanel(){{
+  const list=document.getElementById('plist');
+  EMPS.forEach(e=>{{
+    const c=document.createElement('div');
+    c.className='ecard'; c.draggable=true;
+    c.innerHTML=`<div class="en">${{e.name}}</div><div class="et">${{e.title}}</div>`;
+    c.addEventListener('dragstart',ev=>{{
+      ev.dataTransfer.setData('emp',JSON.stringify(e));
+      ev.dataTransfer.effectAllowed='move';
     }});
     list.appendChild(c);
   }});
 }}
 
-function filterCards(q) {{
-  const lq = q.toLowerCase();
-  document.querySelectorAll('.ecard').forEach((c, i) => {{
-    const e = EMPS[i];
-    c.style.display =
-      e.name.toLowerCase().includes(lq) || e.title.toLowerCase().includes(lq)
-        ? '' : 'none';
+function filterCards(q){{
+  const lq=q.toLowerCase();
+  document.querySelectorAll('.ecard').forEach((c,i)=>{{
+    const e=EMPS[i];
+    c.style.display=(e.name.toLowerCase().includes(lq)||e.title.toLowerCase().includes(lq))?'':'none';
   }});
 }}
 
-// ── Mount ─────────────────────────────────────────────────────────
+// ── MiniMap ───────────────────────────────────────────────────────
+function drawMinimap(){{
+  const mm=document.getElementById('minimap');
+  if(!mm||!nodes.length) return;
+  const ctx=mm.getContext('2d');
+  mm.width=120; mm.height=80;
+  ctx.clearRect(0,0,120,80);
+  const xs=nodes.map(n=>n.x),ys=nodes.map(n=>n.y);
+  const minX=Math.min(...xs),maxX=Math.max(...xs)+NW;
+  const minY=Math.min(...ys),maxY=Math.max(...ys)+NH;
+  const sc=Math.min(110/(maxX-minX||1),70/(maxY-minY||1));
+  const ox=5-(minX*sc),oy=5-(minY*sc);
+  nodes.forEach(n=>{{
+    ctx.fillStyle=PRIMARY+'33';
+    ctx.strokeStyle=PRIMARY;
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.roundRect(n.x*sc+ox,n.y*sc+oy,NW*sc,NH*sc,2);
+    ctx.fill(); ctx.stroke();
+  }});
+}}
+
+// ── Expose state for save ─────────────────────────────────────────
+window.__getFlowState = () => ({{nodes, edges}});
+
+// ── Init ──────────────────────────────────────────────────────────
 buildPanel();
-const root = ReactDOM.createRoot(document.getElementById('rf-mount'));
-root.render(React.createElement(App));
+render();
+if(nodes.length) fitView();
 </script>
 </body>
 </html>"""
 
-    st.components.v1.html(_html, height=680, scrolling=False)
+    st.components.v1.html(_html, height=700, scrolling=False)
     st.caption(
         "💡 **Drag** kartu karyawan ke canvas · "
-        "**Hover tepi node** untuk buat koneksi · "
-        "**Klik node/edge** lalu tekan Delete untuk hapus · "
-        "Gunakan tombol **Simpan** di atas untuk menyimpan draft"
+        "**Hover tepi node** → muncul handle biru → drag untuk buat koneksi · "
+        "**Klik** node/garis lalu tekan **Delete** untuk hapus · "
+        "Tekan **Esc** untuk batalkan koneksi yang sedang dibuat"
     )
 
 
