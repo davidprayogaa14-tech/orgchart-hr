@@ -2102,10 +2102,10 @@ with st.sidebar:
     <div style="padding:24px 18px 18px 18px; border-bottom:1px solid {T['outline']}; margin-bottom:4px;">
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px;">
             <div style="width:40px;height:40px;border-radius:8px;
-                background:#ffffff;
+                background:linear-gradient(135deg,#4234b6,#7c6fcd);
                 display:flex;align-items:center;justify-content:center;flex-shrink:0;
-                box-shadow:0 2px 12px rgba(142,148,242,0.25);overflow:hidden;padding:4px;">
-                <img src="data:image/png;base64,{_MEKARI_LOGO_B64}" style="width:100%;height:100%;object-fit:contain;" /></div>
+                box-shadow:0 2px 12px rgba(142,148,242,0.35);">
+                <span style="font-size:20px;color:#ffffff;font-weight:700;line-height:1;">✦</span></div>
             <div>
                 <div style="font-size:15px;font-weight:700;color:{T['sidebar_active']};
                     font-family:'Inter',sans-serif;line-height:1.2;letter-spacing:-0.02em;">DAVE</div>
