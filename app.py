@@ -259,8 +259,8 @@ _ACL_COLS = [
 # Bootstrap fallback — digunakan HANYA ketika worksheet app_users belum ada.
 # Hapus atau nonaktifkan setelah ACL di-seed via Admin Panel.
 _ACL_FALLBACK = {
-    "od_admin@mekari.com": {
-        "name": "OD Admin", "role": "admin", "password": "mekari_od_2026",
+    "od_admin@dave.com": {
+        "name": "OD Admin", "role": "admin", "password": "dave_od_2026",
         "allowed_bus": "*", "allowed_sbus": "*", "employee_id": "",
         "is_active": True, "scope_note": "Bootstrap admin",
     },
@@ -1043,7 +1043,7 @@ def _draw_pdf_header(c, page_w, page_h, title_text, subtitle, total_nodes, downl
     logo_x, logo_y = 36, page_h - 36
     c.setFillColor(PDF_PRIMARY)
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(logo_x + 16, logo_y - 12, "mekari")
+    c.drawString(logo_x + 16, logo_y - 12, "DAVE")
     # bintang sederhana: lingkaran kecil
     c.circle(logo_x + 5, logo_y - 8, 5, fill=1, stroke=0)
 
@@ -1079,7 +1079,7 @@ def _draw_pdf_footer(c, page_w, downloaded_at):
     c.line(36, 28, page_w - 36, 28)
     c.setFillColor(PDF_TEXT_MUTED)
     c.setFont("Helvetica", 7)
-    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Dashboard")
+    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — DAVE People Dashboard")
     c.drawRightString(page_w - 36, 18, "HR Organization Dashboard")
 
 
@@ -1689,7 +1689,7 @@ _FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 </svg>"""
 _favicon_b64 = "data:image/svg+xml;base64," + _b64.b64encode(_FAVICON_SVG.encode()).decode()
 
-st.set_page_config(page_title="Mekari", layout="wide", page_icon=_favicon_b64, initial_sidebar_state="auto")
+st.set_page_config(page_title="DAVE", layout="wide", page_icon=_favicon_b64, initial_sidebar_state="auto")
 
 # ══════════════════════════════════════════════════════════════════
 # BETA MODE — Auth dinonaktifkan
@@ -1742,7 +1742,7 @@ df = apply_rbac_filter(df, _user_info)
 # THEME
 # ══════════════════════════════════════════════════════════════════
 dm = st.session_state.dark_mode
-# ── Design System: PRD "Mekari HR Platform" ──────────────────────
+# ── Design System: PRD "DAVE HR Platform" ──────────────────────
 # Primary: Periwinkle #8E94F2 | Background: White | Accent: Soft Lavender/Indigo
 # Typography: Inter | Components: ROUND_EIGHT (border-radius 8px)
 T = {
@@ -2108,7 +2108,7 @@ with st.sidebar:
                 <img src="data:image/png;base64,{_MEKARI_LOGO_B64}" style="width:100%;height:100%;object-fit:contain;" /></div>
             <div>
                 <div style="font-size:15px;font-weight:700;color:{T['sidebar_active']};
-                    font-family:'Inter',sans-serif;line-height:1.2;letter-spacing:-0.02em;">Mekari</div>
+                    font-family:'Inter',sans-serif;line-height:1.2;letter-spacing:-0.02em;">DAVE</div>
                 <div style="font-size:10px;color:{T['sidebar_text2']};font-weight:500;
                     letter-spacing:0.06em;text-transform:uppercase;margin-top:2px;">People Dashboard</div>
             </div>
@@ -2969,7 +2969,7 @@ elif _active == 4:
 
         col_r1, col_r2 = st.columns(2)
         with col_r1: req_name_shared  = st.text_input("Nama Requester *", placeholder="Nama lengkap pengirim request", key="req_name_shared")
-        with col_r2: req_email_shared = st.text_input("Email Requester *", placeholder="email@mekari.com", key="req_email_shared")
+        with col_r2: req_email_shared = st.text_input("Email Requester *", placeholder="email@dave.com", key="req_email_shared")
         st.markdown(f"<div style='height:1px;background:{T['border']};margin:16px 0;'></div>", unsafe_allow_html=True)
 
         col_ct, col_ed = st.columns(2)
@@ -4172,9 +4172,9 @@ elif _active == 99:
         st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:12px;'>Aksi Cepat</div>", unsafe_allow_html=True)
         col_qa1, col_qa2, col_qa3 = st.columns(3)
         with col_qa1:
-            target_deact = st.text_input("Email untuk Nonaktifkan", key="qa_deact", placeholder="user@mekari.com")
+            target_deact = st.text_input("Email untuk Nonaktifkan", key="qa_deact", placeholder="user@dave.com")
         with col_qa2:
-            target_react = st.text_input("Email untuk Aktifkan", key="qa_react", placeholder="user@mekari.com")
+            target_react = st.text_input("Email untuk Aktifkan", key="qa_react", placeholder="user@dave.com")
         with col_qa3:
             st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
 
@@ -4231,7 +4231,7 @@ elif _active == 99:
             with col_f1:
                 f_email_ap  = st.text_input("Email *",
                                             value=edit_target_email or "",
-                                            placeholder="user@mekari.com",
+                                            placeholder="user@dave.com",
                                             disabled=is_edit_mode,
                                             key="ap_f_email")
                 f_name_ap   = st.text_input("Nama Lengkap *",
