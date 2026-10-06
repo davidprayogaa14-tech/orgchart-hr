@@ -41,9 +41,6 @@ SCOPES     = [
 ]
 CHIEF_ROOT = "SLKR001"
 
-# ── Logo Mekari (base64 encoded) ─────────────────────────────
-_MEKARI_LOGO_B64 = "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"
-
 # ══════════════════════════════════════════════════════════════════
 # LANGUAGE DICTIONARY
 # ══════════════════════════════════════════════════════════════════
@@ -1685,7 +1682,7 @@ import base64 as _b64
 _FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <rect width="64" height="64" rx="14" fill="#8E94F2"/>
   <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle"
-        font-size="36" font-family="Arial" fill="white">M</text>
+        font-size="36" font-family="Arial" fill="white">D</text>
 </svg>"""
 _favicon_b64 = "data:image/svg+xml;base64," + _b64.b64encode(_FAVICON_SVG.encode()).decode()
 
@@ -1719,8 +1716,7 @@ _user_role = _user_info.get("role", "admin")
 _is_admin  = True
 _is_cxo    = True
 
-if "dark_mode" not in st.session_state:
-    st.session_state.dark_mode = False
+st.session_state.dark_mode = True  # Personal dashboard: dark theme only
 if "lang" not in st.session_state:
     st.session_state.lang = "id"
 if "nav_filter" not in st.session_state:
@@ -1741,7 +1737,7 @@ df = apply_rbac_filter(df, _user_info)
 # ══════════════════════════════════════════════════════════════════
 # THEME
 # ══════════════════════════════════════════════════════════════════
-dm = st.session_state.dark_mode
+dm = True
 # ── Design System: PRD "DAVE HR Platform" ──────────────────────
 # Primary: Periwinkle #8E94F2 | Background: White | Accent: Soft Lavender/Indigo
 # Typography: Inter | Components: ROUND_EIGHT (border-radius 8px)
@@ -2108,8 +2104,6 @@ _sb_copy = {
         "scope": "Dataset beta pribadi", "employees": "Karyawan",
         "managers": "Manager", "divisions": "Divisi", "business_units": "Business unit",
         "refresh": "Perbarui", "refresh_help": "Muat ulang data dashboard",
-        "light": "Terang", "dark": "Gelap",
-        "theme_help": "Ganti ke tampilan {mode}",
         "sheets": "Data dari Google Sheets", "local": "Data dari CSV lokal",
     },
     "en": {
@@ -2118,8 +2112,6 @@ _sb_copy = {
         "scope": "Personal beta dataset", "employees": "Employees",
         "managers": "Managers", "divisions": "Divisions", "business_units": "Business units",
         "refresh": "Refresh", "refresh_help": "Reload dashboard data",
-        "light": "Light", "dark": "Dark",
-        "theme_help": "Switch to {mode} mode",
         "sheets": "Data from Google Sheets", "local": "Data from local CSV",
     },
 }.get(st.session_state.lang, {})
@@ -2219,6 +2211,13 @@ st.markdown(f"""
     width: 40px; height: 40px; padding: 7px; border-radius: 12px; flex-shrink: 0;
     background: white; border: 1px solid {_sb['line']}; object-fit: contain;
 }}
+[data-testid="stSidebar"] .od-sb-monogram {{
+    width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: {_sb['active']}; border: 1px solid {_sb['line']};
+    color: {_sb['accent']} !important; font: 700 22px/1 'Inter', sans-serif !important;
+    letter-spacing: -.05em;
+}}
 [data-testid="stSidebar"] .od-sb-brand-name {{ font: 700 18px/1.25 'Inter', sans-serif; letter-spacing: -.04em; color: {_sb['text']}; }}
 [data-testid="stSidebar"] .od-sb-brand-sub {{ font: 400 12px/1.5 'Inter', sans-serif; color: {_sb['muted']}; margin-top: 1px; }}
 [data-testid="stSidebar"] .od-sb-source {{
@@ -2279,7 +2278,7 @@ with st.sidebar:
     _source_label = _sb_copy["sheets"] if data_source == "google_sheets" else _sb_copy["local"]
     st.markdown(f"""
     <div class="od-sb-brand">
-        <img class="od-sb-logo" src="data:image/jpeg;base64,{_MEKARI_LOGO_B64}" alt="" />
+        <div class="od-sb-monogram" aria-hidden="true">D</div>
         <div><div class="od-sb-brand-name">DAVE</div><div class="od-sb-brand-sub">People Dashboard · Beta</div></div>
     </div>
     <div class="od-sb-source"><span class="od-sb-dot" aria-hidden="true"></span>{_source_label}</div>
@@ -2323,18 +2322,9 @@ with st.sidebar:
                         f'<p class="od-sb-scope">{_sb_copy["scope"]}</p>', unsafe_allow_html=True)
 
     with st.container(key="sb_actions_row"):
-        col_sb1, col_sb2 = st.columns(2)
-        with col_sb1:
-            if st.button(_sb_copy["refresh"], icon=":material/refresh:",
-                         help=_sb_copy["refresh_help"], use_container_width=True, key="refresh_btn"):
-                st.cache_data.clear(); st.rerun()
-        with col_sb2:
-            _mode_label = _sb_copy["light"] if dm else _sb_copy["dark"]
-            _mode_icon = ":material/light_mode:" if dm else ":material/dark_mode:"
-            if st.button(_mode_label, icon=_mode_icon,
-                         help=_sb_copy["theme_help"].format(mode=_mode_label.lower()),
-                         use_container_width=True, key="toggle_btn"):
-                st.session_state.dark_mode = not st.session_state.dark_mode; st.rerun()
+        if st.button(_sb_copy["refresh"], icon=":material/refresh:",
+                     help=_sb_copy["refresh_help"], use_container_width=True, key="refresh_btn"):
+            st.cache_data.clear(); st.rerun()
 
     with st.container(key="sb_account"):
         st.markdown("""
@@ -3347,7 +3337,7 @@ elif _active == 5:
 
     st.markdown(f"""
     <div style="margin-bottom:4px;">
-      <div style="font-size:20px;font-weight:700;color:{_c_text1};letter-spacing:-0.02em;">
+      <div style="font-size:20px;font-weight:700;color:{T['text']};letter-spacing:-0.02em;">
         Org Chart Builder
       </div>
       <div style="font-size:13px;color:{_c_text3};margin-top:4px;">
@@ -4522,4 +4512,3 @@ elif _active == 99:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="dl_log"
                 )
-
