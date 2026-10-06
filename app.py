@@ -1,26 +1,9 @@
 import streamlit as st
 import pandas as pd
 import json
-import html
-import textwrap
 from io import BytesIO
 import os
-import logging
-from datetime import datetime, timezone, timedelta
-
-# Timezone WIB (UTC+7) — dipakai di PDF timestamp
-_WIB = timezone(timedelta(hours=7))
-
-# ── Logging (menggantikan print() debug di production path) ──────
-# Default level WARNING (silent) — aktifkan DEBUG manual saat troubleshooting lokal.
-logger = logging.getLogger("orgchart")
-
-# ── bcrypt (password hashing) — fallback eksplisit jika belum terinstall ──
-try:
-    import bcrypt
-    BCRYPT_OK = True
-except ImportError:
-    BCRYPT_OK = False
+from datetime import datetime
 
 # ── ReportLab (opsional — tidak tersedia di Python 3.14 Streamlit Cloud) ──
 try:
@@ -29,7 +12,7 @@ except ImportError:
     pass
 
 try:
-    from reportlab.lib.pagesizes import A3, A4, landscape
+    from reportlab.lib.pagesizes import A3, landscape
     from reportlab.pdfgen import canvas as rl_canvas
     from reportlab.lib import colors
     REPORTLAB_OK = True
@@ -41,8 +24,8 @@ except Exception:
 # CONSTANTS
 # ══════════════════════════════════════════════════════════════════
 # ── People Database (source of truth resmi) ───────────────────────
-SHEET_ID        = "1AHuIlmgUayU9bDMNHuh_z5O4EkZkoG6bvaFafGHRO2M"
-SHEET_EMP_NAME  = "Employment Information"   # worksheet utama employee
+SHEET_ID        = "1LaZpDfmFZJvIARf0RYoX-DtcbkjgOMlwT74nbamnvqM"  # BETA
+SHEET_EMP_NAME  = "employee_data"            # worksheet utama beta
 SHEET_LOG_NAME  = "activity_log"             # worksheet activity log
 SHEET_ACL_NAME  = "app_users"                # worksheet ACL
 SHEET_CR_NAME   = "change_requests"          # worksheet change requests
@@ -67,39 +50,30 @@ _MEKARI_LOGO_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAA
 LANG = {
     "id": {
         "nav_org":"Org Chart","nav_data":"Data Karyawan","nav_compliance":"Compliance Check",
-        "nav_manager":"Daftar Manager","nav_cr":"Change Request",
+        "nav_manager":"Daftar Manager","nav_cr":"Change Request","nav_builder":"Org Builder",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Keluar",
         "lang_toggle":"🇬🇧 English","data_source_live":"Live · Google Sheets",
-        "data_source_local":"Lokal · CSV","auto_refresh":"Gunakan Refresh untuk memuat data terbaru",
+        "data_source_local":"Lokal · CSV","auto_refresh":"Auto-refresh setiap 5 menit",
         "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
         "header_subtitle":"Dashboard Visualisasi Data Organisasi","header_metric":"Total Karyawan",
         "mode_label":"MODE TAMPILAN","mode_division":"Per Divisi","mode_company":"Seluruh Perusahaan",
-        "search_label":"Cari Mekarian","search_ph":"Ketik nama Mekarian...",
+        "search_label":"Cari Karyawan","search_ph":"Ketik nama karyawan...",
         "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Divisi",
         "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
         "filter_all_sbu":"Semua SBU","filter_all_div":"Semua (divisi penuh)",
         "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
         "showing_emp":"Menampilkan","employees":"karyawan",
         "emp_found":"Ditemukan","emp_not_found":"Tidak ada karyawan bernama",
-        "company_warning":"⚠️ Mode seluruh perusahaan menampilkan semua karyawan. Gunakan zoom out dan collapse untuk navigasi.",
-        "emp_select_ph":"— Pilih Mekarian —","emp_select_label":"Pilih Mekarian:",
-        "emp_more":"lainnya","emp_pick_below":"Pilih salah satu di bawah.",
-        "chart_legend_in_div":"Divisi ini","chart_legend_out_div":"Atasan luar divisi",
-        "chart_legend_subordinate":"Jml subordinate","chart_legend_searched":"Karyawan dicari",
-        "chart_legend_tip":"💡 Klik node · Scroll zoom · Drag geser",
-        "chart_tooltip_expand":"Klik untuk expand","chart_tooltip_collapse":"Klik untuk collapse",
-        "chart_hidden_suffix":"tersembunyi",
-        "pdf_company_title":"Org Chart — Seluruh Perusahaan","pdf_all_div":"Semua Divisi","pdf_all_bu":"Seluruh BU",
+        "company_warning":"⚠️ Mode seluruh perusahaan menampilkan semua karyawan.",
         "tab_data_title":"Data Karyawan","tab_data_sub":"Seluruh data karyawan dengan filter dan pencarian",
-        "search_name":"🔍 Cari Mekarian","filter_all":"Semua",
+        "search_name":"🔍 Cari nama karyawan","filter_all":"Semua",
         "tab_cc_title":"Compliance Check","tab_cc_sub":"Deteksi inkonsistensi data antara Employee Data dan MPP Data",
         "cc_tab_summary":"📊  Ringkasan Isu","cc_tab_missing":"👤  Missing Manager ID",
         "cc_tab_mismatch":"🔀  Data Tidak Konsisten","cc_tab_ghost":"🔍  Tidak Terpetakan",
         "cc_tab_vacancy":"📋  Master MPP",
-        "cc_no_mpp":"Analisis MPP belum tersedia. Periksa koneksi dan isi worksheet mpp_data, lalu klik Refresh. Ini bukan berarti tidak ada isu.",
+        "cc_no_mpp":"Data MPP tidak tersedia. Pastikan worksheet mpp_data sudah ada.",
         "cc_total_anomali":"Total Isu Data","cc_missing_mgr":"Missing Manager ID",
         "cc_mismatch":"Data Tidak Konsisten","cc_ghost":"Tidak Terpetakan","cc_vacancy":"Master MPP",
-        "cc_unavailable":"Belum tersedia",
         "cc_clean":"✅ Tidak ada isu ditemukan pada kategori ini.",
         "cc_field":"Field","cc_actual":"Nilai di Employee Data","cc_mpp":"Nilai di MPP Data",
         "severity_high":"High","severity_med":"Medium",
@@ -111,43 +85,33 @@ LANG = {
         "download_csv":"📄 CSV","download_excel":"📊 Excel",
         "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Divisi",
         "emp_in_div":"karyawan di divisi ini","emp_found_in":"ada di divisi ini",
-        "div_emp_count_label":"Karyawan di Divisi","div_mgr_count_label":"Manager di Divisi",
     },
     "en": {
         "nav_org":"Org Chart","nav_data":"Employee Data","nav_compliance":"Compliance Check",
-        "nav_manager":"Manager List","nav_cr":"Change Request",
+        "nav_manager":"Manager List","nav_cr":"Change Request","nav_builder":"Org Builder",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Sign Out",
         "lang_toggle":"🇮🇩 Bahasa","data_source_live":"Live · Google Sheets",
-        "data_source_local":"Local · CSV","auto_refresh":"Use Refresh to load the latest data",
+        "data_source_local":"Local · CSV","auto_refresh":"Auto-refresh every 5 minutes",
         "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
         "header_subtitle":"Organizational Data Visualization Dashboard","header_metric":"Total Employees",
         "mode_label":"VIEW MODE","mode_division":"By Division","mode_company":"Entire Company",
-        "search_label":"Search Mekarian","search_ph":"Type Mekarian name...",
+        "search_label":"Search Employee","search_ph":"Type employee name...",
         "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Division",
         "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
         "filter_all_sbu":"All SBUs","filter_all_div":"All (full division)",
         "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
         "showing_emp":"Showing","employees":"employees",
         "emp_found":"Found","emp_not_found":"No employee named",
-        "company_warning":"⚠️ Company-wide mode displays all employees. Use zoom out and collapse to navigate.",
-        "emp_select_ph":"— Select Mekarian —","emp_select_label":"Select Mekarian:",
-        "emp_more":"more","emp_pick_below":"Select one below.",
-        "chart_legend_in_div":"This division","chart_legend_out_div":"Manager outside division",
-        "chart_legend_subordinate":"Subordinate count","chart_legend_searched":"Searched employee",
-        "chart_legend_tip":"💡 Click node · Scroll to zoom · Drag to pan",
-        "chart_tooltip_expand":"Click to expand","chart_tooltip_collapse":"Click to collapse",
-        "chart_hidden_suffix":"hidden",
-        "pdf_company_title":"Org Chart — Entire Company","pdf_all_div":"All Divisions","pdf_all_bu":"All BUs",
+        "company_warning":"⚠️ Company-wide mode displays all employees.",
         "tab_data_title":"Employee Data","tab_data_sub":"All employee data with filters and search",
-        "search_name":"🔍 Search Mekarian","filter_all":"All",
+        "search_name":"🔍 Search employee name","filter_all":"All",
         "tab_cc_title":"Compliance Check","tab_cc_sub":"Detect data inconsistencies between Employee Data and MPP Data",
         "cc_tab_summary":"📊  Issue Summary","cc_tab_missing":"👤  Missing Manager ID",
         "cc_tab_mismatch":"🔀  Data Inconsistency","cc_tab_ghost":"🔍  Unmapped Employees",
         "cc_tab_vacancy":"📋  Master MPP",
-        "cc_no_mpp":"MPP analysis is unavailable. Check the mpp_data worksheet and connection, then click Refresh. This does not mean there are no issues.",
+        "cc_no_mpp":"MPP data not available. Please ensure the mpp_data worksheet exists.",
         "cc_total_anomali":"Total Data Issues","cc_missing_mgr":"Missing Manager ID",
         "cc_mismatch":"Data Inconsistency","cc_ghost":"Unmapped Employees","cc_vacancy":"Master MPP",
-        "cc_unavailable":"Unavailable",
         "cc_clean":"✅ No issues found in this category.",
         "cc_field":"Field","cc_actual":"Value in Employee Data","cc_mpp":"Value in MPP Data",
         "severity_high":"High","severity_med":"Medium",
@@ -159,7 +123,6 @@ LANG = {
         "download_csv":"📄 CSV","download_excel":"📊 Excel",
         "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Division",
         "emp_in_div":"employees in this division","emp_found_in":"found in this division",
-        "div_emp_count_label":"Employees in Division","div_mgr_count_label":"Managers in Division",
     },
 }
 
@@ -293,67 +256,32 @@ _ACL_COLS = [
     "is_active", "scope_note", "created_at", "updated_at",
 ]
 
-# CATATAN (Agustus 2026): _ACL_FALLBACK dengan akun bootstrap
-# "od_admin@mekari.com" DIHAPUS setelah audit keamanan membuktikan akun
-# ini tidak pernah benar-benar di-seed ke worksheet app_users — murni
-# dead code yang tidak pernah melindungi siapa pun (load_acl_table()
-# hanya jatuh ke fallback saat sheet kosong/unreachable, dan sheet
-# production sudah berisi user real sejak awal). Mempertahankannya
-# hanya menyisakan risiko: siapa pun yang tahu credential default di
-# atas berpotensi dapat akses admin penuh pada skenario sheet down.
-#
-# Untuk emergency access yang SUNGGUHAN independen dari Google Sheets,
-# gunakan Streamlit Secrets [auth.users] — lihat authenticate_user()
-# di bawah, layer lookup #1. Itu tidak bergantung ke _ACL_FALLBACK
-# maupun ke koneksi Google Sheets sama sekali.
+# Bootstrap fallback — digunakan HANYA ketika worksheet app_users belum ada.
+# Hapus atau nonaktifkan setelah ACL di-seed via Admin Panel.
+_ACL_FALLBACK = {
+    "od_admin@dave.com": {
+        "name": "OD Admin", "role": "admin", "password": "dave_od_2026",
+        "allowed_bus": "*", "allowed_sbus": "*", "employee_id": "",
+        "is_active": True, "scope_note": "Bootstrap admin",
+    },
+}
 
 # Role → tab access mapping
-# super_admin : semua tab TERMASUK Admin Panel (0=OrgChart, 1=Data, 2=Compliance, 3=Manager, 4=CR, 5=Offboarding, 99=AdminPanel)
-# admin       : Org Chart + Offboarding Tracker
-# cxo         : hanya tab 0
-# leader      : hanya tab 0
-# employee    : hanya tab 0
+# admin   : semua tab (0=OrgChart, 1=Data, 2=Compliance, 3=Manager, 4=CR, 99=AdminPanel)
+# cxo     : hanya tab 0
+# leader  : hanya tab 0
+# employee: hanya tab 0
 _ROLE_TAB_ACCESS = {
-    "super_admin": {0, 1, 2, 3, 4, 5, 99},
-    "od_reviewer": {0, 4},          # OD: review SCR (Offboarding belum diberikan, menunggu keputusan)
-    "admin":       {0, 5},
-    "cxo":         {0, 4},          # SCR: hanya Buat Request + My Requests
-    "hrbp":        {0, 4},          # SCR: hanya Buat Request + My Requests
-    "leader":      {0, 4},          # SCR: hanya Buat Request + My Requests
-    "employee":    {0},
+    "admin":    {0, 1, 2, 3, 4, 5, 99},
+    "cxo":      {0},
+    "leader":   {0},
+    "employee": {0},
 }
-
-# [SCR Fase 1a] Kapabilitas SCR per role = SATU sumber kebenaran untuk sub-tab
-# yang tampil DAN tombol Approve/Reject. Role yang tidak terdaftar = tidak ada akses.
-_SCR_CAPS = {
-    "super_admin": {"submit", "my", "inbox", "decide", "history"},
-    "od_reviewer": {"submit", "my", "inbox", "decide", "history"},
-    "cxo":         {"submit", "my"},
-    "hrbp":        {"submit", "my"},
-    "leader":      {"submit", "my"},
-}
-
-
-def _scr_can(role: str, cap: str) -> bool:
-    """Return True jika role memiliki kapabilitas SCR `cap`."""
-    return cap in _SCR_CAPS.get(role, set())
 
 
 def _can_access_tab(role: str, tab_idx: int) -> bool:
-    """Return True jika role boleh mengakses tab_idx.
-    [QA AUTH-01] FAIL-CLOSED: role yang tidak terdaftar tidak mendapat tab apa pun."""
-    return tab_idx in _ROLE_TAB_ACCESS.get(role, set())
-
-
-def _scr_beta_enabled() -> bool:
-    """Runtime-only feature flag; fail closed jika Secrets tidak tersedia/invalid."""
-    try:
-        raw = st.secrets.get("beta", {}).get("scr_enabled", False)
-    except Exception:
-        return False
-    if isinstance(raw, bool):
-        return raw
-    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+    """Return True jika role boleh mengakses tab_idx."""
+    return tab_idx in _ROLE_TAB_ACCESS.get(role, {0})
 
 
 @st.cache_data(ttl=120)
@@ -361,21 +289,16 @@ def load_acl_table() -> dict:
     """
     Load ACL dari worksheet 'app_users' di Google Sheets.
     Return dict keyed by email (lowercase).
-    Return dict KOSONG jika sheet belum ada / kosong / tidak bisa diakses —
-    ini SENGAJA tidak fallback ke akun bootstrap manapun (lihat catatan
-    di atas _ACL_COLS soal _ACL_FALLBACK yang sudah dihapus). Kalau sheet
-    down, satu-satunya jalur login yang tetap hidup adalah Streamlit
-    Secrets [auth.users] di authenticate_user(), yang tidak lewat fungsi
-    ini sama sekali.
+    Fallback ke _ACL_FALLBACK jika sheet belum ada / kosong.
     """
     client = get_gspread_client()
     if not client:
-        return {}
+        return _ACL_FALLBACK
     try:
         ws   = client.open_by_key(SHEET_ID).worksheet(SHEET_ACL_NAME)
         rows = ws.get_all_records()
         if not rows:
-            return {}
+            return _ACL_FALLBACK
         acl: dict = {}
         for r in rows:
             email_key = str(r.get("email", "")).strip().lower()
@@ -391,9 +314,9 @@ def load_acl_table() -> dict:
                 "is_active":   str(r.get("is_active", "TRUE")).strip().upper() in ("TRUE", "1", "YES"),
                 "scope_note":  str(r.get("scope_note", "")).strip(),
             }
-        return acl
+        return acl if acl else _ACL_FALLBACK
     except Exception:
-        return {}
+        return _ACL_FALLBACK
 
 
 def get_acl_sheet():
@@ -427,58 +350,13 @@ def get_user_info(email: str) -> dict | None:
     return None
 
 
-def hash_password(plain: str) -> str:
-    """
-    Hash password dengan bcrypt sebelum disimpan ke Google Sheets.
-    Fallback ke plaintext HANYA jika package bcrypt belum terinstall — ini
-    adalah mode darurat, bukan kondisi normal. Tambahkan `bcrypt` ke
-    requirements.txt sesegera mungkin jika BCRYPT_OK == False.
-    """
-    if not plain:
-        return ""
-    if BCRYPT_OK:
-        return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    logger.warning("bcrypt tidak terinstall — password disimpan plaintext (FIX SEGERA)")
-    return plain
-
-
-def _is_bcrypt_hash(value: str) -> bool:
-    return bool(value) and value.startswith(("$2a$", "$2b$", "$2y$"))
-
-
-def verify_password(plain: str, stored: str) -> bool:
-    """
-    Verifikasi password dengan dukungan migrasi bertahap:
-    - Jika `stored` adalah bcrypt hash      → verifikasi via bcrypt.checkpw.
-    - Jika `stored` masih plaintext (legacy data lama) → exact match (sementara,
-      sampai user login ulang dan password otomatis di-rehash — lihat authenticate_user).
-    """
-    if not stored or not plain:
-        return False
-    if _is_bcrypt_hash(stored) and BCRYPT_OK:
-        try:
-            return bcrypt.checkpw(plain.encode("utf-8"), stored.encode("utf-8"))
-        except Exception:
-            return False
-    return stored == plain
-
-
-def _ensure_hashed(pw: str) -> str:
-    """Hash hanya jika `pw` belum berupa bcrypt hash — mencegah double-hashing saat edit user existing."""
-    if not pw:
-        return ""
-    if _is_bcrypt_hash(pw):
-        return pw
-    return hash_password(pw)
-
-
 def authenticate_user(email: str, password: str) -> dict | None:
     """
     Verifikasi email + password. Return user dict atau None.
     Urutan lookup:
-    1. Streamlit Secrets [auth][users] — independen dari Google Sheets,
-       satu-satunya jalur yang tetap hidup kalau Sheets/OAuth down.
+    1. Streamlit Secrets [auth][users] (production)
     2. Google Sheets app_users (primary ACL)
+    3. _ACL_FALLBACK (bootstrap only)
     """
     email_lower = email.strip().lower()
 
@@ -505,15 +383,7 @@ def authenticate_user(email: str, password: str) -> dict | None:
     user = acl.get(email_lower)
     if user and user.get("is_active", True):
         stored_pw = user.get("password", "").strip()
-        if stored_pw and verify_password(password, stored_pw):
-            # Migrasi on-the-fly: kalau password masih plaintext (data lama),
-            # re-hash & simpan otomatis saat login berhasil — tanpa downtime,
-            # tanpa script migrasi terpisah.
-            if BCRYPT_OK and not _is_bcrypt_hash(stored_pw):
-                try:
-                    reset_user_password(email_lower, password)
-                except Exception:
-                    logger.warning(f"Gagal auto-migrate hash password untuk {email_lower}")
+        if stored_pw and stored_pw == password:
             return user
 
     return None
@@ -524,9 +394,9 @@ def apply_rbac_filter(df: pd.DataFrame, user_info: dict) -> pd.DataFrame:
     Row-Level Security — filter DataFrame berdasarkan role & scope user.
 
     Mapping:
-    - super_admin / admin / cxo   → full access, no filter
-    - leader                      → filter by allowed_bus + allowed_sbus
-    - employee                    → subtree C-1 (direct reports of their manager only)
+    - admin / cxo   → full access, no filter
+    - leader        → filter by allowed_bus + allowed_sbus
+    - employee      → subtree C-1 (direct reports of their manager only)
 
     PENTING: fungsi ini hanya dipanggil SETELAH auth berhasil.
     df yang dikembalikan adalah satu-satunya data yang boleh dilihat user.
@@ -534,49 +404,35 @@ def apply_rbac_filter(df: pd.DataFrame, user_info: dict) -> pd.DataFrame:
     role = user_info.get("role", "employee")
 
     # ── Full access ───────────────────────────────────────────────
-    if role in ("super_admin", "admin", "cxo", "od_reviewer"):
+    if role in ("admin", "cxo"):
         return df
 
     # ── Leader: BU + SBU scope ────────────────────────────────────
-    if role in ("leader", "hrbp"):
-        # [QA SEC-01] FAIL-CLOSED: scope yang tidak ada / kosong / tidak terbaca = TIDAK ADA akses.
-        # Akses penuh hanya lewat '*' yang ditulis eksplisit di app_users.
-        raw_bus  = str(user_info.get("allowed_bus", "")).strip()
-        raw_sbus = str(user_info.get("allowed_sbus", "")).strip()
-        if raw_bus.lower() in ("", "nan", "none") or raw_sbus.lower() in ("", "nan", "none"):
-            return df.iloc[0:0]
+    if role == "leader":
+        raw_bus  = user_info.get("allowed_bus", "*").strip()
+        raw_sbus = user_info.get("allowed_sbus", "*").strip()
 
         # Parse comma-separated, handle wildcard
         allowed_bus  = [] if raw_bus  == "*" else [b.strip() for b in raw_bus.split(",")  if b.strip()]
         allowed_sbus = [] if raw_sbus == "*" else [s.strip() for s in raw_sbus.split(",") if s.strip()]
-        # Nilai bukan '*' tetapi tidak menghasilkan satu pun nama (misal ",") = malformed -> tolak
-        if (raw_bus != "*" and not allowed_bus) or (raw_sbus != "*" and not allowed_sbus):
-            return df.iloc[0:0]
 
         filtered = df.copy()
 
         if allowed_bus:  # non-empty = restricted
-            if "Business Unit" not in filtered.columns:
-                return df.iloc[0:0]   # kolom pembatas hilang -> tolak, jangan lewati filter
-            filtered = filtered[filtered["Business Unit"].isin(allowed_bus)]
+            if "Business Unit" in filtered.columns:
+                filtered = filtered[filtered["Business Unit"].isin(allowed_bus)]
 
         if allowed_sbus:
-            if "SBU/Tribe" not in filtered.columns:
-                return df.iloc[0:0]
-            # Tetap tampilkan node tanpa SBU (atasan lintas unit tetap visible)
-            sbu_mask = (
-                filtered["SBU/Tribe"].isin(allowed_sbus) |
-                filtered["SBU/Tribe"].isin(["", "nan"]) |
-                filtered["SBU/Tribe"].isna()
-            )
-            filtered = filtered[sbu_mask]
+            if "SBU/Tribe" in filtered.columns:
+                # Tetap tampilkan node tanpa SBU (atasan lintas unit tetap visible)
+                sbu_mask = (
+                    filtered["SBU/Tribe"].isin(allowed_sbus) |
+                    filtered["SBU/Tribe"].isin(["", "nan"]) |
+                    filtered["SBU/Tribe"].isna()
+                )
+                filtered = filtered[sbu_mask]
 
         return filtered
-
-    # [QA AUTH-01] Hanya role 'employee' yang boleh sampai ke logika subtree di bawah.
-    # Role tidak dikenal -> kosong (sebelumnya jatuh ke aturan employee).
-    if role != "employee":
-        return df.iloc[0:0]
 
     # ── Employee: subtree C-1 (hanya bawahan dari manager mereka) ──
     emp_id = user_info.get("employee_id", "").strip()
@@ -628,7 +484,7 @@ def save_acl_user(user_data: dict) -> bool:
             email_clean,
             user_data.get("name", ""),
             user_data.get("role", "employee"),
-            _ensure_hashed(user_data.get("password", "")),
+            user_data.get("password", ""),
             user_data.get("allowed_bus", "*"),
             user_data.get("allowed_sbus", "*"),
             user_data.get("employee_id", ""),
@@ -686,7 +542,7 @@ def reset_user_password(email: str, new_password: str) -> bool:
         cell = ws.find(email.strip().lower())
         if not cell:
             return False
-        ws.update_cell(cell.row, 4, hash_password(new_password))   # Col 4 = password (bcrypt hash)
+        ws.update_cell(cell.row, 4, new_password)   # Col 4 = password
         ws.update_cell(cell.row, 11, datetime.now().strftime("%Y-%m-%d %H:%M"))
         load_acl_table.clear()
         return True
@@ -730,19 +586,11 @@ def reset_user_password(email: str, new_password: str) -> bool:
 # ══════════════════════════════════════════════════════════════════
 
 # Kolom yang di-drop setelah normalisasi
-#
-# [HoB VIEW — 22 Agt 2026] "Primary Budget Holder" DIKELUARKAN dari drop-list.
-# Ini BUKAN opsional — fitur HoB View (brief PM/CEO) secara eksplisit
-# menggunakan kolom ini (kolom R di Sheet) sebagai acuan pengelompokan.
-# Sebelum perubahan ini, kolom didrop total di Step 4 sehingga tidak
-# mungkin membangun HoB tree sama sekali. "Secondary Budget Holder" tetap
-# didrop — tidak dipakai brief ini, tidak ada alasan menyimpannya sekarang.
-# Impact ke fitur lain: NOL — tab/fitur lain select subset kolom eksplisit.
 _PEOPLE_DB_DROP_COLS = [
     "Webhook Timestamp", "Webhook ID", "user_id",
     # Employment Approval Line Name & Email TIDAK di-drop — di-rename ke Manager Name/Email
     "Employment Approval Line User ID",
-    "Secondary Budget Holder",
+    "Primary Budget Holder", "Secondary Budget Holder",
     "End Date", "Resign Date", "Original Placement",
     "Notice Period (TBC)", "Branch", "Tenure",
     "HRBP Email", "Join Date",
@@ -787,25 +635,25 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
     if "Employment Status" in df.columns:
         df["Employment Status"] = df["Employment Status"].astype(str).str.strip()
         unique_emp_status = df["Employment Status"].unique().tolist()
-        logger.debug(f"[normalize_people_db] 'Employment Status' unique values: {unique_emp_status}")
+        print(f"[normalize_people_db] 'Employment Status' unique values: {unique_emp_status}")
         mask_status = df["Employment Status"].str.lower().isin(_EMPLOYMENT_STATUS_VALUES)
         df = df[mask_status].copy()
-        logger.debug(f"[normalize_people_db] After Employment Status filter: {len(df)} records")
+        print(f"[normalize_people_db] After Employment Status filter: {len(df)} records")
     else:
-        logger.warning("[normalize_people_db] 'Employment Status' column not found")
+        print("[normalize_people_db] WARNING: 'Employment Status' column not found")
 
     # Filter kolom "Employment Type Status"
     if "Employment Type Status" in df.columns:
         df["Employment Type Status"] = df["Employment Type Status"].astype(str).str.strip()
         unique_type_status = df["Employment Type Status"].unique().tolist()
-        logger.debug(f"[normalize_people_db] 'Employment Type Status' unique values: {unique_type_status}")
+        print(f"[normalize_people_db] 'Employment Type Status' unique values: {unique_type_status}")
         mask_type = df["Employment Type Status"].str.lower().isin(_EMPLOYMENT_TYPE_VALUES)
         df = df[mask_type].copy()
-        logger.debug(f"[normalize_people_db] After Employment Type Status filter: {len(df)} records")
+        print(f"[normalize_people_db] After Employment Type Status filter: {len(df)} records")
     else:
-        logger.warning("[normalize_people_db] 'Employment Type Status' column not found")
+        print("[normalize_people_db] WARNING: 'Employment Type Status' column not found")
 
-    logger.debug(f"[normalize_people_db] Total filtered: {total_before} → {len(df)} records")
+    print(f"[normalize_people_db] Total filtered: {total_before} → {len(df)} records")
 
     # ── Step 3: Rename kolom ──────────────────────────────────────
     rename_map = {
@@ -822,8 +670,8 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
     # Debug: log sample Manager ID setelah rename agar bisa verify format
     if "Manager ID" in df.columns:
         sample_mgr = df["Manager ID"].dropna().head(5).tolist()
-        logger.debug(f"[normalize_people_db] Manager ID sample (post-rename): {sample_mgr}")
-    logger.debug(f"[normalize_people_db] Columns after rename: {df.columns.tolist()}")
+        print(f"[normalize_people_db] Manager ID sample (post-rename): {sample_mgr}")
+    print(f"[normalize_people_db] Columns after rename: {df.columns.tolist()}")
 
     # ── Step 4: Drop kolom tidak diperlukan ───────────────────────
     cols_to_drop = [c for c in _PEOPLE_DB_DROP_COLS if c in df.columns]
@@ -843,8 +691,6 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
         "Job ID":         "",
         "Career Stage":   "",
         "Email":          "",
-        # [HoB VIEW] Dibutuhkan untuk grouping HoB tree — lihat catatan di _PEOPLE_DB_DROP_COLS.
-        "Primary Budget Holder": "",
     }
     for col, default in required_cols.items():
         if col not in df.columns:
@@ -856,14 +702,6 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
     df["SBU/Tribe"]     = df["SBU/Tribe"].fillna("").astype(str).str.strip()
     df["Career Stage"]  = df["Career Stage"].fillna("").astype(str).str.strip()
     df["Email"]         = df["Email"].fillna("").astype(str).str.strip().str.lower()
-    # Defensive fillna — mencegah TypeError di _wrap_text() saat generate PDF
-    # (build_tree_json meneruskan nilai ini apa adanya ke PDF card renderer;
-    # cell kosong di Sheet akan jadi NaN float, bukan string, tanpa ini)
-    df["Job Position"]  = df["Job Position"].fillna("").astype(str).str.strip()
-    df["Division"]      = df["Division"].fillna("").astype(str).str.strip()
-    # [HoB VIEW] Sama alasannya seperti Job Position/Division di atas —
-    # cegah NaN float nyasar ke string matching saat build HoB mapping.
-    df["Primary Budget Holder"] = df["Primary Budget Holder"].fillna("").astype(str).str.strip()
 
     # Hapus baris tanpa Employee ID valid
     df = df[df["Employee ID"].str.len() > 0]
@@ -874,10 +712,10 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
     # Keep last row (data terbaru berdasarkan urutan di sheet).
     dupes = df["Employee ID"].duplicated(keep=False).sum()
     if dupes > 0:
-        logger.debug(f"[normalize_people_db] Found {dupes} duplicate Employee ID rows — keeping last occurrence")
+        print(f"[normalize_people_db] Found {dupes} duplicate Employee ID rows — keeping last occurrence")
         df = df.drop_duplicates(subset=["Employee ID"], keep="last")
 
-    logger.debug(f"[normalize_people_db] Final records loaded: {len(df)}")
+    print(f"[normalize_people_db] Final records loaded: {len(df)}")
     return df.reset_index(drop=True)
 
 
@@ -918,211 +756,32 @@ def load_data():
         return None, "error"
 
 
-@st.cache_data(ttl=300)
-def load_offboarding_data():
-    """
-    [OFFBOARDING TRACKER — P0 CEO Request]
-    Load raw employee data dari People Database TANPA filter Employment Status
-    dan TANPA drop Resign Date.
-
-    Kenapa fungsi terpisah, bukan pakai `df` yang sudah ada:
-    - `normalize_people_db()` drop kolom 'Resign Date' (ada di _PEOPLE_DB_DROP_COLS)
-    - `normalize_people_db()` filter hanya status='active' — kita butuh resigned employees juga
-    - Dua alasan ini membuat reuse `df` dari `load_data()` tidak mungkin untuk fitur ini.
-
-    Return:
-        tuple(df_resigned, df_active_raw) | tuple(None, None) jika gagal
-        df_resigned : DataFrame karyawan yang Resign Date-nya terisi (kandidat offboarding)
-        df_active_raw: DataFrame karyawan aktif — dipakai untuk lookup "siapa direct report
-                       karyawan yang resign" via kolom 'Employment Approval Line Name'
-    """
-    client = get_gspread_client()
-    if not client:
-        return None, None
-    try:
-        ws  = client.open_by_key(SHEET_ID).worksheet(SHEET_EMP_NAME)
-        raw = pd.DataFrame(ws.get_all_records())
-    except Exception as e:
-        logger.warning(f"[load_offboarding_data] Gagal baca Sheet: {e}")
-        return None, None
-
-    if raw.empty:
-        return pd.DataFrame(), pd.DataFrame()
-
-    raw.columns = raw.columns.str.strip()
-
-    # ── Kolom yang dibutuhkan feature ini (raw column names dari Sheet) ──
-    # Semua rename dilakukan manual di sini — tidak lewat normalize_people_db()
-    # supaya Resign Date dan resigned employees tetap tersedia.
-    NEEDED_COLS = [
-        "Employee ID",
-        "Full Name",
-        "Employment Approval Line Name",   # = Manager Name / Reporting Line
-        "Organization",                    # = Division
-        "Job ID",
-        "Job Position",
-        "SBU/Tribe",
-        "Resign Date",
-        "Employment Status",               # dipakai untuk pisah active vs resigned
-        "Employment Type Status",          # dipakai filter active pool
-    ]
-    # Retain hanya kolom yang benar-benar ada (defensive — hindari KeyError
-    # kalau Sheet belum punya kolom tertentu, misal Resign Date belum diisi sama sekali)
-    available = [c for c in NEEDED_COLS if c in raw.columns]
-    raw = raw[available].copy()
-
-    # ── String normalization dasar ─────────────────────────────────
-    for col in raw.select_dtypes(include="object").columns:
-        raw[col] = raw[col].astype(str).str.strip()
-
-    # ── Split: resigned pool (Resign Date terisi) ──────────────────
-    # "Terisi" = ada nilai, bukan "", "nan", atau "None"
-    _rd_col = "Resign Date"
-    if _rd_col not in raw.columns:
-        raw[_rd_col] = ""
-    raw[_rd_col] = raw[_rd_col].astype(str).str.strip()
-    _resigned_mask = (
-        raw[_rd_col].notna() &
-        (raw[_rd_col] != "") &
-        (raw[_rd_col].str.lower() != "nan") &
-        (raw[_rd_col].str.lower() != "none")
-    )
-    df_resigned = raw[_resigned_mask].copy()
-
-    # ── Active employee pool — untuk lookup "Employee Under" ──────
-    # Kriteria aktif: Employment Status = active AND Employment Type Status
-    # dalam set yang sama dengan normalize_people_db() (permanent/intern/
-    # probation/contract). Ini penting karena brief bilang:
-    # "cek dari data aktif — karyawan yang sudah resign tidak dihitung
-    # sebagai manager aktif"
-    _status_col = "Employment Status"
-    _type_col   = "Employment Type Status"
-    df_active_pool = raw.copy()
-    if _status_col in df_active_pool.columns:
-        df_active_pool = df_active_pool[
-            df_active_pool[_status_col].str.lower().isin(_EMPLOYMENT_STATUS_VALUES)
-        ]
-    if _type_col in df_active_pool.columns:
-        df_active_pool = df_active_pool[
-            df_active_pool[_type_col].str.lower().isin(_EMPLOYMENT_TYPE_VALUES)
-        ]
-
-    # Drop status/type kolom dari kedua df — tidak ditampilkan ke user
-    for _drop in [_status_col, _type_col]:
-        if _drop in df_resigned.columns:
-            df_resigned = df_resigned.drop(columns=[_drop])
-        if _drop in df_active_pool.columns:
-            df_active_pool = df_active_pool.drop(columns=[_drop])
-
-    # Deduplicate Employee ID (sama seperti normalize_people_db)
-    df_resigned   = df_resigned.drop_duplicates(subset=["Employee ID"], keep="last")
-    df_active_pool = df_active_pool.drop_duplicates(subset=["Employee ID"], keep="last")
-
-    return df_resigned.reset_index(drop=True), df_active_pool.reset_index(drop=True)
-
-
-def _compute_employee_under(df_resigned: pd.DataFrame, df_active: pd.DataFrame) -> pd.Series:
-    """
-    Compute kolom 'Employee Under' untuk setiap baris di df_resigned.
-
-    Logic (sesuai brief):
-    1. Untuk setiap nama karyawan resign (Full Name), cari siapa saja di df_active
-       yang 'Employment Approval Line Name'-nya == nama karyawan resign tsb.
-       Matching: case-insensitive + strip whitespace.
-    2. Jika ada → return nama-nama direct report dipisah ", "
-    3. Jika tidak ada → return "" (kosong, bukan "-" atau "N/A")
-
-    Implementasi: build lookup dict dari df_active terlebih dahulu (O(n))
-    supaya tidak O(n²) per-row pada dataset 1.600+ karyawan.
-    """
-    if df_active.empty or "Employment Approval Line Name" not in df_active.columns:
-        return pd.Series([""] * len(df_resigned), index=df_resigned.index)
-
-    # Build dict: normalized_manager_name → list of direct report Full Names
-    _mgr_to_directs: dict[str, list[str]] = {}
-    for _, row in df_active.iterrows():
-        mgr_raw  = str(row.get("Employment Approval Line Name", "")).strip().lower()
-        emp_name = str(row.get("Full Name", "")).strip()
-        if mgr_raw and emp_name:
-            _mgr_to_directs.setdefault(mgr_raw, []).append(emp_name)
-
-    def _lookup(resigning_name: str) -> str:
-        key = str(resigning_name).strip().lower()
-        directs = _mgr_to_directs.get(key, [])
-        return ", ".join(sorted(directs)) if directs else ""
-
-    return df_resigned["Full Name"].apply(_lookup)
-
-
-_CR_COLS = [
-    "request_id","submitted_date","requester_name","requester_email",
-    "change_type","employee_id","employee_name","data_lama","data_baru",
-    "alasan","status","reviewed_by","reviewed_date","catatan","change_request",
-]
-
-
 @st.cache_data(ttl=60)
-def _load_change_requests_cached() -> pd.DataFrame:
-    """Baca sheet change_requests. RAISE bila gagal: exception tidak di-cache oleh
-    Streamlit, jadi kegagalan sesaat tidak 'menempel' 60 detik sebagai data kosong."""
+def load_change_requests():
     client = get_gspread_client()
     if not client:
-        raise RuntimeError("Koneksi Google Sheets tidak tersedia")
-    ws   = client.open_by_key(SHEET_ID).worksheet(SHEET_CR_NAME)
-    data = ws.get_all_records()
-    if not data:
-        return pd.DataFrame(columns=_CR_COLS)
-    _df = pd.DataFrame(data)
-    # Header toleran spasi/kapital ("Status " -> "status").
-    _df.columns = [str(c).strip().lower() for c in _df.columns]
-    # Status dinormalisasi: kosong/NaN dianggap Pending (belum direview).
-    if "status" in _df.columns:
-        _raw = _df["status"].astype(str).str.strip()
-        _map = {"pending": "Pending", "in review": "In Review",
-                "approved": "Approved", "rejected": "Rejected",
-                "": "Pending", "nan": "Pending"}
-        _df["status"] = _raw.str.lower().map(_map).fillna(_raw)
-    return _df
-
-
-def load_change_requests() -> pd.DataFrame:
-    """[QA OPS-01] Return DataFrame; bila GAGAL dimuat, DataFrame kosong bertanda
-    attrs['load_failed']=True. Pemanggil WAJIB memeriksa cr_load_failed() sebelum
-    menampilkan 'belum ada request' — gagal-load BUKAN berarti nol request."""
+        return pd.DataFrame()
     try:
-        return _load_change_requests_cached()
-    except Exception as _e:
-        logger.error(f"load_change_requests gagal: {_e}")
-        _empty = pd.DataFrame(columns=_CR_COLS)
-        _empty.attrs["load_failed"] = True
-        return _empty
-
-
-load_change_requests.clear = _load_change_requests_cached.clear   # kompatibel dengan pemanggil lama
-
-
-def cr_load_failed(df_) -> bool:
-    return bool(getattr(df_, "attrs", {}).get("load_failed"))
+        ws   = client.open_by_key(SHEET_ID).worksheet(SHEET_CR_NAME)
+        data = ws.get_all_records()
+        if not data:
+            return pd.DataFrame(columns=[
+                "request_id","submitted_date","requester_name","requester_email",
+                "change_type","employee_id","employee_name","data_lama","data_baru",
+                "alasan","status","reviewed_by","reviewed_date","catatan",
+            ])
+        return pd.DataFrame(data)
+    except Exception:
+        return pd.DataFrame()
 
 
 def get_cr_sheet():
-    """
-    [FIX 30 Sep 2026] Sebelumnya exception di-swallow total (bare `except:
-    return None`), sehingga kegagalan koneksi/worksheet-not-found tidak
-    pernah terlihat oleh user — tombol Submit klik, tidak ada reaksi,
-    tidak ada error. Sekarang alasan kegagalan disimpan ke session_state
-    agar caller (save_change_request) bisa menampilkannya ke user.
-    """
     client = get_gspread_client()
     if not client:
-        st.session_state["_cr_sheet_error"] = "Koneksi ke Google Sheets gagal (client tidak tersedia)."
         return None
     try:
         return client.open_by_key(SHEET_ID).worksheet(SHEET_CR_NAME)
-    except Exception as e:
-        st.session_state["_cr_sheet_error"] = (
-            f"Worksheet '{SHEET_CR_NAME}' tidak ditemukan atau tidak bisa diakses: {e}"
-        )
+    except Exception:
         return None
 
 
@@ -1227,351 +886,26 @@ def get_activity_log(limit: int = 500) -> pd.DataFrame:
         rows = ws.get_all_records()
         if not rows:
             return pd.DataFrame(columns=_LOG_COLS)
-        df = pd.DataFrame(rows).astype(str)   # [QA REG-01] hindari tipe campuran (mis. session_id numerik) -> Arrow error
+        df = pd.DataFrame(rows)
         # Tampilkan terbaru dulu, limit rows
         return df.iloc[::-1].head(limit).reset_index(drop=True)
     except Exception:
         return pd.DataFrame(columns=_LOG_COLS)
 
 
-def _parse_appended_row(res) -> "int | None":
-    """Ambil nomor baris hasil append_row dari respons Sheets API
-    (updates.updatedRange, contoh 'change_requests!A12:O12')."""
-    import re as _re
-    try:
-        rng = (res or {}).get("updates", {}).get("updatedRange", "")
-        m = _re.search(r"![A-Z]+(\d+)", rng)
-        return int(m.group(1)) if m else None
-    except Exception:
-        return None
-
-
-def _assign_final_request_id(ws, row_no: int) -> str:
-    """
-    [PHASE 0 — 3 Okt 2026] Nomor tiket final ditentukan dari POSISI BARIS.
-    Sheets menentukan posisi baris saat append secara atomic, jadi dua
-    submission bersamaan SELALU punya posisi berbeda -> nomor berbeda.
-    seq = max(jumlah baris di atas dengan prefix hari ini, nomor terbesar
-    di atasnya) + 1. max() menjaga nomor tetap unik walau ada baris yang
-    pernah dihapus manual.
-    """
-    today_str = datetime.now(_WIB).strftime("%Y%m%d")
-    prefix = f"SCR-{today_str}-"
-    above = [str(v) for v in ws.col_values(1)[: row_no - 1]]
-    # [QA ID-01] Hitung SEMUA baris berprefix hari ini di atas baris ini (final maupun
-    # sementara) supaya submission yang sedang berjalan ikut terhitung.
-    n_prefixed = sum(1 for v in above if v.startswith(prefix))
-    nums = [int(v[len(prefix):]) for v in above
-            if v.startswith(prefix) and v[len(prefix):].isdigit()]
-    seq = max(n_prefixed, max(nums) if nums else 0) + 1
-    return f"{prefix}{str(seq).zfill(3)}"
-
-
 def save_change_request(row_data: dict) -> bool:
-    """
-    [SCR-G2/G3 CHANGE — 26 Agt 2026]
-    Kolom "change_request" ditambahkan di POSISI TERAKHIR (kolom ke-15),
-    BUKAN disisipkan di tengah. Ini disengaja: update_cr_status() di atas
-    hardcode index kolom 11-14 (status/reviewed_by/reviewed_date/catatan)
-    saat memanggil ws.update_cell(). Kalau change_request disisipkan di
-    tengah, semua index itu geser dan diam-diam merusak fitur
-    approve/reject yang sudah production-stable. Menambah di ujung =
-    zero risk ke fungsi existing.
-
-    ⚠️ ACTION REQUIRED DI GOOGLE SHEETS (manual, satu kali):
-    Buka worksheet `change_requests` di Sheet ID SHEET_ID, tambahkan
-    header "change_request" di kolom O (kolom ke-15, setelah "catatan").
-    Tanpa ini, append_row tetap jalan (Sheets auto-extend kolom), tapi
-    header row akan kosong di kolom O sehingga get_all_records() salah
-    mapping nama kolom ke data lain kalau ada yang re-order manual nanti.
-    """
     ws = get_cr_sheet()
     if not ws:
-        # [FIX 30 Sep 2026] Dulu silent — sekarang tampilkan alasan spesifik
-        # yang disimpan get_cr_sheet() di session_state, supaya user (dan
-        # kita saat debugging) langsung tahu apa yang gagal.
-        reason = st.session_state.pop("_cr_sheet_error", "Sheet 'change_requests' tidak bisa diakses (tidak ada detail lebih lanjut).")
-        st.error(f"❌ Gagal menyimpan request: {reason}")
         return False
     cols = ["request_id","submitted_date","requester_name","requester_email",
             "change_type","employee_id","employee_name","data_lama","data_baru",
-            "alasan","status","reviewed_by","reviewed_date","catatan","change_request"]
+            "alasan","status","reviewed_by","reviewed_date","catatan"]
     try:
-        res = ws.append_row([str(row_data.get(c, "")) for c in cols], value_input_option="USER_ENTERED")
-        # [PHASE 0 — 3 Okt 2026] Ganti nomor sementara dengan nomor final
-        # berbasis posisi baris (anti-duplikat). Kalau langkah ini gagal,
-        # request TETAP tersimpan dengan nomor sementara — tidak ada data hilang.
-        _finalized = False
-        _row_no = _parse_appended_row(res)
-        if _row_no:
-            for _attempt in (1, 2):
-                try:
-                    _final_id = _assign_final_request_id(ws, _row_no)
-                    ws.update_cell(_row_no, 1, _final_id)
-                    row_data["request_id"] = _final_id
-                    _finalized = True
-                    break
-                except Exception as _e:
-                    logger.warning(f"Finalisasi nomor tiket gagal (percobaan {_attempt}): {_e}")
-        if not _finalized:
-            logger.error(f"Tiket {row_data.get('request_id')} tersimpan dengan nomor SEMENTARA (finalisasi gagal)")
+        ws.append_row([str(row_data.get(c, "")) for c in cols], value_input_option="USER_ENTERED")
         return True
     except Exception as e:
-        st.error(f"❌ Gagal menyimpan request ke sheet: {e}")
+        st.error(f"Gagal menyimpan: {e}")
         return False
-
-
-# ── SCR Module: konstanta tipe perubahan & helper JSON ────────────────
-# [SCR-G2/G3] 8 tipe sesuai REQUIREMENTS.md Section 2.1 (v1.1).
-CR_CHANGE_TYPES = [
-    "Job Title",
-    "Reporting Line",
-    "Division",
-    "SBU",
-    "Business Unit",
-    "Primary Budget Holder",
-    "Secondary Budget Holder",
-    "Kombinasi",
-]
-
-# Tipe dasar yang bisa dipilih di dalam mode "Kombinasi" (semua kecuali Kombinasi itu sendiri)
-CR_BASE_TYPES = [t for t in CR_CHANGE_TYPES if t != "Kombinasi"]
-
-# Mapping tipe perubahan -> nama kolom di `df` untuk ambil "data sebelum"
-CR_FIELD_TO_DFCOL = {
-    "Job Title":               "Job Position",
-    "Reporting Line":          "Manager Name",
-    "Division":                "Division",
-    "SBU":                     "SBU/Tribe",
-    "Business Unit":           "Business Unit",
-    "Primary Budget Holder":   "Primary Budget Holder",
-    "Secondary Budget Holder": "Secondary Budget Holder",
-}
-
-
-def build_change_request_json(field_changes: list) -> str:
-    """
-    Serialize list of dict {"field","before","after",...} jadi JSON string
-    untuk disimpan di kolom `change_request`. Dipisah dari data_lama/data_baru
-    (yang tetap diisi human-readable summary) supaya:
-      - History/Inbox lama (existing rows sebelum migrasi ini) tetap bisa
-        tampil normal lewat data_lama/data_baru (backward compatible)
-      - Fitur ke depan (PDF Proposal Document / G4, status tracking / G5)
-        bisa parse struktur per-field tanpa perlu regex string data_lama.
-    """
-    return json.dumps(field_changes, ensure_ascii=False)
-
-
-def parse_change_request_json(raw) -> list:
-    """
-    Parse kolom `change_request`. Selalu return list (kosong kalau invalid/
-    legacy row) — caller TIDAK PERLU try/except sendiri di tempat render.
-    """
-    if raw is None:
-        return []
-    raw = str(raw).strip()
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-        return parsed if isinstance(parsed, list) else []
-    except (json.JSONDecodeError, TypeError):
-        return []
-
-
-def _scr_pdf_lines(row: dict) -> list[str]:
-    """Susun isi proposal sebagai baris netral untuk ReportLab/fallback PDF."""
-    changes = parse_change_request_json(row.get("change_request", ""))
-    lines = [
-        "STRUCTURE CHANGE REQUEST PROPOSAL",
-        f"Nomor Tiket: {row.get('request_id', '-') or '-'}",
-        f"Tanggal Submit: {row.get('submitted_date', '-') or '-'}",
-        f"Tanggal Approve: {row.get('reviewed_date', '-') or '-'}",
-        "",
-        "SUBMITTER",
-        f"Nama: {row.get('requester_name', '-') or '-'}",
-        f"Email: {row.get('requester_email', '-') or '-'}",
-        "",
-        "EMPLOYEE",
-        f"Nama: {row.get('employee_name', '-') or '-'}",
-        f"Employee ID: {row.get('employee_id', '-') or '-'}",
-        f"Tipe Perubahan: {row.get('change_type', '-') or '-'}",
-        "",
-        "PERUBAHAN DISETUJUI",
-    ]
-    if changes:
-        for change in changes:
-            field = str(change.get("field", "-") or "-")
-            before = str(change.get("before", "-") or "-")
-            after = str(change.get("after", "-") or "-")
-            lines.extend([f"{field}", f"  Sebelum: {before}", f"  Sesudah: {after}"])
-            if change.get("jd_filename"):
-                lines.append(f"  Job Description: {change.get('jd_filename')}")
-    else:
-        lines.extend([
-            f"Sebelum: {row.get('data_lama', '-') or '-'}",
-            f"Sesudah: {row.get('data_baru', '-') or '-'}",
-        ])
-    lines.extend([
-        "",
-        "JUSTIFIKASI",
-        str(row.get("alasan", "-") or "-"),
-        "",
-        "REVIEW OD",
-        f"Reviewer: {row.get('reviewed_by', '-') or '-'}",
-        f"Catatan: {row.get('catatan', '-') or '-'}",
-        "",
-        "Dokumen internal untuk eksekusi People Ops.",
-    ])
-    return lines
-
-
-def _generate_basic_pdf(lines: list[str]) -> bytes:
-    """Dependency-free PDF fallback untuk runtime tanpa ReportLab."""
-    wrapped = []
-    for line in lines:
-        wrapped.extend(textwrap.wrap(str(line), width=88, replace_whitespace=False) or [""])
-    per_page = 48
-    pages = [wrapped[i:i + per_page] for i in range(0, len(wrapped), per_page)] or [[""]]
-
-    objects: dict[int, bytes] = {}
-    font_id = 3
-    objects[1] = b"<< /Type /Catalog /Pages 2 0 R >>"
-    objects[font_id] = b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"
-    page_ids = []
-    next_id = 4
-    for page_no, page_lines in enumerate(pages, start=1):
-        page_id, content_id = next_id, next_id + 1
-        next_id += 2
-        page_ids.append(page_id)
-        commands = ["0.26 0.20 0.71 rg", "50 785 495 32 re f", "0 g", "BT", "/F1 10 Tf", "50 760 Td"]
-        for idx, line in enumerate(page_lines):
-            safe = str(line).encode("cp1252", "replace").decode("cp1252")
-            safe = safe.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-            font_size = 15 if page_no == 1 and idx == 0 else 10
-            commands.extend([f"/F1 {font_size} Tf", f"({safe}) Tj", "0 -14 Td"])
-        commands.extend(["ET", "BT", "/F1 8 Tf", f"500 24 Td", f"(Page {page_no}/{len(pages)}) Tj", "ET"])
-        stream = "\n".join(commands).encode("cp1252", "replace")
-        objects[content_id] = b"<< /Length " + str(len(stream)).encode() + b" >>\nstream\n" + stream + b"\nendstream"
-        objects[page_id] = (
-            f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
-            f"/Resources << /Font << /F1 {font_id} 0 R >> >> /Contents {content_id} 0 R >>"
-        ).encode()
-    kids = " ".join(f"{pid} 0 R" for pid in page_ids)
-    objects[2] = f"<< /Type /Pages /Kids [{kids}] /Count {len(page_ids)} >>".encode()
-
-    output = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-    offsets = [0]
-    for obj_id in range(1, max(objects) + 1):
-        offsets.append(len(output))
-        output.extend(f"{obj_id} 0 obj\n".encode())
-        output.extend(objects[obj_id])
-        output.extend(b"\nendobj\n")
-    xref = len(output)
-    output.extend(f"xref\n0 {len(offsets)}\n".encode())
-    output.extend(b"0000000000 65535 f \n")
-    for offset in offsets[1:]:
-        output.extend(f"{offset:010d} 00000 n \n".encode())
-    output.extend(f"trailer\n<< /Size {len(offsets)} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode())
-    return bytes(output)
-
-
-def generate_scr_proposal_pdf(row: dict) -> bytes:
-    """Generate proposal PDF; ReportLab preferred, dependency-free fallback available."""
-    lines = _scr_pdf_lines(row)
-    if not REPORTLAB_OK:
-        return _generate_basic_pdf(lines)
-
-    buf = BytesIO()
-    pdf = rl_canvas.Canvas(buf, pagesize=A4)
-    width, height = A4
-    y = height - 58
-
-    def new_page(page_no: int):
-        nonlocal y
-        pdf.setFillColor(PDF_PRIMARY)
-        pdf.rect(0, height - 42, width, 42, fill=1, stroke=0)
-        pdf.setFillColor(colors.white)
-        pdf.setFont("Helvetica-Bold", 9)
-        pdf.drawRightString(width - 40, height - 26, f"SCR Proposal · Page {page_no}")
-        pdf.setFillColor(PDF_TEXT_DARK)
-        y = height - 64
-
-    page_no = 1
-    new_page(page_no)
-    for idx, line in enumerate(lines):
-        is_title = idx == 0
-        is_heading = line in {"SUBMITTER", "EMPLOYEE", "PERUBAHAN DISETUJUI", "JUSTIFIKASI", "REVIEW OD"}
-        wrapped = textwrap.wrap(str(line), width=92) or [""]
-        needed = 22 if is_title else (18 if is_heading else 14 * len(wrapped))
-        if y - needed < 48:
-            pdf.showPage()
-            page_no += 1
-            new_page(page_no)
-        if is_title:
-            pdf.setFont("Helvetica-Bold", 16)
-            pdf.setFillColor(PDF_PRIMARY)
-            pdf.drawString(42, y, line)
-            y -= 26
-        elif is_heading:
-            pdf.setFont("Helvetica-Bold", 10)
-            pdf.setFillColor(PDF_PRIMARY)
-            pdf.drawString(42, y, line)
-            y -= 17
-        else:
-            pdf.setFont("Helvetica", 9)
-            pdf.setFillColor(PDF_TEXT_DARK)
-            for part in wrapped:
-                pdf.drawString(50, y, part)
-                y -= 13
-            if not line:
-                y -= 4
-    pdf.save()
-    return buf.getvalue()
-
-
-def render_scr_proposal(row: dict, theme: dict, key_prefix: str) -> None:
-    """Render safe HTML preview and a PDF download button."""
-    esc = lambda value: html.escape(str(value or "-"))
-    changes = parse_change_request_json(row.get("change_request", ""))
-    if changes:
-        change_html = "".join(
-            f"<tr><td>{esc(c.get('field'))}</td><td>{esc(c.get('before'))}</td><td>{esc(c.get('after'))}</td></tr>"
-            for c in changes
-        )
-    else:
-        change_html = (
-            f"<tr><td>{esc(row.get('change_type'))}</td>"
-            f"<td>{esc(row.get('data_lama'))}</td><td>{esc(row.get('data_baru'))}</td></tr>"
-        )
-    st.markdown(f"""
-    <div style="background:{theme['bg3']};border:1px solid {theme['border']};border-radius:12px;padding:20px;margin:10px 0 14px 0;">
-      <div style="font-size:18px;font-weight:700;color:{theme['text']};">SCR Proposal Document</div>
-      <div style="font-size:12px;color:{theme['text_variant']};margin:3px 0 16px 0;">Dokumen internal untuk People Ops</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;color:{theme['text']};">
-        <div><b>Nomor tiket:</b> {esc(row.get('request_id'))}</div><div><b>Tanggal submit:</b> {esc(row.get('submitted_date'))}</div>
-        <div><b>Tanggal approve:</b> {esc(row.get('reviewed_date'))}</div><div><b>Tipe:</b> {esc(row.get('change_type'))}</div>
-        <div><b>Submitter:</b> {esc(row.get('requester_name'))}</div><div><b>Email:</b> {esc(row.get('requester_email'))}</div>
-        <div><b>Employee:</b> {esc(row.get('employee_name'))}</div><div><b>Employee ID:</b> {esc(row.get('employee_id'))}</div>
-      </div>
-      <table style="width:100%;border-collapse:collapse;margin-top:16px;font-size:12px;color:{theme['text']};">
-        <thead><tr><th style="text-align:left;padding:8px;border-bottom:1px solid {theme['border']};">Field</th><th style="text-align:left;padding:8px;border-bottom:1px solid {theme['border']};">Sebelum</th><th style="text-align:left;padding:8px;border-bottom:1px solid {theme['border']};">Sesudah</th></tr></thead>
-        <tbody>{change_html}</tbody>
-      </table>
-      <div style="font-size:12px;color:{theme['text']};margin-top:14px;"><b>Justifikasi:</b> {esc(row.get('alasan'))}</div>
-      <div style="font-size:12px;color:{theme['text']};margin-top:8px;"><b>Reviewer OD:</b> {esc(row.get('reviewed_by'))}</div>
-      <div style="font-size:12px;color:{theme['text']};margin-top:8px;"><b>Catatan OD:</b> {esc(row.get('catatan'))}</div>
-    </div>
-    """, unsafe_allow_html=True)
-    request_id = str(row.get("request_id", "SCR")).replace("/", "-")
-    st.download_button(
-        "⬇️ Download Proposal PDF",
-        data=generate_scr_proposal_pdf(dict(row)),
-        file_name=f"{request_id}_proposal.pdf",
-        mime="application/pdf",
-        key=f"{key_prefix}_{request_id}",
-        use_container_width=True,
-    )
 
 
 def update_cr_status(request_id: str, status: str, reviewed_by: str, catatan: str) -> bool:
@@ -1579,21 +913,14 @@ def update_cr_status(request_id: str, status: str, reviewed_by: str, catatan: st
     if not ws:
         return False
     try:
-        # [QA ID-01] Cari persis di kolom A dan WAJIB unik. find() lama mengambil kecocokan
-        # pertama, sehingga nomor ganda bisa meng-update baris yang salah.
-        _cells = [c for c in ws.findall(request_id, in_column=1)
-                  if str(c.value).strip() == str(request_id).strip()]
-        if len(_cells) != 1:
-            st.error(f"Nomor tiket {request_id} "
-                     + ("tidak ditemukan." if not _cells else "ganda di sheet; keputusan diblokir sampai nomor dinormalkan."))
+        cell = ws.find(request_id)
+        if not cell:
             return False
-        row = _cells[0].row
-        ws.batch_update(
-        [{"range": f"K{row}:N{row}",
-        "values": [[status, reviewed_by,
-        datetime.now(_WIB).strftime("%Y-%m-%d %H:%M"), catatan]]}],
-        value_input_option="USER_ENTERED",
-        )
+        row = cell.row
+        ws.update_cell(row, 11, status)
+        ws.update_cell(row, 12, reviewed_by)
+        ws.update_cell(row, 13, datetime.now().strftime("%Y-%m-%d %H:%M"))
+        ws.update_cell(row, 14, catatan)
         return True
     except Exception as e:
         st.error(f"Gagal update: {e}")
@@ -1601,15 +928,8 @@ def update_cr_status(request_id: str, status: str, reviewed_by: str, catatan: st
 
 
 def generate_request_id() -> str:
-    """
-    [QA ID-01] Nomor SEMENTARA yang UNIK-BY-CONSTRUCTION: SCR-YYYYMMDD-Txxxxxxxxxx
-    (xxxxxxxxxx = 10 heks acak). Tidak membaca sheet, jadi dua submission bersamaan tidak
-    pernah mendapat nomor sementara yang sama. Nomor FINAL (SCR-YYYYMMDD-NNN) ditetapkan
-    di save_change_request() dari POSISI BARIS setelah append. Bila finalisasi gagal,
-    tiket tetap unik dengan nomor sementara ini (tidak ada duplikat).
-    """
-    import uuid as _uuid_t
-    return f"SCR-{datetime.now(_WIB).strftime('%Y%m%d')}-T{_uuid_t.uuid4().hex[:10].upper()}"
+    import time
+    return f"REQ-{int(time.time())}"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1628,7 +948,6 @@ def get_all_managers(emp_ids: list, all_data: pd.DataFrame) -> set:
     return result
 
 
-@st.cache_data(ttl=300, show_spinner=False)
 def build_tree_json(full_data: pd.DataFrame, selected_div: str, root_ids: list, mode: str = "division") -> list:
     valid = full_data[full_data["Manager ID"].notna() & (full_data["Manager ID"] != "") & (full_data["Manager ID"] != "nan")]
     children_map: dict = valid.groupby("Manager ID")["Employee ID"].apply(list).to_dict()
@@ -1670,279 +989,6 @@ def build_tree_json(full_data: pd.DataFrame, selected_div: str, root_ids: list, 
     return [n for rid in root_ids if (n := build_node(rid))]
 
 
-# ══════════════════════════════════════════════════════════════════
-# HoB VIEW — 22 Agt 2026 (Brief PM/CEO, P0)
-# ══════════════════════════════════════════════════════════════════
-# Mapping short-name di kolom "Primary Budget Holder" (kolom R Sheet)
-# -> Employee ID HoB yang sesungguhnya. WAJIB manual-update dict ini
-# kalau ada HoB baru atau short-name di kolom R berubah — tidak ada
-# cara otomatis untuk derive ini dari data yang ada (itulah kenapa
-# brief PM menyediakan tabel mapping terpisah).
-HOB_MAPPING = {
-    "ANTHONY":  {"name": "Anthony Johanes Kosasih",   "id": "SLKR304"},
-    "SANDY":    {"name": "Sandy Suryanto",             "id": "SLKR115"},
-    "JANSEN":   {"name": "Jansen Jumino",              "id": "MKR1240"},
-    "AVIANDRI": {"name": "Aviandri Hidayat",           "id": "MKR639"},
-    "SUWANDI":  {"name": "Suwandi Soh",                "id": "SLKR001"},
-    "STEVENS":  {"name": "Stevens Jethefer",           "id": "SLKR474"},
-    "STANDIE":  {"name": "Standie Nagadi",             "id": "MKR4066"},
-    "ARVY":     {"name": "Arvy Egadipoera",            "id": "MKR581"},
-    "SHREY":    {"name": "Shrey Shukla",               "id": "MKR1829"},
-    "BRENDAN":  {"name": "Brendan Limn Rakphongpha",   "id": "MKR1132"},
-}
-
-
-def _normalize_hob_key(raw) -> str:
-    """'  anthony ' -> 'ANTHONY'. Dipakai supaya matching kolom R tidak
-    gagal cuma gara-gara beda kapitalisasi/spasi."""
-    return str(raw).strip().upper()
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def build_hob_tree_json(full_data: pd.DataFrame, hob_ids_filter: tuple = ()) -> list:
-    """
-    Bangun tree untuk HoB View. Struktur (per brief PM):
-        Level 0 (root) : HoB (10 orang, fixed dari HOB_MAPPING)
-        Level 1        : employee yang "Primary Budget Holder"-nya (kolom R)
-                         cocok dengan HoB tsb — DITENTUKAN BUKAN dari
-                         Manager ID, tapi dari kolom Budget Holder.
-        Level 2+       : dari titik itu turun, ikut Manager ID normal
-                         (reporting line asli) — sama seperti Functional.
-
-    Kenapa dua mekanisme digabung: brief eksplisit bilang level pertama
-    dari HoB itu "C-1/Leader yang Budget Holder-nya = HoB ini", lalu
-    "dst..." — tidak ada kolom Budget Holder berjenjang untuk tiap level,
-    jadi begitu ketemu leader itu, sisanya ikut hierarki manager biasa.
-
-    Known limitation (data quality, BUKAN bug logic):
-    Kalau kolom Primary Budget Holder di data tidak konsisten dengan
-    Manager ID asli (misal seorang staff level bawah ke-tag Budget Holder
-    yang beda dari manager langsungnya), staff itu BISA muncul di 2 HoB
-    sekaligus: sekali sebagai turunan wajar manager-nya, sekali lagi
-    sebagai "root palsu" di HoB lain karena tag Budget Holder-nya salah.
-    Ini sinyal untuk audit data, bukan sesuatu yang bisa "diperbaiki
-    diam-diam" di kode — kalau ketemu kasus begini, cek data Primary
-    Budget Holder karyawan tsb, jangan asumsikan kode salah.
-    """
-    _tree_df = full_data.drop_duplicates(subset=["Employee ID"], keep="last")
-    manager_of: dict = _tree_df.set_index("Employee ID")["Manager ID"].to_dict()
-
-    valid = full_data[full_data["Manager ID"].notna() & (full_data["Manager ID"] != "") & (full_data["Manager ID"] != "nan")]
-    children_map: dict = valid.groupby("Manager ID")["Employee ID"].apply(list).to_dict()
-
-    info_map: dict = (
-        _tree_df
-        .set_index("Employee ID")[["Employee Name", "Job Position", "Division", "SBU/Tribe", "Business Unit", "Primary Budget Holder"]]
-        .rename(columns={"Employee Name": "name", "Job Position": "position", "Division": "division",
-                         "SBU/Tribe": "sbu", "Business Unit": "bu", "Primary Budget Holder": "bh"})
-        .to_dict(orient="index")
-    )
-
-    def build_node(emp_id: str, visited: set) -> dict | None:
-        if emp_id in visited or emp_id not in info_map:
-            return None
-        visited.add(emp_id)
-        info = info_map[emp_id]
-        node = {
-            "id": emp_id, "name": info["name"], "position": info["position"],
-            "division": info["division"], "sbu": info.get("sbu", ""), "bu": info["bu"],
-            "in_div": True, "children": [],
-        }
-        for cid in children_map.get(emp_id, []):
-            child = build_node(cid, visited)
-            if child:
-                node["children"].append(child)
-        return node
-
-    hob_items = list(HOB_MAPPING.items())
-    if hob_ids_filter:
-        hob_items = [(k, v) for k, v in hob_items if v["id"] in hob_ids_filter]
-
-    trees = []
-    for short_key, hob_info in hob_items:
-        hob_id = hob_info["id"]
-        if hob_id not in info_map:
-            # HoB-nya sendiri tidak ada di scope full_data (misal ke-filter
-            # keluar oleh BU/Div/SBU filter di UI) — skip, jangan crash.
-            continue
-
-        # Kandidat level-1: siapapun yang Primary Budget Holder-nya cocok.
-        candidate_ids = {
-            eid for eid, info in info_map.items()
-            if eid != hob_id and _normalize_hob_key(info.get("bh", "")) == short_key
-        }
-        # True root dari kandidat = yang manager LANGSUNG-nya BUKAN bagian
-        # dari kandidat yang sama (menghindari orang yang sebenarnya cucu/
-        # cicit organisasi ikut nangkring jadi "anak langsung" HoB hanya
-        # karena kolom Budget Holder-nya kebetulan sama — pola yang sama
-        # persis dipakai buat cari root_ids di Functional/company-wide).
-        true_roots = sorted(cid for cid in candidate_ids if manager_of.get(cid, "") not in candidate_ids)
-
-        hob_node = {
-            "id": hob_id, "name": info_map[hob_id]["name"], "position": info_map[hob_id]["position"],
-            "division": info_map[hob_id]["division"], "sbu": info_map[hob_id].get("sbu", ""),
-            "bu": info_map[hob_id]["bu"], "in_div": True, "children": [],
-        }
-        _visited = {hob_id}
-        for rid in true_roots:
-            child = build_node(rid, _visited)
-            if child:
-                hob_node["children"].append(child)
-        trees.append(hob_node)
-
-    return trees
-
-
-def flatten_tree_ids(node: dict) -> set:
-    """Kumpulkan semua Employee ID dalam satu subtree (termasuk node itu sendiri)."""
-    ids = {node["id"]}
-    for c in node.get("children", []):
-        ids |= flatten_tree_ids(c)
-    return ids
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def get_hob_membership_map(full_data: pd.DataFrame) -> dict:
-    """
-    [HoB VIEW BUGFIX — 27 Agt 2026] emp_id -> nama HoB lengkap.
-    Dipakai untuk fitur "search by name" di HoB View: begitu user cari
-    seseorang, kita perlu tahu dia ada di tree HoB yang mana supaya
-    filter "Filter HoB" bisa auto-select ke situ (Search harus BISA
-    lintas-HoB, karena karyawan biasa TIDAK TAHU dia masuk HoB siapa
-    dari data mentah — itu justru salah satu alasan HoB View ini ada).
-
-    Dihitung dari build_hob_tree_json TANPA filter (company-wide penuh)
-    supaya hasil pencarian tidak bergantung pada filter BU/Div/SBU/HoB
-    yang sedang aktif di UI saat ini.
-    """
-    trees = build_hob_tree_json(full_data, hob_ids_filter=())
-    membership = {}
-    for hob_node in trees:
-        for eid in flatten_tree_ids(hob_node):
-            membership[eid] = hob_node["name"]
-    return membership
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def get_level_from_root(root_id: str, all_df: pd.DataFrame, max_depth: int = 5) -> dict:
-    """
-    [Diekstrak ke module-level — 27 Agt 2026, fix bug overlay HoB]
-    Definisi RESMI "Chief/C-1/C-2" di aplikasi ini: BFS level dari
-    CHIEF_ROOT yang FIXED (SLKR001), BUKAN dari root lokal tree yang
-    kebetulan sedang dirender di layar (yang berubah-ubah tergantung
-    filter Divisi/BU aktif). Sebelumnya fungsi ini cuma didefinisikan
-    inline di dalam tab Daftar Manager — sekarang jadi module-level
-    supaya HoB Overlay bisa pakai definisi C-1 yang PERSIS SAMA. Kalau
-    dua tempat ini sampai punya definisi "C-1" yang beda, itu bug kelas
-    berat (data leadership yang salah ditampilkan ke CEO).
-    """
-    levels: dict = {}
-    current = [root_id]
-    for depth in range(max_depth + 1):
-        next_lvl = []
-        for mgr_id in current:
-            children = all_df[all_df["Manager ID"] == mgr_id]["Employee ID"].tolist()
-            for child in children:
-                if child not in levels:
-                    levels[child] = depth
-                    next_lvl.append(child)
-        current = next_lvl
-        if not current:
-            break
-    return levels
-
-
-@st.cache_data(ttl=300, show_spinner=False)
-def annotate_hob_overlay(tree_nodes: list, scope_data: pd.DataFrame) -> list:
-    """
-    [HoB OVERLAY — 27 Agt 2026, brief PM/CEO]
-    [FIX #5 — FINAL, konfirmasi eksplisit Dave 27 Agt 2026]
-
-    "C-1" = employee yang berada PERSIS di local depth 2 dari CEO
-    (CHIEF_ROOT), FIXED/SERAGAM di SELURUH cabang organisasi — Dave
-    mengonfirmasi eksplisit ini FIXED, bukan bervariasi per cabang.
-    "Depth 2" di sini pakai terminologi yang SAMA dengan dropdown
-    "Expand Level" yang sudah ada di UI org chart (Top Level=depth0,
-    Level 1=depth1, Level 2=depth2, dst) — CEO sendiri = Top Level,
-    direct report CEO = Level 1, dan cucu-report (Level 2) = C-1.
-
-    Riwayat 4 iterasi sebelum versi final ini (didokumentasikan supaya
-    ada yang buka kode ini nanti tidak bingung kenapa ada v1-v5):
-      v1 (salah): "C-1" = anak langsung root LOKAL yang sedang
-        ditampilkan — gagal di mode Per Divisi / cabang dengan Chief
-        tambahan (CEO -> CTO -> VP, VP-nya yang harusnya C-1).
-      v2 (ditolak PM saat itu): "C-1" = hierarchy level generik dari
-        CHIEF_ROOT (get_level_from_root level==1) — PM bilang ini
-        konsepnya salah, definisi Chief/C-1/C-2 itu milik tab Daftar
-        Manager, bukan cara yang tepat untuk overlay ini.
-      v3 (ditolak juga): overlay ditempel ke SIAPAPUN yang Primary
-        Budget Holder-nya terisi, di depth manapun — muncul di banyak
-        node sekaligus (termasuk staff), bukan cuma satu label per C-1.
-      v4 (ditolak juga setelah screenshot lanjutan): definisi structural
-        murni (manager_id chain via C-Level ber-BU=Management) — secara
-        konsep benar tapi ternyata BUKAN yang dimaksud Dave.
-    v5/final (versi ini): Dave eksplisit mengonfirmasi definisinya balik
-    ke "depth FIXED dari CEO" — SECARA MATEMATIS ini SAMA dengan v2
-    (get_level_from_root level==1 = Level 2 versi UI, lihat catatan
-    off-by-one di bawah), bedanya kali ini dikonfirmasi eksplisit oleh
-    Dave sebagai aturan yang FIXED di semua cabang (bukan asumsi generik
-    yang jadi alasan v2 ditolak dulu). Definisi structural v4 (fungsi
-    get_c1_employee_ids, BU=Management) SUDAH TIDAK DIPAKAI di sini —
-    kalau butuh riwayatnya, cek versi file sebelumnya.
-
-    ⚠️ CATATAN OFF-BY-ONE: get_level_from_root() (dipakai bareng tab
-    Daftar Manager) mulai hitung dari 0 untuk ANAK LANGSUNG CEO —
-    artinya level==0 di fungsi itu = "Level 1" versi UI, level==1 =
-    "Level 2" versi UI. Makanya syarat di bawah cek `level == 1`, BUKAN
-    `level == 2` — kalau bingung kenapa angkanya beda dari kata
-    "Level 2" yang diucapkan Dave, inilah alasannya.
-    """
-    hierarchy_levels = get_level_from_root(CHIEF_ROOT, df, max_depth=6)   # SELALU company-wide, bukan scope_data yang sudah difilter
-    bh_map = (
-        scope_data.drop_duplicates(subset=["Employee ID"], keep="last")
-        .set_index("Employee ID")["Primary Budget Holder"]
-        .to_dict()
-    )
-
-    def walk(node: dict) -> None:
-        if hierarchy_levels.get(node["id"]) == 1:   # "Level 2" versi UI — lihat catatan off-by-one di atas
-            hob_key  = _normalize_hob_key(bh_map.get(node["id"], ""))
-            hob_info = HOB_MAPPING.get(hob_key)
-            if hob_info:
-                node["hob_overlay"] = hob_info["name"]
-        for child in node.get("children", []):
-            walk(child)
-
-    for root in tree_nodes:
-        walk(root)
-    return tree_nodes
-
-
-def _render_chart_iframe(html: str, height: int = 680, scrolling: bool = False) -> None:
-    """
-    Wrapper kompatibel untuk render HTML org chart di iframe.
-    `st.components.v1.html` resmi deprecated, deadline removal 2026-06-01 (sudah lewat).
-    API baru `st.iframe` punya signature berbeda (mungkin tidak menerima `scrolling`),
-    jadi wrapper ini mencoba st.iframe dulu dengan beberapa fallback signature,
-    dan baru fallback ke st.components.v1.html kalau semuanya gagal — org chart
-    tidak boleh crash total hanya karena perbedaan versi Streamlit.
-    """
-    if hasattr(st, "iframe"):
-        try:
-            st.iframe(html, height=height, scrolling=scrolling)
-            return
-        except TypeError:
-            pass
-        except Exception:
-            logger.warning("st.iframe gagal render, fallback ke components.v1.html")
-        try:
-            st.iframe(html, height=height)
-            return
-        except Exception:
-            logger.warning("st.iframe (tanpa scrolling) gagal render, fallback ke components.v1.html")
-    st.components.v1.html(html, height=height, scrolling=scrolling)
-
-
 def to_excel(dataframe: pd.DataFrame) -> bytes:
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -1978,7 +1024,7 @@ def _draw_pdf_header(c, page_w, page_h, title_text, subtitle, total_nodes, downl
     - Judul chart (nama divisi)
     - Metadata: BU, Divisi, Tanggal unduh, Total karyawan
     """
-    HEADER_H = 100
+    HEADER_H = 80
 
     # Bar aksen atas
     c.setFillColor(PDF_PRIMARY)
@@ -1997,7 +1043,7 @@ def _draw_pdf_header(c, page_w, page_h, title_text, subtitle, total_nodes, downl
     logo_x, logo_y = 36, page_h - 36
     c.setFillColor(PDF_PRIMARY)
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(logo_x + 16, logo_y - 12, "mekari")
+    c.drawString(logo_x + 16, logo_y - 12, "DAVE")
     # bintang sederhana: lingkaran kecil
     c.circle(logo_x + 5, logo_y - 8, 5, fill=1, stroke=0)
 
@@ -2033,8 +1079,8 @@ def _draw_pdf_footer(c, page_w, downloaded_at):
     c.line(36, 28, page_w - 36, 28)
     c.setFillColor(PDF_TEXT_MUTED)
     c.setFont("Helvetica", 7)
-    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — Mekari People Dashboard")
-    c.drawRightString(page_w - 36, 18, "People Organization Dashboard")
+    c.drawString(36, 18, f"Dokumen ini bersifat konfidensial — dicetak {downloaded_at} — DAVE People Dashboard")
+    c.drawRightString(page_w - 36, 18, "HR Organization Dashboard")
 
 
 def _wrap_text(text: str, max_chars: int) -> list:
@@ -2055,15 +1101,10 @@ def _wrap_text(text: str, max_chars: int) -> list:
     return lines if lines else [text[:max_chars]]
 
 
-def generate_pdf(tree_nodes, title_text, div_name="", bu_name="", max_level="all"):
+def generate_pdf(tree_nodes, title_text, div_name="", bu_name=""):
     """
-    PDF Full — node lebih besar, nama+posisi+SBU lengkap,
+    PDF Full — semua level, node lebih besar, nama+posisi+SBU lengkap,
     header profesional dengan metadata waktu & divisi.
-
-    `max_level` menyesuaikan dokumen dengan filter "Expand Level" yang
-    sedang aktif di layar ("all" / "top" / "level1") — konsisten dengan
-    `level_map` yang dipakai render_org_chart(), agar isi PDF selalu
-    mencerminkan struktur yang sedang dicek user, bukan selalu full tree.
     """
     if not REPORTLAB_OK:
         raise ImportError("ReportLab tidak tersedia")
@@ -2071,33 +1112,10 @@ def generate_pdf(tree_nodes, title_text, div_name="", bu_name="", max_level="all
     # Node dimensions — lebih besar untuk muat 4 baris teks
     NODE_W, NODE_H = 180, 76
     H_GAP, V_GAP   = 20, 52
-    HEADER_H        = 100  # ruang header di atas
+    HEADER_H        = 90   # ruang header di atas
     FOOTER_H        = 44   # ruang footer di bawah
 
-    downloaded_at = datetime.now(_WIB).strftime("%d %B %Y, %H:%M WIB")
-
-    # ── Trim tree sesuai Expand Level filter yang aktif di layar ──────
-    _level_depth_map = {"all": None, "top": 0, "level1": 1, "level2": 2, "level3": 3}
-    _max_d = _level_depth_map.get(max_level, None)
-
-    def _trim_by_level(node, depth=0):
-        if _max_d is not None and depth > _max_d:
-            return None
-        trimmed = dict(node)
-        trimmed["children"] = [
-            ch2 for ch2 in [_trim_by_level(ch, depth + 1) for ch in node.get("children", [])] if ch2
-        ] if (_max_d is None or depth < _max_d) else []
-        return trimmed
-
-    tree_nodes = [t for t in [_trim_by_level(r) for r in tree_nodes] if t]
-
-    _level_subtitle_map = {
-        "all": "Organization Chart — Full Structure",
-        "top": "Organization Chart — Top Level Only",
-        "level1": "Organization Chart — s/d Level 1",
-        "level2": "Organization Chart — s/d Level 2",
-        "level3": "Organization Chart — s/d Level 3",
-    }
+    downloaded_at = datetime.now().strftime("%d %B %Y, %H:%M")
 
     positions, draw_order = {}, []
 
@@ -2149,7 +1167,7 @@ def generate_pdf(tree_nodes, title_text, div_name="", bu_name="", max_level="all
 
     # Header & Footer
     _draw_pdf_header(c, page_w, page_h, title_text,
-                     subtitle=_level_subtitle_map.get(max_level, "Organization Chart — Full Structure"),
+                     subtitle=f"Organization Chart — Full Structure",
                      total_nodes=len(draw_order),
                      downloaded_at=downloaded_at,
                      div_name=div_name, bu_name=bu_name)
@@ -2237,6 +1255,10 @@ def generate_pdf(tree_nodes, title_text, div_name="", bu_name="", max_level="all
             sbu_disp = sbu_clean[:30] + "…" if len(sbu_clean) > 30 else sbu_clean
             c.drawCentredString(text_x, sbu_y, sbu_disp)
 
+        # Employee ID kecil di pojok kanan bawah
+        c.setFont("Helvetica", 5.5)
+        c.setFillColor(PDF_TEXT_MUTED)
+        c.drawRightString(x_left + NODE_W - 6, y_bottom + 5, emp_id)
 
     # Legend
     leg_x, leg_y = 36, FOOTER_H + 8
@@ -2258,36 +1280,34 @@ def generate_pdf(tree_nodes, title_text, div_name="", bu_name="", max_level="all
 
 def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
     """
-    PDF Summary — tampilkan hingga Level 3, node lebih informatif,
-    header profesional, nama + posisi + SBU lengkap (Level 0-2),
-    posisi-only compact card untuk Level 3.
+    PDF Summary — tampilkan hingga Level 2, node lebih informatif,
+    header profesional, nama + posisi + SBU lengkap.
     """
     if not REPORTLAB_OK:
         raise ImportError("ReportLab tidak tersedia")
 
     NODE_W_FULL, NODE_H_FULL = 190, 82
     NODE_W_L2,   NODE_H_L2   = 160, 72
-    NODE_W_L3,   NODE_H_L3   = 130, 46   # depth 3 — position-only card
     H_GAP, V_GAP = 18, 48
-    HEADER_H     = 100
+    HEADER_H     = 90
     FOOTER_H     = 44
 
-    downloaded_at = datetime.now(_WIB).strftime("%d %B %Y, %H:%M WIB")
+    downloaded_at = datetime.now().strftime("%d %B %Y, %H:%M")
 
     def trim_tree(node, depth=0):
-        if depth > 3:
+        if depth > 2:
             return None
         trimmed = dict(node)
         trimmed["_depth"]   = depth
-        trimmed["children"] = [] if depth >= 3 else [
+        trimmed["children"] = [] if depth == 2 else [
             ch2 for ch2 in [trim_tree(ch, depth + 1) for ch in node.get("children", [])] if ch2
         ]
         return trimmed
 
     trimmed_roots = [t for t in [trim_tree(r) for r in tree_nodes] if t]
 
-    def node_w(n): return NODE_W_FULL if n["_depth"] < 2 else (NODE_W_L2 if n["_depth"] == 2 else NODE_W_L3)
-    def node_h(n): return NODE_H_FULL if n["_depth"] < 2 else (NODE_H_L2 if n["_depth"] == 2 else NODE_H_L3)
+    def node_w(n): return NODE_W_FULL if n["_depth"] < 2 else NODE_W_L2
+    def node_h(n): return NODE_H_FULL if n["_depth"] < 2 else NODE_H_L2
 
     def subtree_width(n):
         if not n["children"]:
@@ -2339,7 +1359,7 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
 
     # Header & Footer
     _draw_pdf_header(c, page_w, page_h, title_text,
-                     subtitle=f"Organization Chart — Summary (s/d Level 3)",
+                     subtitle=f"Organization Chart — Summary (s/d Level 2)",
                      total_nodes=len(draw_list),
                      downloaded_at=downloaded_at,
                      div_name=div_name, bu_name=bu_name)
@@ -2351,7 +1371,7 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
         _, ny, depth = positions[node["id"]]
         if depth not in y_seen:
             y_seen[depth] = ny
-    for depth, lbl in {0: "Top Level", 1: "Level 1", 2: "Level 2", 3: "Level 3"}.items():
+    for depth, lbl in {0: "Top Level", 1: "Level 1", 2: "Level 2"}.items():
         if depth in y_seen:
             c.setFillColor(PDF_TEXT_MUTED)
             c.setFont("Helvetica-Bold", 7)
@@ -2405,58 +1425,48 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
         c.setFillColor(bar_c)
         c.roundRect(x_left, y_bot, 3, nh, 3, fill=1, stroke=0)
 
-        if depth >= 3:
-            # ── Depth 3: hanya tampilkan Job Position ───────────────────────
-            # Satu baris posisi di tengah card — nama tidak ditampilkan
-            # agar card tetap compact dan terbaca di halaman.
-            pos_lines_l3 = _wrap_text(position, 20)
-            c.setFillColor(pos_c)
-            c.setFont("Helvetica", 7)
-            card_mid_y = y_bot + nh / 2
-            if len(pos_lines_l3) >= 2:
-                c.drawCentredString(nx, card_mid_y + 5, pos_lines_l3[0])
-                c.drawCentredString(nx, card_mid_y - 5, pos_lines_l3[1])
-            else:
-                c.drawCentredString(nx, card_mid_y - 3, pos_lines_l3[0])
+        # Nama (bold, wrap)
+        name_lines = _wrap_text(name, 24 if depth < 2 else 20)
+        c.setFillColor(name_c)
+        font_size_name = 9.5 if depth < 2 else 9
+        c.setFont("Helvetica-Bold", font_size_name)
+        line_h_name = 11
+        if len(name_lines) >= 2:
+            c.drawCentredString(nx, y_bot + nh - 17, name_lines[0])
+            c.drawCentredString(nx, y_bot + nh - 17 - line_h_name, name_lines[1])
+            pos_y = y_bot + nh - 17 - line_h_name - 13
         else:
-            # ── Depth 0-2: nama + posisi + SBU (layout existing) ─────────────
-            name_lines = _wrap_text(name, 24 if depth < 2 else 20)
-            c.setFillColor(name_c)
-            font_size_name = 9.5 if depth < 2 else 9
-            c.setFont("Helvetica-Bold", font_size_name)
-            line_h_name = 11
-            if len(name_lines) >= 2:
-                c.drawCentredString(nx, y_bot + nh - 17, name_lines[0])
-                c.drawCentredString(nx, y_bot + nh - 17 - line_h_name, name_lines[1])
-                pos_y = y_bot + nh - 17 - line_h_name - 13
-            else:
-                c.drawCentredString(nx, y_bot + nh - 20, name_lines[0])
-                pos_y = y_bot + nh - 20 - 13
+            c.drawCentredString(nx, y_bot + nh - 20, name_lines[0])
+            pos_y = y_bot + nh - 20 - 13
 
-            # Posisi (italic, wrap)
-            pos_lines = _wrap_text(position, 26 if depth < 2 else 22)
-            c.setFillColor(pos_c)
-            c.setFont("Helvetica", 7.5 if depth < 2 else 7)
-            for li, pl in enumerate(pos_lines[:2]):
-                c.drawCentredString(nx, pos_y - li * 10, pl)
-            sbu_y = pos_y - len(pos_lines[:2]) * 10 - 6
+        # Posisi (italic, wrap)
+        pos_lines = _wrap_text(position, 26 if depth < 2 else 22)
+        c.setFillColor(pos_c)
+        c.setFont("Helvetica", 7.5 if depth < 2 else 7)
+        for li, pl in enumerate(pos_lines[:2]):
+            c.drawCentredString(nx, pos_y - li * 10, pl)
+        sbu_y = pos_y - len(pos_lines[:2]) * 10 - 6
 
-            # Divisi (jika out-of-div, tampilkan divisi aslinya)
-            if not in_div and division and sbu_y > y_bot + 16:
-                div_short = division[:24] + "…" if len(division) > 24 else division
-                c.setFont("Helvetica", 6)
-                c.setFillColor(PDF_TEXT_MUTED)
-                c.drawCentredString(nx, sbu_y, div_short)
-                sbu_y -= 9
+        # Divisi (jika out-of-div, tampilkan divisi aslinya)
+        if not in_div and division and sbu_y > y_bot + 16:
+            div_short = division[:24] + "…" if len(division) > 24 else division
+            c.setFont("Helvetica", 6)
+            c.setFillColor(PDF_TEXT_MUTED)
+            c.drawCentredString(nx, sbu_y, div_short)
+            sbu_y -= 9
 
-            # SBU
-            sbu_clean = sbu.strip() if sbu and sbu.strip() not in ("", "nan") else ""
-            if sbu_clean and sbu_y > y_bot + 7:
-                c.setFont("Helvetica-Oblique", 6.5)
-                c.setFillColor(PDF_PRIMARY if in_div else PDF_OUT_BDR)
-                sbu_disp = sbu_clean[:26] + "…" if len(sbu_clean) > 26 else sbu_clean
-                c.drawCentredString(nx, sbu_y, sbu_disp)
+        # SBU
+        sbu_clean = sbu.strip() if sbu and sbu.strip() not in ("", "nan") else ""
+        if sbu_clean and sbu_y > y_bot + 7:
+            c.setFont("Helvetica-Oblique", 6.5)
+            c.setFillColor(PDF_PRIMARY if in_div else PDF_OUT_BDR)
+            sbu_disp = sbu_clean[:26] + "…" if len(sbu_clean) > 26 else sbu_clean
+            c.drawCentredString(nx, sbu_y, sbu_disp)
 
+        # Employee ID
+        c.setFont("Helvetica", 5.5)
+        c.setFillColor(PDF_TEXT_MUTED)
+        c.drawRightString(x_left + nw - 5, y_bot + 4, emp_id)
 
     # Legend
     leg_x, leg_y = 36, FOOTER_H + 8
@@ -2478,21 +1488,12 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
 # ══════════════════════════════════════════════════════════════════
 # ORG CHART HTML RENDERER
 # ══════════════════════════════════════════════════════════════════
-def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme=None, highlight_id=None, labels=None):
+def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme=None, highlight_id=None):
     # Convert highlight_id ke JS literal
     highlight_id_js = f'"{highlight_id}"' if highlight_id else 'null'
-    level_map = {"all": "999", "top": "0", "level1": "1", "level2": "2", "level3": "3"}
+    level_map = {"all": "999", "top": "0", "level1": "1"}
     init_depth = level_map.get(initial_level, "999")
     th          = theme or {}
-    lb          = labels or {}
-    lbl_in_div      = lb.get("chart_legend_in_div",      "Divisi ini")
-    lbl_out_div     = lb.get("chart_legend_out_div",     "Atasan luar divisi")
-    lbl_subordinate = lb.get("chart_legend_subordinate", "Jml subordinate")
-    lbl_searched    = lb.get("chart_legend_searched",    "Karyawan dicari")
-    lbl_tip         = lb.get("chart_legend_tip",         "💡 Klik node · Scroll zoom · Drag geser")
-    lbl_expand      = lb.get("chart_tooltip_expand",     "Klik untuk expand")
-    lbl_collapse    = lb.get("chart_tooltip_collapse",   "Klik untuk collapse")
-    lbl_hidden      = lb.get("chart_hidden_suffix",      "tersembunyi")
     bg          = th.get("chart_bg",    "#f8f7ff")
     node_in_bg  = th.get("node_in_bg",  "linear-gradient(135deg,#ede9fe,#ddd6fe)")
     node_in_txt = th.get("node_in_txt", "#2e1a6e")
@@ -2568,14 +1569,14 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
 </div>
 <div id="canvas"><div id="tree-root"></div></div>
 <div class="legend">
-  <div class="legend-item"><div class="legend-dot" style="background:{node_in_bdr};border:1px solid {node_in_bdr}"></div><span>{lbl_in_div}</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:{node_out_bdr};border:1px solid {node_out_bdr}"></div><span>{lbl_out_div}</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;border-radius:999px"></div><span>{lbl_subordinate}</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:{node_in_bdr};border:1px solid {node_in_bdr}"></div><span>Divisi ini</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:{node_out_bdr};border:1px solid {node_out_bdr}"></div><span>Atasan luar divisi</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;border-radius:999px"></div><span>Jml subordinate</span></div>
   <div class="legend-item" id="legend-highlight" style="display:none;">
     <div class="legend-dot" style="background:#f59e0b;border:2px solid #d97706;border-radius:3px;"></div>
-    <span style="color:{hint_color}">{lbl_searched}</span>
+    <span style="color:{hint_color}">Karyawan dicari</span>
   </div>
-  <div class="legend-item" style="color:{hint_color}">{lbl_tip}</div>
+  <div class="legend-item" style="color:{hint_color}">💡 Klik node · Scroll zoom · Drag geser</div>
 </div>
 <script>
 const treeData = {tree_json_str};
@@ -2597,7 +1598,7 @@ function fitView() {{
   scale = Math.min(canvas.clientWidth / (treeRoot.scrollWidth + 60), canvas.clientHeight / (treeRoot.scrollHeight + 60), 1);
   translateX = 0; translateY = 20; applyTransform();
 }}
-canvas.addEventListener('wheel', (e) => {{ e.preventDefault(); const delta = e.deltaY > 0 ? -0.04 : 0.04; scale = Math.max(0.2, Math.min(3, scale + delta)); applyTransform(); }}, {{ passive: false }});
+canvas.addEventListener('wheel', (e) => {{ e.preventDefault(); scale = Math.max(0.2, Math.min(3, scale + (e.deltaY > 0 ? -0.1 : 0.1))); applyTransform(); }}, {{ passive: false }});
 canvas.addEventListener('mousedown', (e) => {{ if (e.target.closest('.node-box')) return; isDragging = true; dragStartX = e.clientX; dragStartY = e.clientY; dragStartTX = translateX; dragStartTY = translateY; }});
 window.addEventListener('mousemove', (e) => {{ if (!isDragging) return; translateX = dragStartTX + (e.clientX - dragStartX); translateY = dragStartTY + (e.clientY - dragStartY); applyTransform(); }});
 window.addEventListener('mouseup', () => {{ isDragging = false; }});
@@ -2615,7 +1616,6 @@ function renderNode(node) {{
   const box     = document.createElement('div');
   const baseClass = node.company_mode ? 'company-mode' : node.in_div ? 'in-div' : 'out-div';
   box.className = `node-box ${{baseClass}}${{isHighlight ? ' highlighted' : ''}}`;
-  box.dataset.nodeId = node.id;  // [HoB OVERLAY] dipakai drawHobOverlay() buat cari posisi node
   if (isHighlight) {{ box.id = 'highlighted-node'; }}
   if (hasChildren && descCount > 0) {{
     const badge = document.createElement('div'); badge.className = 'badge';
@@ -2625,7 +1625,7 @@ function renderNode(node) {{
   if (node.sbu && node.sbu !== '' && node.sbu !== 'nan') {{
     const sbuEl = document.createElement('div'); sbuEl.className = 'node-sbu'; sbuEl.textContent = node.sbu; box.appendChild(sbuEl);
   }}
-  if (hasChildren) {{ box.addEventListener('click', () => {{ collapsed[node.id] = !collapsed[node.id]; rerenderTree(); }}); box.title = isCollapsed ? '{lbl_expand}' : '{lbl_collapse}'; }}
+  if (hasChildren) {{ box.addEventListener('click', () => {{ collapsed[node.id] = !collapsed[node.id]; rerenderTree(); }}); box.title = isCollapsed ? 'Klik untuk expand' : 'Klik untuk collapse'; }}
   wrapper.appendChild(box);
   if (hasChildren && !isCollapsed) {{
     const connV = document.createElement('div'); connV.className = 'connector-v'; connV.style.height = '20px'; wrapper.appendChild(connV);
@@ -2637,209 +1637,40 @@ function renderNode(node) {{
     }});
     wrapper.appendChild(childRow);
   }} else if (hasChildren && isCollapsed) {{
-    const hint = document.createElement('div'); hint.className = 'collapsed-hint'; hint.textContent = `▼ ${{descCount}} {lbl_hidden}`; wrapper.appendChild(hint);
+    const hint = document.createElement('div'); hint.className = 'collapsed-hint'; hint.textContent = `▼ ${{descCount}} tersembunyi`; wrapper.appendChild(hint);
   }}
   return wrapper;
 }}
 function scrollToHighlighted() {{
   const el = document.getElementById('highlighted-node');
   if (!el) return;
-
-  function doPan() {{
-    // offsetLeft/Top = posisi natural SEBELUM transform — lebih akurat
-    // dari getBoundingClientRect() yang mengembalikan posisi SETELAH scale.
-    const elNaturalX = el.offsetLeft + el.offsetWidth  / 2;
-    const elNaturalY = el.offsetTop  + el.offsetHeight / 2;
-    // Fallback ke window.innerWidth/Height jika canvas belum ter-layout
-    // (terjadi di iframe yang belum selesai paint saat timeout pertama)
-    const canvasW = canvas.offsetWidth  || window.innerWidth;
-    const canvasH = canvas.offsetHeight || window.innerHeight;
-    if (canvasW === 0) return false;  // layout belum siap, signal retry
-    scale      = 1.0;
-    translateX = canvasW / 2 - elNaturalX * scale;
-    translateY = canvasH / 2 - elNaturalY * scale - 60;
+  // Tunggu layout selesai
+  setTimeout(() => {{
+    const canvasRect = canvas.getBoundingClientRect();
+    const elRect     = el.getBoundingClientRect();
+    // Hitung posisi relatif terhadap tree-root
+    const elCenterX  = elRect.left + elRect.width  / 2 - canvasRect.left;
+    const elCenterY  = elRect.top  + elRect.height / 2 - canvasRect.top;
+    const targetX    = canvasRect.width  / 2 - elCenterX;
+    const targetY    = canvasRect.height / 2 - elCenterY;
+    // Smooth transition
     treeRoot.style.transition = 'transform 0.6s cubic-bezier(0.4,0,0.2,1)';
+    scale = 1.2;
+    translateX = targetX;
+    translateY = targetY - 60;
     applyTransform();
     setTimeout(() => {{ treeRoot.style.transition = ''; }}, 700);
+    // Show legend item
     const legEl = document.getElementById('legend-highlight');
     if (legEl) legEl.style.display = 'flex';
-    return true;
-  }}
-
-  // Tunggu layout selesai: delay + double requestAnimationFrame
-  // memastikan browser sudah selesai paint sebelum baca dimensi.
-  setTimeout(() => {{
-    requestAnimationFrame(() => {{
-      requestAnimationFrame(() => {{
-        const ok = doPan();
-        if (!ok) {{
-          // Canvas belum siap — retry satu kali setelah 500ms lagi
-          setTimeout(() => doPan(), 500);
-        }}
-      }});
-    }});
-  }}, 700);
+  }}, 350);
 }}
 function rerenderTree() {{
   const r = document.getElementById('tree-root');
   r.innerHTML = '';
   treeData.forEach(n => r.appendChild(renderNode(n)));
   if (highlightId) {{ scrollToHighlighted(); }}
-  drawHobOverlay();
 }}
-
-// ══════════════════════════════════════════════════════════════════
-// [HoB OVERLAY — 27 Agt 2026, brief PM/CEO]
-// Digambar SEBAGAI CHILD dari #tree-root (bukan layer terpisah di
-// canvas) supaya otomatis ikut transform pan/zoom yang sama — tidak
-// perlu recompute apapun saat user drag/scroll/zoom, cuma perlu
-// digambar ulang tiap kali struktur DOM berubah (collapse/expand),
-// makanya dipanggil dari dalam rerenderTree(), bukan dari event
-// zoom/pan. Sepenuhnya no-op (tidak menggambar apapun) kalau tidak
-// ada node dengan field `hob_overlay` di data — jadi toggle OFF di
-// Python = fitur ini otomatis tidak aktif, tanpa perlu flag terpisah.
-//
-// Known limitation (didokumentasikan, bukan disembunyikan): kalau
-// label HoB yang di-stack di sisi kanan lebih panjang dari sisa ruang
-// kosong sebelum subtree C-Level lain di sebelahnya (kasus banyak
-// root/Chief berdampingan), label BISA tumpang tindih visual dengan
-// node/subtree tetangga. SVG ini punya overflow:visible supaya label
-// tidak terpotong, tapi tidak otomatis menambah jarak antar root untuk
-// menghindari itu — kalau ketemu kasus ini di data riil, perlu
-// keputusan lanjutan (reserve margin ekstra antar root, atau batasi
-// overlay ke root yang di-scroll ke tengah viewport).
-function getOffsetRelativeTo(el, ancestor) {{
-  // [FIX ROOT CAUSE — 27 Agt 2026] `offsetLeft`/`offsetTop` langsung TIDAK
-  // BISA dipakai di sini. JS mengukur keduanya relatif ke `offsetParent` =
-  // nearest ancestor ber-`position` non-static. Di tree ini, BAIK `.node-box`
-  // MAUPUN `.children-row` punya `position: relative` — artinya tiap level
-  // nesting punya `offsetParent`-nya sendiri, dan koordinat yang terbaca
-  // untuk node di depth >= 2 SELALU salah (diukur dari parent terdekat,
-  // bukan dari `#tree-root` yang kita mau). Itulah kenapa semua garis
-  // seolah-olah "bertolak dari Suwandi" di screenshot Dave — Suwandi kebetulan
-  // ada di depth pertama jadi koordinatnya tepat, sedangkan node di bawahnya
-  // nilainya kecil-kecil (karena di-reset di setiap `position:relative` layer).
-  // Fix: jalan naik via rantai `.offsetParent` sambil akumulasi posisi,
-  // berhenti ketika sampai di `ancestor` (#tree-root) atau null.
-  let x = 0, y = 0, cur = el;
-  while (cur && cur !== ancestor) {{
-    x += cur.offsetLeft;
-    y += cur.offsetTop;
-    cur = cur.offsetParent;
-  }}
-  return {{ x, y }};
-}}
-
-function collectHobTargets(node, parentId, acc) {{
-  // [FIX 27 Agt 2026] TIDAK LAGI syarat "depth === 1". Python
-  // (annotate_hob_overlay) sudah menentukan node mana yang benar-benar
-  // "C-1" (definisi structural PM) — bukan berdasar local depth di tree
-  // yang lagi dirender. Di sini kita cuma perlu percaya field
-  // `hob_overlay`, muncul di local depth berapapun node itu.
-  if (node.hob_overlay) {{
-    // [FIX 27 Agt 2026, screenshot Dave] anchorId = PARENT LANGSUNG node
-    // ini (bukan root paling atas di tree). Sebelumnya rootId diwariskan
-    // TETAP dari root teratas sepanjang rekursi — akibatnya SEMUA C-1 di
-    // seluruh tree (walau tersebar di banyak C-Level berbeda: Shrey/CTO,
-    // C-Level lain, dst) numpuk jadi SATU kolom label di sebelah CEO,
-    // padahal seharusnya tiap C-1 label-nya nempel di sebelah C-Level-nya
-    // MASING-MASING. Karena parent langsung dari sebuah C-1 di struktur
-    // tree INI SENDIRI adalah C-Level-nya (persis definisi PM: C-1 =
-    // manager_id-nya = Employee ID C-Level), pakai parentId di sini sudah
-    // otomatis benar tanpa perlu logic tambahan.
-    acc.push({{ c1Id: node.id, anchorId: parentId, hobName: node.hob_overlay }});
-  }}
-  (node.children || []).forEach(child => collectHobTargets(child, node.id, acc));
-}}
-function drawHobOverlay() {{
-  const old = document.getElementById('hob-overlay-svg');
-  if (old) old.remove();
-
-  const targets = [];
-  treeData.forEach(root => collectHobTargets(root, root.id, targets));
-  if (targets.length === 0) return;
-
-  // Grouping per anchorId (C-Level langsung dari tiap C-1) — stacking
-  // label independen PER C-LEVEL, sesuai jawaban PM: "Setiap C-1 punya
-  // garis putus-putus sendiri ke label HoB-nya masing-masing. Label
-  // di-stack vertikal di sisi kanan [C-Level-nya masing-masing]."
-  const byAnchor = {{}};
-  targets.forEach(t => {{ (byAnchor[t.anchorId] = byAnchor[t.anchorId] || []).push(t); }});
-
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.id = 'hob-overlay-svg';
-  svg.setAttribute('width', treeRoot.scrollWidth + 280);
-  svg.setAttribute('height', treeRoot.scrollHeight);
-  svg.style.position = 'absolute';
-  svg.style.top = '0'; svg.style.left = '0';
-  svg.style.overflow = 'visible';
-  svg.style.pointerEvents = 'none';
-  svg.style.zIndex = '5';
-
-  const LABEL_H = 24, LABEL_GAP = 6, LABEL_W = 170, OFFSET_X = 36;
-
-  Object.keys(byAnchor).forEach(anchorId => {{
-    const anchorEl = treeRoot.querySelector(`[data-node-id="${{anchorId}}"]`);
-    if (!anchorEl) return;
-    const anchorPos  = getOffsetRelativeTo(anchorEl, treeRoot);
-    const anchorRightX = anchorPos.x + anchorEl.offsetWidth;
-    const labelsX      = anchorRightX + OFFSET_X;
-    const anchorMidY   = anchorPos.y + anchorEl.offsetHeight / 2;
-
-    const withY = byAnchor[anchorId]
-      .map(t => {{
-        const c1El = treeRoot.querySelector(`[data-node-id="${{t.c1Id}}"]`);
-        if (!c1El) return null;
-        const c1Pos = getOffsetRelativeTo(c1El, treeRoot);
-        return {{ ...t, c1El, c1Pos }};
-      }})
-      .filter(Boolean);
-    withY.sort((a, b) => a.c1Pos.x - b.c1Pos.x);
-
-    const stackTopY = anchorMidY - (withY.length * (LABEL_H + LABEL_GAP)) / 2;
-    withY.forEach((t, idx) => {{
-      t.labelY = stackTopY + idx * (LABEL_H + LABEL_GAP);
-    }});
-
-    withY.forEach(t => {{
-      const c1X = t.c1Pos.x + t.c1El.offsetWidth / 2;
-      const c1Y = t.c1Pos.y;
-      const labelY    = t.labelY;
-      const labelMidY = labelY + LABEL_H / 2;
-      const midY      = (c1Y + labelMidY) / 2;
-
-      const path = document.createElementNS(svgNS, 'path');
-      path.setAttribute('d', `M ${{c1X}} ${{c1Y}} L ${{c1X}} ${{midY}} L ${{labelsX}} ${{midY}} L ${{labelsX}} ${{labelMidY}}`);
-      path.setAttribute('stroke', '#f59e0b');
-      path.setAttribute('stroke-width', '1.5');
-      path.setAttribute('stroke-dasharray', '4,4');
-      path.setAttribute('fill', 'none');
-      svg.appendChild(path);
-
-      const dot = document.createElementNS(svgNS, 'circle');
-      dot.setAttribute('cx', c1X); dot.setAttribute('cy', c1Y);
-      dot.setAttribute('r', 3); dot.setAttribute('fill', '#f59e0b');
-      svg.appendChild(dot);
-
-      const fo = document.createElementNS(svgNS, 'foreignObject');
-      fo.setAttribute('x', labelsX);
-      fo.setAttribute('y', labelY);
-      fo.setAttribute('width', LABEL_W);
-      fo.setAttribute('height', LABEL_H);
-      const lbl = document.createElement('div');
-      lbl.style.cssText = 'font-size:10px;font-weight:700;background:#fef3c7;border:1px solid #f59e0b;' +
-        'border-radius:6px;padding:0 8px;color:#92400e;white-space:nowrap;overflow:hidden;' +
-        'text-overflow:ellipsis;display:flex;align-items:center;height:100%;box-sizing:border-box;';
-      lbl.textContent = 'HoB: ' + t.hobName;
-      fo.appendChild(lbl);
-      svg.appendChild(fo);
-    }});
-  }});
-
-  treeRoot.appendChild(svg);
-}}
-
 treeData.forEach(n => applyInitialCollapse(n, 0));
 rerenderTree();
 if (!highlightId) {{ setTimeout(fitView, 300); }}
@@ -2858,359 +1689,40 @@ _FAVICON_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
 </svg>"""
 _favicon_b64 = "data:image/svg+xml;base64," + _b64.b64encode(_FAVICON_SVG.encode()).decode()
 
-st.set_page_config(page_title="Mekari", layout="wide", page_icon=_favicon_b64, initial_sidebar_state="auto")
+st.set_page_config(page_title="DAVE", layout="wide", page_icon=_favicon_b64, initial_sidebar_state="auto")
 
 # ══════════════════════════════════════════════════════════════════
-# AUTH GATE — Login Page
+# BETA MODE — Auth dinonaktifkan
+# App langsung masuk sebagai admin tanpa login
 # ══════════════════════════════════════════════════════════════════
 
-# ══════════════════════════════════════════════════════════════════
-# GOOGLE OAUTH AUTH GATE
-# ══════════════════════════════════════════════════════════════════
-# Alur:
-# 1. User klik "Login dengan Google"
-# 2. Google konfirmasi identitas (SSO — tidak perlu login ulang
-#    jika sudah login Google di People Database)
-# 3. Dashboard baca email dari Google session
-# 4. Cek email di app_users sheet
-# 5. Ada & aktif → masuk sesuai role | Tidak ada → ditolak
-# ══════════════════════════════════════════════════════════════════
+# Set dummy user info sebagai admin penuh
+_user_info = {
+    "email":       "beta@developer.local",
+    "name":        "Beta Developer",
+    "role":        "admin",
+    "is_active":   True,
+    "allowed_bus": "*",
+    "allowed_sbus":"*",
+    "employee_id": "",
+    "scope_note":  "Beta environment — no auth",
+}
 
-# ══════════════════════════════════════════════════════════════════
-# AUTH GATE — streamlit-google-auth
-# Menggunakan library streamlit-google-auth sebagai pengganti
-# st.login() bawaan Streamlit yang bermasalah di Community Cloud
-# (known bug: "Missing provider for OAuth callback" di multi-instance)
-#
-# Cara kerja:
-# 1. Authenticator baca credentials dari Streamlit Secrets
-# 2. check_authentification() tangkap callback dari Google
-# 3. Jika belum login → tampilkan halaman login + tombol Google
-# 4. Jika sudah login → baca email dari session_state['user_info']
-# 5. Validasi email @mekari.com + cek di app_users sheet
-# ══════════════════════════════════════════════════════════════════
-
-from streamlit_google_auth import Authenticate as _GoogleAuth
-import json as _json
-import tempfile as _tempfile
-
-# streamlit-google-auth hanya support file JSON untuk credentials
-# Solusi: tulis credentials dari Streamlit Secrets ke temp file saat runtime
-#
-# ── app_url dibaca dari secrets agar satu codebase bisa dipakai di
-#    beberapa environment (dev, staging, prod) tanpa edit code.
-#    Isi di secrets.toml:
-#      [auth]
-#      app_url = "https://<url-deployment-anda>.streamlit.app"
-# ──────────────────────────────────────────────────────────────────
-def _init_google_auth():
-    """
-    Inisialisasi Google OAuth authenticator.
-
-    Dibungkus dalam fungsi agar st.secrets diakses SETELAH Streamlit
-    selesai inisialisasi context-nya — mencegah StreamlitAPIException
-    saat cold start di Streamlit Cloud.
-
-    Return: instance _GoogleAuth yang siap dipakai.
-    """
-    auth_secrets = st.secrets.get("auth", {})
-    app_url      = auth_secrets.get("app_url", "")
-
-    if not app_url:
-        st.error(
-            "⚠️ Konfigurasi tidak lengkap: `app_url` belum diisi di Streamlit Secrets.\n\n"
-            "Tambahkan baris berikut di bagian `[auth]` pada Secrets:\n"
-            "```\napp_url = \"https://<url-deployment-anda>.streamlit.app\"\n```"
-        )
-        st.stop()
-
-    google_creds = {
-        "web": {
-            "client_id":          auth_secrets.get("client_id", ""),
-            "client_secret":      auth_secrets.get("client_secret", ""),
-            "auth_uri":           "https://accounts.google.com/o/oauth2/auth",
-            "token_uri":          "https://oauth2.googleapis.com/token",
-            "redirect_uris":      [app_url],
-            "javascript_origins": [app_url],
-        }
-    }
-    creds_tmp = _tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False
-    )
-    _json.dump(google_creds, creds_tmp)
-    creds_tmp.flush()
-
-    return _GoogleAuth(
-        secret_credentials_path = creds_tmp.name,
-        cookie_name             = "mekari_od_auth",
-        cookie_key              = auth_secrets.get("cookie_secret", "mekari_od_2026_fallback"),
-        redirect_uri            = app_url,
-    )
-
-# Dipanggil di sini — setelah set_page_config() dan dalam flow normal Streamlit
-_google_auth = _init_google_auth()
-
-# Tangkap callback dari Google (harus dipanggil sebelum check login)
-# Wrapped dengan error handler untuk menangani:
-# 1. InvalidGrantError — PKCE conflict / expired code (google-auth-oauthlib >= 1.0)
-# 2. Stale callback — user pakai browser back/forward setelah login
-try:
-    _google_auth.check_authentification()
-except Exception as _auth_exc:
-    _auth_exc_str = str(_auth_exc).lower()
-    _is_grant_err   = "invalid_grant" in _auth_exc_str or "missing code verifier" in _auth_exc_str
-    _is_stale_err   = "missing provider" in _auth_exc_str or "stale" in _auth_exc_str or "mismatch" in _auth_exc_str
-    if _is_grant_err or _is_stale_err:
-        # Bersihkan session OAuth yang corrupt lalu redirect ke login bersih
-        for _k in ["connected", "oauth_state", "user_info", "token", "google_email"]:
-            st.session_state.pop(_k, None)
-        st.query_params.clear()
-        st.rerun()
-    else:
-        # Error lain yang tidak dikenal — tampilkan pesan informatif
-        st.error(f"Terjadi kesalahan autentikasi. Silakan coba lagi atau hubungi OD Admin. ({type(_auth_exc).__name__})")
-        st.stop()
-
-# Belum login — tampilkan halaman login
-if not st.session_state.get("connected", False):
-    # Login-only styling. OAuth and all post-login routes remain unchanged.
-    st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
-    html, body, .stApp { font-family: 'DM Sans', sans-serif !important; }
-    .stApp { background: #111421 !important; color: #f8f8ff !important; }
-    .stApp::before {
-        content: ''; position: fixed; inset: 0; pointer-events: none;
-        background: radial-gradient(ellipse 52% 70% at 88% 12%, rgba(118, 106, 232, .12), transparent 78%);
-    }
-    [data-testid="stSidebar"], header, #MainMenu, footer { display: none !important; }
-    .block-container {
-        max-width: 1600px !important; padding: 0 clamp(24px, 5.4vw, 92px) !important;
-        margin: auto !important;
-    }
-    .st-key-login_screen { min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; justify-content: center; }
-    .st-key-login_screen > div { width: 100%; }
-    .st-key-login_screen [data-testid="stHorizontalBlock"] { align-items: stretch; gap: clamp(28px, 5.5vw, 90px); }
-    .st-key-login_screen [data-testid="stColumn"] { min-width: 0; }
-    .login-left { padding: clamp(38px, 7vh, 78px) 0 clamp(16px, 4vh, 40px); }
-    .login-brand { display: flex; gap: 14px; align-items: center; margin-bottom: clamp(99px, 14vh, 153px); }
-    .login-logo {
-        display: block; flex: 0 0 48px; width: 48px; height: 48px;
-        border-radius: 14px; background: #fff; overflow: hidden;
-    }
-    .login-logo img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 35%; }
-    .login-brand-name { color: #fff; font: 800 21px/1.1 'Manrope', sans-serif; letter-spacing: -.05em; }
-    .login-brand-caption { color: #a9afc4; font-size: 10px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; margin-top: 5px; }
-    .stApp .login-headline {
-        color: #fff !important; font: 800 clamp(56px, 6vw, 94px)/1.045 'Manrope', sans-serif !important;
-        letter-spacing: -.075em !important; max-width: 780px; margin: 0 !important;
-    }
-    .login-headline span { color: #a6a0ff; }
-    .login-signin { max-width: 420px; margin-top: clamp(55px, 8vh, 90px); }
-    .login-signin-title { color: #f9f9ff; font-size: 15px; font-weight: 700; margin-bottom: 7px; }
-    .login-signin-help { color: #a9afc4; font-size: 13px; line-height: 1.5; margin-bottom: 16px; }
-    .login-signin-help strong { color: #d8d5ff; font-weight: 700; }
-    .st-key-login_action { max-width: 420px; }
-    .st-key-login_action a {
-        display: flex !important; justify-content: center !important; align-items: center !important;
-        min-height: 54px !important; width: 100% !important; border-radius: 13px !important;
-        background: #f6f6ff !important; border: 1px solid #f6f6ff !important;
-        color: #181a2b !important; font: 700 15px 'DM Sans', sans-serif !important;
-        text-decoration: none !important; box-shadow: 0 8px 30px rgba(0,0,0,.2) !important;
-        transition: background .18s ease, transform .18s ease, box-shadow .18s ease !important;
-    }
-    .st-key-login_action a:hover {
-        background: #e9e7ff !important; transform: translateY(-2px);
-        box-shadow: 0 14px 30px rgba(0,0,0,.27) !important;
-    }
-    .st-key-login_action a:focus-visible { outline: 3px solid #aba5ff !important; outline-offset: 3px; }
-    .login-access { color: #858ca5; font-size: 11px; line-height: 1.55; margin: 15px 0 0; }
-    .login-right {
-        min-height: min(770px, 85vh); display: grid; place-items: center;
-        padding: 14px 0;
-    }
-    .login-values {
-        list-style: none; margin: 0; padding: 0; width: min(100%, 520px);
-        display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
-        column-gap: clamp(24px, 3vw, 48px);
-    }
-    .login-value {
-        min-height: 96px; padding: 16px 8px;
-        display: flex; align-items: center; justify-content: center; text-align: center;
-        border-top: 1px solid rgba(170,164,255,.24);
-        color: #d7d5ee; font: 600 16px/1.45 'DM Sans', sans-serif;
-    }
-    .login-value:nth-last-child(-n+2) { border-bottom: 1px solid rgba(170,164,255,.24); }
-    .login-footer { color: #747c97; font-size: 11px; letter-spacing: .01em; margin: 16px 0 30px; }
-    @media (max-width: 900px) {
-        .st-key-login_screen { justify-content: flex-start; }
-        .st-key-login_screen [data-testid="stHorizontalBlock"] { flex-direction: column; gap: 18px; }
-        .st-key-login_screen [data-testid="stColumn"] { width: 100% !important; flex: unset !important; }
-        .login-left { padding: 38px 0 0; }
-        .login-brand { margin-bottom: 92px; }
-        .stApp .login-headline { font-size: clamp(46px, 11vw, 72px) !important; }
-        .login-signin { margin-top: 54px; max-width: 100%; }
-        .login-right { min-height: 320px; padding: 16px 0 20px; }
-        .login-value { min-height: 82px; }
-        .login-footer { margin-bottom: 28px; }
-    }
-    @media (max-width: 480px) {
-        .block-container { padding: 0 20px !important; }
-        .login-brand { margin-bottom: 88px; }
-        .stApp .login-headline { font-size: clamp(38px, 11.5vw, 56px) !important; }
-        .login-right { min-height: 292px; }
-        .login-values { column-gap: 14px; }
-        .login-value { min-height: 82px; padding: 14px 2px; font-size: 12px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-        .st-key-login_action a { transition: none !important; }
-        .st-key-login_action a:hover { transform: none !important; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-    with st.container(key="login_screen"):
-        _login_left, _login_right = st.columns([1.12, 0.88], gap="large")
-        with _login_left:
-            st.markdown(f"""
-            <div class="login-left">
-              <div class="login-brand">
-                <span class="login-logo"><img src="data:image/jpeg;base64,{_MEKARI_LOGO_B64}" alt="Mekari" /></span>
-                <span><span class="login-brand-name">Mekari</span><br><span class="login-brand-caption">People Dashboard</span></span>
-              </div>
-              <h1 class="login-headline">Move as one.<br><span>Go further.</span></h1>
-              <div class="login-signin">
-                <div class="login-signin-title">Masuk untuk melanjutkan</div>
-                <div class="login-signin-help">Gunakan akun Google perusahaan <strong>@mekari.com</strong>.</div>
-              </div>
-            </div>
-            """, unsafe_allow_html=True)
-            _auth_url = _google_auth.get_authorization_url()
-            with st.container(key="login_action"):
-                st.link_button("Masuk dengan Google", _auth_url, use_container_width=True)
-            st.markdown('<p class="login-access">Akses dikelola oleh OD Team</p>', unsafe_allow_html=True)
-        with _login_right:
-            st.markdown("""
-            <div class="login-right" aria-label="Nilai-nilai Mekari">
-              <ul class="login-values">
-                <li class="login-value">Move As One</li>
-                <li class="login-value">Elevate Every Standard</li>
-                <li class="login-value">Keep Pushing Forward</li>
-                <li class="login-value">Accelerate Customer Success</li>
-                <li class="login-value">Reimagine Possibilities</li>
-                <li class="login-value">Inspire Positive Change</li>
-              </ul>
-            </div>
-            """, unsafe_allow_html=True)
-        st.markdown('<div class="login-footer">© Mekari</div>', unsafe_allow_html=True)
-    st.stop()
-
-# User sudah login — ambil email dari session_state
-# Ambil email dari Google OAuth session
-# streamlit-google-auth menyimpan di session_state["user_info"]["email"]
-# Kita juga simpan backup di session_state["google_email"] agar tidak hilang saat overwrite
-_google_email = (
-    st.session_state.get("google_email", "")
-    or st.session_state.get("user_info", {}).get("email", "")
-    or st.session_state.get("email", "")
-)
-# Simpan ke dedicated key agar tidak hilang saat user_info di-overwrite ACL lookup
-if _google_email:
-    st.session_state["google_email"] = _google_email.strip().lower()
-_google_email = st.session_state.get("google_email", "")
-
-# Validasi domain — hanya @mekari.com
-if not _google_email or not _google_email.endswith("@mekari.com"):
-    st.markdown("""
-    <style>
-    .stApp { background: #f5f5ff !important; }
-    .block-container { max-width: 480px !important; padding-top: 14vh !important; margin: 0 auto !important; }
-    header, #MainMenu, footer { visibility: hidden !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    st.markdown(f"""
-    <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
-        padding:32px;text-align:center;margin-top:8vh;">
-        <div style="font-size:32px;margin-bottom:16px;">🚫</div>
-        <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
-            Domain Tidak Diizinkan
-        </div>
-        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
-            Email <b>{_google_email}</b> bukan akun @mekari.com.<br>
-            Dashboard ini hanya untuk karyawan Mekari.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("↩  Logout", key="btn_domain_logout"):
-        _google_auth.logout()
-    st.stop()
-
-# Cek email di app_users sheet
-_user_info = get_user_info(_google_email)
-
-if not _user_info:
-    st.markdown("""
-    <style>
-    .stApp { background: #f5f5ff !important; }
-    .block-container { max-width: 480px !important; padding-top: 14vh !important; margin: 0 auto !important; }
-    header, #MainMenu, footer { visibility: hidden !important; }
-    </style>
-    """, unsafe_allow_html=True)
-    st.markdown(f"""
-    <div style="background:#fff;border:1.5px solid #ffd0d0;border-radius:12px;
-        padding:32px;text-align:center;margin-top:8vh;">
-        <div style="font-size:32px;margin-bottom:16px;">🚫</div>
-        <div style="font-size:18px;font-weight:700;color:#1a1a2e;margin-bottom:8px;">
-            Akses Tidak Ditemukan
-        </div>
-        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:20px;">
-            Email <b>{_google_email}</b> belum terdaftar di sistem.<br>
-            Hubungi OD Team untuk mendapatkan akses.
-        </div>
-        <div style="font-size:12px;color:#9e9ea0;">
-            Mekari People Analytics · OD Team
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    if st.button("↩  Logout", key="btn_denied_logout"):
-        log_activity(action_type="logout", detail=f"Akses ditolak: {_google_email}")
-        _google_auth.logout()
-    st.stop()
-
-# User valid — set session state
-# PENTING: gunakan key "acl_user_info" agar tidak konflik dengan
-# session_state["user_info"] milik streamlit-google-auth library
-if st.session_state.get("user_email") != _google_email:
-    st.session_state.pop("scr_approved_proposal", None)
-    st.session_state.pop("my_selected_proposal", None)
-    st.session_state.pop("cr_submit_success", None)
-    st.session_state.user_email    = _google_email
-    st.session_state.google_email  = _google_email
-    st.session_state.acl_user_info = _user_info   # key terpisah dari library
-    st.session_state.session_id    = str(_uuid.uuid4())[:8]
-    log_activity(
-        action_type="login",
-        detail=f"Google OAuth login · role={_user_info.get('role','')}",
-    )
+if "acl_user_info" not in st.session_state:
+    st.session_state.acl_user_info = _user_info
+    st.session_state.user_email    = _user_info["email"]
+    st.session_state.google_email  = _user_info["email"]
+    st.session_state.session_id    = "beta-session"
 
 _user_info = st.session_state.get("acl_user_info", _user_info)
-_user_role = _user_info.get("role", "employee")
-
-# [QA AUTH-01] Role di ACL yang salah ketik / tidak terdaftar -> akses ditolak (fail-closed).
-if _user_role not in _ROLE_TAB_ACCESS:
-    st.error("🚫 Role akun Anda tidak dikenali. Hubungi OD Team untuk memperbarui akses.")
-    if st.button("Keluar", key="logout_unknown_role"):
-        st.session_state.clear()
-        st.rerun()
-    st.stop()
-
-_is_admin  = _user_role in ("super_admin", "admin")
-_is_cxo    = _user_role in ("super_admin", "admin", "cxo")
+_user_role = _user_info.get("role", "admin")
+_is_admin  = True
+_is_cxo    = True
 
 if "dark_mode" not in st.session_state:
     st.session_state.dark_mode = False
 if "lang" not in st.session_state:
-    st.session_state.lang = "en"
+    st.session_state.lang = "id"
 if "nav_filter" not in st.session_state:
     st.session_state.nav_filter = {}
 
@@ -3223,9 +1735,6 @@ if df is None:
     st.stop()
 
 # Apply Row-Level Security — filter df sesuai akses user
-# [SCR Fase 1a] df_all = data TANPA RLS, HANYA untuk pilihan tujuan perubahan SCR.
-# Jangan dipakai di tempat lain.
-df_all = df
 df = apply_rbac_filter(df, _user_info)
 
 
@@ -3233,7 +1742,7 @@ df = apply_rbac_filter(df, _user_info)
 # THEME
 # ══════════════════════════════════════════════════════════════════
 dm = st.session_state.dark_mode
-# ── Design System: PRD "Mekari HR Platform" ──────────────────────
+# ── Design System: PRD "DAVE HR Platform" ──────────────────────
 # Primary: Periwinkle #8E94F2 | Background: White | Accent: Soft Lavender/Indigo
 # Typography: Inter | Components: ROUND_EIGHT (border-radius 8px)
 T = {
@@ -3319,110 +1828,16 @@ st.markdown(f"""
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 *, *::before, *::after {{ box-sizing: border-box; }}
-/* ── ROOT CAUSE FIX: color-scheme sinkron dengan dm toggle ── */
-html, body, .stApp, [data-testid="stApp"] {{
-    color-scheme: {"dark" if dm else "light"} !important;
-}}
-/* Direct fix: target <input> asli di dalam selectbox (confirmed DevTools).
-   Streamlit inject color-scheme:dark via .stApp CSS yang spesifisitasnya
-   lebih tinggi dari html/body — rule di atas kadang kalah. Target input
-   langsung dengan tiga properti untuk menutup semua jalur. */
-[data-baseweb="select"] input,
-[data-baseweb="select"] input[type="text"],
-[data-testid="stSelectbox"] input {{
-    color-scheme: {"dark" if dm else "light"} !important;
-    color: {"#f0f0ff" if dm else "#1a1a2e"} !important;
-    -webkit-text-fill-color: {"#f0f0ff" if dm else "#1a1a2e"} !important;
-    opacity: 1 !important;
-}}
 html, body, [class*="css"] {{
     font-family: 'Inter', sans-serif !important;
     color: {T["text"]} !important;
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.01em;
 }}
-/* ── FIX: Kecualikan Material Symbols icon dari override font ────────
-   Streamlit 1.6x+ render icon (termasuk tombol collapse sidebar)
-   sebagai [data-testid="stIconMaterial"] ligature-text, bukan <svg>.
-   Tanpa exclusion ini, font-family 'Inter' di atas menimpa font icon
-   dan glyph gagal render — muncul raw text nama icon-nya. */
-[data-testid="stIconMaterial"] {{
-    font-family: 'Material Symbols Rounded', 'Material Symbols Outlined',
-                 'Material Icons' !important;
-    letter-spacing: normal !important;
-}}
 .stApp {{ background-color: {T["bg"]} !important; transition: background-color 0.3s ease, color 0.3s ease; }}
 #MainMenu, footer {{ visibility: hidden !important; }}
 header {{ visibility: hidden !important; }}
-[data-testid="stToolbar"] {{ visibility: hidden !important; }}
-/* ── FIX: collapsedControl mungkin ter-nest di dalam stToolbar di
-   Streamlit versi baru. `display:none` di atas akan menghapus total
-   descendant-nya tanpa bisa di-override — makanya diganti ke
-   `visibility:hidden`, lalu collapsedControl override balik ke
-   visible di bawah ini (visibility, tidak seperti display, BISA
-   di-override oleh descendant). */
-[data-testid="stToolbar"] [data-testid="collapsedControl"] {{
-    visibility: visible !important;
-}}
-[data-testid="collapsedControl"] {{
-    visibility: visible !important;
-    display: flex !important;
-    position: fixed !important;
-    top: 14px !important;
-    left: 14px !important;
-    z-index: 999999 !important;
-    background: {T["sidebar_bg"]} !important;
-    border-radius: 8px !important;
-    padding: 4px !important;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.28) !important;
-    transition: background 0.2s !important;
-}}
-[data-testid="collapsedControl"]:hover {{
-    background: {T["sidebar_pill"]} !important;
-}}
-[data-testid="collapsedControl"] svg {{
-    fill: {T["sidebar_text"]} !important;
-    width: 18px !important; height: 18px !important;
-}}
-/* ── FIX: dukung struktur icon baru (span, bukan svg) ───────────────── */
-[data-testid="collapsedControl"] [data-testid="stIconMaterial"] {{
-    color: {T["sidebar_text"]} !important;
-    font-size: 20px !important;
-}}
-/* ── FIX: testid baru Streamlit 1.6x untuk tombol expand sidebar.
-   "collapsedControl" sudah diganti nama jadi "stExpandSidebarButton"
-   (mirip "stSidebarCollapseButton" untuk tombol hide). Duplikasi
-   styling collapsedControl di atas untuk testid baru ini. ── */
-[data-testid="stExpandSidebarButton"] {{
-    visibility: visible !important;
-    display: flex !important;
-    position: fixed !important;
-    top: 14px !important;
-    left: 14px !important;
-    z-index: 999999 !important;
-    background: {T["sidebar_bg"]} !important;
-    border-radius: 8px !important;
-    padding: 4px !important;
-    box-shadow: 0 2px 12px rgba(0,0,0,0.28) !important;
-    transition: background 0.2s !important;
-}}
-[data-testid="stExpandSidebarButton"]:hover {{
-    background: {T["sidebar_pill"]} !important;
-}}
-[data-testid="stExpandSidebarButton"] svg {{
-    fill: {T["sidebar_text"]} !important;
-    width: 18px !important; height: 18px !important;
-}}
-[data-testid="stExpandSidebarButton"] [data-testid="stIconMaterial"] {{
-    color: {T["sidebar_text"]} !important;
-    font-size: 20px !important;
-}}
-/* Pastikan tombol ini menang meski nested di dalam header/toolbar
-   yang di-set visibility:hidden */
-header [data-testid="stExpandSidebarButton"],
-[data-testid="stToolbar"] [data-testid="stExpandSidebarButton"] {{
-    visibility: visible !important;
-}}
+[data-testid="stToolbar"] {{ display: none !important; }}
 .block-container {{
     padding-top: 2rem !important;
     padding-left: 2.5rem !important;
@@ -3430,7 +1845,19 @@ header [data-testid="stExpandSidebarButton"],
     max-width: 100% !important;
     background-color: {T["bg"]} !important;
 }}
-/* Sidebar styling is scoped in the SIDEBAR section below. */
+[data-testid="stSidebar"] {{
+    background: {T["sidebar_bg"]} !important;
+    border-right: none !important;
+    box-shadow: 1px 0 0 0 {T["outline"]} !important;
+    transition: background 0.3s ease !important;
+}}
+[data-testid="stSidebar"] .block-container {{ padding: 0 !important; background: transparent !important; }}
+[data-testid="stSidebar"] * {{ color: {T["sidebar_text"]} !important; font-family: 'Inter', sans-serif !important; }}
+[data-testid="stSidebar"] label {{
+    font-size: 11px !important; font-weight: 600 !important;
+    text-transform: uppercase !important; letter-spacing: 0.08em !important;
+    color: {T["sidebar_text2"]} !important;
+}}
 h1, h2, h3 {{ font-family: 'Inter', sans-serif !important; color: {T["text"]} !important; letter-spacing: -0.02em !important; font-weight: 700 !important; }}
 
 /* TABS */
@@ -3472,23 +1899,6 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
     color: {T["text"]} !important; letter-spacing: -0.02em !important;
 }}
 
-/* UI foundation: preserve keyboard focus and reduced-motion preferences. */
-[data-testid="stButton"] button:focus-visible,
-[data-testid="stTabs"] button:focus-visible,
-[data-testid="stSelectbox"] input:focus-visible {{
-    outline: 2px solid {T["primary_cont"]} !important;
-    outline-offset: 2px !important;
-}}
-@media (prefers-reduced-motion: reduce) {{
-    .stApp, [data-testid="stSidebar"],
-    [data-testid="stButton"] button,
-    [data-testid="stTabs"] button,
-    div[data-testid="stMetric"] {{
-        transition-duration: 0.01ms !important;
-        animation-duration: 0.01ms !important;
-    }}
-}}
-
 /* BUTTONS — ROUND_EIGHT */
 [data-testid="stButton"] button {{
     font-family: 'Inter', sans-serif !important; font-weight: 500 !important;
@@ -3502,6 +1912,22 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
 [data-testid="stButton"] button[kind="secondary"]:hover {{
     border-color: {T["primary"]} !important; color: {T["primary"]} !important;
     background: {T["primary_fixed"]} !important;
+}}
+[data-testid="stSidebar"] [data-testid="stButton"] button {{
+    background: rgba(255,255,255,0.06) !important; color: {T["sidebar_text"]} !important;
+    border: none !important; border-radius: 8px !important;
+    font-size: 13px !important; font-weight: 500 !important; padding: 10px 16px !important;
+    text-align: left !important; transform: none !important; box-shadow: none !important;
+}}
+[data-testid="stSidebar"] [data-testid="stButton"] button:hover {{
+    background: rgba(142,148,242,0.15) !important; color: {T["sidebar_active"]} !important;
+}}
+[data-testid="stSidebar"] [data-testid="stButton"] button[kind="primary"] {{
+    background: {T["sidebar_pill"]} !important; color: {T["sidebar_active"]} !important;
+    border: none !important; border-radius: 8px !important;
+    font-size: 13px !important; font-weight: 600 !important; padding: 10px 16px !important;
+    box-shadow: 0 1px 0 0 rgba(142,148,242,0.12) !important;
+    transform: none !important; filter: none !important;
 }}
 [data-testid="stDownloadButton"] button {{
     background: transparent !important; color: {T["primary"]} !important;
@@ -3535,64 +1961,20 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {{
     box-shadow: 0 0 0 3px {T["primary_fixed"]}, 0 1px 4px {T["metric_shadow"]} !important;
 }}
 [data-testid="stSelectbox"] svg {{ fill: {T["text_variant"]} !important; }}
-/* ── BaseWeb POPOVER/DROPDOWN — warna FIXED, TIDAK ikut dm ───────────
-   [FIX — Sept 2026, ronde ke-3] Root cause ditemukan: config.toml
-   mengunci base theme Streamlit ke "light" secara PERMANEN untuk semua
-   widget native (lihat catatan di [data-baseweb="calendar"] di bawah).
-   Sebelumnya blok ini pakai T[...] yang berubah ikut dm — itu SALAH,
-   karena container popover sesungguhnya (dari BaseWeb, portal-rendered)
-   tetap mengikuti base=light yang fixed, terlepas dari nilai dm.
-   Akibatnya: di dark mode, teks ikut berubah terang (ikut dm) tapi
-   background TIDAK ikut berubah (tetap terang dari base theme) —
-   teks terang di atas background terang = tidak terbaca (terbalik
-   dari bug sebelumnya di light mode, root cause sama).
-   Fix: SEMUA elemen popover pakai warna FIXED yang cocok untuk base
-   light — tidak peduli dm. Popover akan selalu terlihat "terang"
-   walau app dalam dark mode; trade-off yang disengaja demi keterbacaan
-   konsisten di kedua mode, daripada mengejar konsistensi visual yang
-   ternyata tidak reliable untuk portal-rendered component ini. */
-[data-baseweb="layer"], div[data-baseweb="popover"] {{
-    background: transparent !important;
-    /* Popups are rendered outside the app's custom dark theme. Keep their
-       browser color scheme aligned with Streamlit's fixed light base. */
-    color-scheme: light !important;
-}}
-[data-baseweb="layer"] ul, [data-baseweb="layer"] div[data-baseweb="menu"],
-div[data-baseweb="popover"] ul, div[data-baseweb="popover"] div[data-baseweb="menu"],
-ul[data-baseweb="menu"], [role="listbox"] {{
-    background: #ffffff !important;
-    background-color: #ffffff !important;
-    border: none !important;
+div[data-baseweb="popover"] ul, div[data-baseweb="menu"] {{
+    background: {T["surface_lowest"]} !important; border: none !important;
     border-radius: 8px !important;
-    box-shadow: 0 4px 24px rgba(142,148,242,0.15), 0 0 0 1px rgba(142,148,242,0.18) !important;
+    box-shadow: 0 4px 24px rgba(142,148,242,0.15), 0 0 0 1px {T["outline"]} !important;
 }}
-[data-baseweb="layer"] li, [data-baseweb="layer"] [role="option"],
 div[data-baseweb="popover"] li, [role="option"] {{
-    background: transparent !important;
-    background-color: transparent !important;
-    color: #1a1a2e !important;
-    -webkit-text-fill-color: #1a1a2e !important;
+    background: transparent !important; color: {T["text"]} !important;
     font-family: 'Inter', sans-serif !important; font-size: 13.5px !important;
     border-radius: 6px !important; margin: 2px 4px !important;
 }}
-[data-baseweb="layer"] li *, [data-baseweb="layer"] [role="option"] *,
-div[data-baseweb="popover"] li *, [role="option"] * {{
-    color: #1a1a2e !important;
-    -webkit-text-fill-color: #1a1a2e !important;
+div[data-baseweb="popover"] li:hover, [role="option"]:hover {{
+    background: {T["primary_fixed"]} !important; color: {T["primary"]} !important;
 }}
-[data-baseweb="layer"] li:hover, [data-baseweb="layer"] [role="option"]:hover,
-div[data-baseweb="popover"] li:hover, [role="option"]:hover,
-[role="option"][aria-selected="true"] {{
-    background: #ebebff !important;
-    background-color: #ebebff !important;
-    color: #8E94F2 !important;
-}}
-[data-baseweb="layer"] li:hover *, [data-baseweb="layer"] [role="option"]:hover *,
-div[data-baseweb="popover"] li:hover *, [role="option"]:hover *,
-[role="option"][aria-selected="true"] * {{
-    color: #8E94F2 !important;
-    -webkit-text-fill-color: #8E94F2 !important;
-}}
+div[data-baseweb="popover"] {{ background: transparent !important; }}
 [data-testid="stTextInput"] input {{
     background: {T["surface_lowest"]} !important; border: 1px solid {T["outline"]} !important;
     border-radius: 8px !important; font-size: 13.5px !important; color: {T["text"]} !important;
@@ -3620,157 +2002,10 @@ div[data-baseweb="popover"] li:hover *, [role="option"]:hover *,
     background: {T["surface_low"]} !important; border: none !important;
     color: {T["text_variant"]} !important; border-radius: 6px !important;
 }}
-/* ── DATE INPUT — container, input field, calendar popup ────────────
-   Fix light-mode bug: input teks nyaru (perlu -webkit-text-fill-color)
-   dan kalender portal angka tidak terbaca karena background tidak di-set.
-
-   Root cause: BaseWeb date picker render kalender di portal terpisah —
-   CSS global tidak otomatis menjangkau; perlu [data-baseweb="calendar"]
-   catch-all yang eksplisit set background + color + -webkit-text-fill-color.
-   Tanpa -webkit-text-fill-color, Chromium mengabaikan `color` pada input
-   dengan color-scheme override — bug yang sama sudah di-fix di selectbox. */
-
-/* Input field container — TETAP ikut T[...]/dm karena ini bukan portal,
-   elemen dalam document flow normal, CSS cascade reliable di sini. */
 [data-testid="stDateInput"] > div > div {{
-    background: {T["surface_lowest"]} !important;
-    border: 1px solid {T["outline"]} !important;
-    border-radius: 8px !important;
+    background: {T["surface_lowest"]} !important; border: 1px solid {T["outline"]} !important; border-radius: 8px !important;
 }}
-/* Input field text — TETAP ikut T[...]/dm, sama alasan di atas */
-[data-testid="stDateInput"] input,
-[data-testid="stDateInput"] input[type="text"],
-[data-testid="stDateInput"] input[data-testid="stDateInputField"] {{
-    color: {T["text"]} !important;
-    -webkit-text-fill-color: {T["text"]} !important;
-    color-scheme: {"dark" if dm else "light"} !important;
-    opacity: 1 !important;
-    background: transparent !important;
-    font-family: 'Inter', sans-serif !important;
-    font-size: 13.5px !important;
-}}
-/* Calendar popup — outer container (portal-rendered) */
-/* [FIX — Sept 2026, ronde ke-3] SAMA seperti popover selectbox di atas:
-   warna di sini SENGAJA di-fixed, TIDAK ikut dm. config.toml mengunci
-   base theme Streamlit ke "light" permanen untuk semua widget native
-   (termasuk date picker) — kalender akan SELALU render dengan asumsi
-   base light, terlepas dm. CSS sebelumnya pakai T[...] (ikut dm) untuk
-   teks tapi background BaseWeb tetap ikut base=light yang fixed →
-   di dark mode: teks jadi terang (ikut dm) di atas background yang
-   tetap terang (base fixed) = tidak terbaca. Fix: SEMUA warna di
-   kalender di-hardcode cocok untuk base light, konsisten di kedua
-   mode aplikasi — trade-off yang disengaja demi keterbacaan. */
-[data-baseweb="calendar"] {{
-    background: #ffffff !important;
-    background-color: #ffffff !important;
-    border: 1px solid rgba(142,148,242,0.18) !important;
-    border-radius: 10px !important;
-    box-shadow: 0 8px 32px rgba(142,148,242,0.18) !important;
-    font-family: 'Inter', sans-serif !important;
-    color-scheme: light !important;
-}}
-/* In some Streamlit versions, the portal wrapper sits between the layer and
-   the calendar. Give it the same light scheme so headers inherit dark text. */
-[data-baseweb="layer"]:has([data-baseweb="calendar"]),
-[data-baseweb="popover"]:has([data-baseweb="calendar"]) {{
-    color-scheme: light !important;
-}}
-/* Catch-all: semua elemen di dalam kalender inherit background benar. */
-[data-baseweb="calendar"] * {{
-    background-color: transparent !important;
-    color: #1a1a2e !important;
-    -webkit-text-fill-color: #1a1a2e !important;
-    font-family: 'Inter', sans-serif !important;
-}}
-/* Month/year header & navigation arrows */
-[data-baseweb="calendar"] [data-testid="calendar-header"],
-[data-baseweb="calendar"] button,
-[data-baseweb="calendar"] [role="heading"] {{
-    color: #1a1a2e !important;
-    -webkit-text-fill-color: #1a1a2e !important;
-    background: transparent !important;
-}}
-[data-baseweb="calendar"] button svg,
-[data-baseweb="calendar"] button svg path {{
-    fill: #1a1a2e !important;
-}}
-/* Day-of-week labels (S M T W T F S) */
-[data-baseweb="calendar"] [role="columnheader"],
-[data-baseweb="calendar"] [role="columnheader"] *,
-[data-baseweb="calendar"] [alt="Sunday"],
-[data-baseweb="calendar"] [alt="Monday"],
-[data-baseweb="calendar"] [alt="Tuesday"],
-[data-baseweb="calendar"] [alt="Wednesday"],
-[data-baseweb="calendar"] [alt="Thursday"],
-[data-baseweb="calendar"] [alt="Friday"],
-[data-baseweb="calendar"] [alt="Saturday"] {{
-    color: #7b7b9d !important;
-    -webkit-text-fill-color: #7b7b9d !important;
-    font-weight: 600 !important;
-    font-size: 11px !important;
-    letter-spacing: 0.06em !important;
-}}
-/* Day number cells — default state */
-[data-baseweb="calendar"] [role="gridcell"],
-[data-baseweb="calendar"] [role="gridcell"] *,
-[data-baseweb="calendar"] [data-baseweb="calendar-day"] {{
-    color: #1a1a2e !important;
-    -webkit-text-fill-color: #1a1a2e !important;
-    background: transparent !important;
-}}
-/* Preserve BaseWeb's selected-day shape when it identifies the day by label.
-   In newer markup with aria-selected, apply the brand background directly. */
-[data-baseweb="calendar"] [role="gridcell"][aria-selected="true"],
-[data-baseweb="calendar"] [data-baseweb="calendar-day"][aria-selected="true"] {{
-    background: #8E94F2 !important;
-    background-color: #8E94F2 !important;
-    border-radius: 6px !important;
-}}
-[data-baseweb="calendar"] [role="gridcell"][aria-label^="Selected."],
-[data-baseweb="calendar"] [role="gridcell"][aria-label^="Selected."] *,
-[data-baseweb="calendar"] [role="gridcell"][aria-selected="true"] *,
-[data-baseweb="calendar"] [data-baseweb="calendar-day"][aria-selected="true"] * {{
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
-    font-weight: 700 !important;
-}}
-/* Days outside current month */
-[data-baseweb="calendar"] [aria-disabled="true"],
-[data-baseweb="calendar"] [aria-disabled="true"] * {{
-    color: #686b80 !important;
-    -webkit-text-fill-color: #686b80 !important;
-    opacity: 1 !important;
-}}
-/* Hover state */
-[data-baseweb="calendar"] [data-baseweb="calendar-day"]:not([aria-selected="true"]):hover,
-[data-baseweb="calendar"] [role="gridcell"]:not([aria-selected="true"]):hover {{
-    background: #ebebff !important;
-    background-color: #ebebff !important;
-    border-radius: 6px !important;
-}}
-[data-baseweb="calendar"] [data-baseweb="calendar-day"]:not([aria-selected="true"]):hover *,
-[data-baseweb="calendar"] [role="gridcell"]:not([aria-selected="true"]):hover * {{
-    color: #8E94F2 !important;
-    -webkit-text-fill-color: #8E94F2 !important;
-}}
-/* Selected day — override catch-all background di sini */
-[data-baseweb="calendar"] [aria-selected="true"],
-[data-baseweb="calendar"] [data-baseweb="calendar-day"][aria-selected="true"] {{
-    background: #8E94F2 !important;
-    background-color: #8E94F2 !important;
-    border-radius: 6px !important;
-}}
-[data-baseweb="calendar"] [aria-selected="true"],
-[data-baseweb="calendar"] [aria-selected="true"] * {{
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
-    font-weight: 700 !important;
-}}
-/* Today marker underline dot */
-[data-baseweb="calendar"] [data-today="true"]::after {{
-    background: #8E94F2 !important;
-    background-color: #8E94F2 !important;
-}}
+[data-testid="stDateInput"] input {{ color: {T["text"]} !important; background: transparent !important; }}
 
 /* DATAFRAME — layered surface */
 [data-testid="stDataFrame"] {{
@@ -3843,31 +2078,6 @@ label, .stSelectbox label, .stTextInput label, .stTextArea label,
 
 /* SELECT OPTIONS */
 [data-baseweb="select"] span {{ color: {T["text"]} !important; }}
-/* ── FIX round 2: paksa warna teks dropdown berdasarkan mode ───────────
-   Force ke SEMUA elemen (bukan hanya span/div tertentu), cover color,
-   -webkit-text-fill-color (bisa override visual di Chromium terlepas
-   dari `color`), dan opacity — untuk menutup semua kemungkinan
-   penyebab teks pudar, bukan hanya menebak satu properti saja. */
-[data-testid="stSelectbox"] [data-baseweb="select"] * {{
-    color: {"#ffffff" if dm else "#000000"} !important;
-    -webkit-text-fill-color: {"#ffffff" if dm else "#000000"} !important;
-    opacity: 1 !important;
-}}
-[data-testid="stSelectbox"] [data-baseweb="select"] svg {{
-    fill: {"#ffffff" if dm else "#000000"} !important;
-}}
-/* ── FIX: value terpilih di kotak dropdown tertutup tidak terbaca ──────
-   BaseWeb versi baru mungkin render value container sebagai <div>,
-   bukan <span> saja — selector di atas tidak cukup luas. */
-[data-baseweb="select"] > div,
-[data-baseweb="select"] > div > div,
-[data-testid="stSelectbox"] [data-baseweb="select"] div:not(:has(svg)) {{
-    color: {T["text"]} !important;
-}}
-[data-baseweb="select"] [class*="ValueContainer"],
-[data-baseweb="select"] [class*="SingleValue"] {{
-    color: {T["text"]} !important;
-}}
 [data-testid="stTooltipIcon"] {{ color: {T["text_variant"]} !important; }}
 
 hr {{ border: none !important; border-top: 1px solid {T["outline"]} !important; }}
@@ -3895,7 +2105,7 @@ _sb_copy = {
     "id": {
         "workspace": "Organisasi", "workflows": "Operasional",
         "admin": "Administrasi", "overview": "Ringkasan data",
-        "scope": "Sesuai akses akun Anda", "employees": "Karyawan",
+        "scope": "Dataset beta pribadi", "employees": "Karyawan",
         "managers": "Manager", "divisions": "Divisi", "business_units": "Business unit",
         "refresh": "Perbarui", "refresh_help": "Muat ulang data dashboard",
         "light": "Terang", "dark": "Gelap",
@@ -3905,7 +2115,7 @@ _sb_copy = {
     "en": {
         "workspace": "Organization", "workflows": "Workflows",
         "admin": "Administration", "overview": "Data overview",
-        "scope": "Within your account access", "employees": "Employees",
+        "scope": "Personal beta dataset", "employees": "Employees",
         "managers": "Managers", "divisions": "Divisions", "business_units": "Business units",
         "refresh": "Refresh", "refresh_help": "Reload dashboard data",
         "light": "Light", "dark": "Dark",
@@ -4070,82 +2280,40 @@ with st.sidebar:
     st.markdown(f"""
     <div class="od-sb-brand">
         <img class="od-sb-logo" src="data:image/jpeg;base64,{_MEKARI_LOGO_B64}" alt="" />
-        <div><div class="od-sb-brand-name">Mekari</div><div class="od-sb-brand-sub">People Dashboard</div></div>
+        <div><div class="od-sb-brand-name">DAVE</div><div class="od-sb-brand-sub">People Dashboard · Beta</div></div>
     </div>
     <div class="od-sb-source"><span class="od-sb-dot" aria-hidden="true"></span>{_source_label}</div>
     """, unsafe_allow_html=True)
 
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = 0
-
-    # Owner decision: operational tabs stay super_admin-only; SCR also requires beta.
-    _scr_enabled = _scr_beta_enabled()
-    _pending_scr_count = 0
-    _nav_cr_failed = False
-    if _scr_enabled and _scr_can(_user_role, "inbox"):
-        _nav_cr_df = load_change_requests()
-        _nav_cr_failed = cr_load_failed(_nav_cr_df)
-        if not _nav_cr_df.empty and "status" in _nav_cr_df.columns:
-            _pending_scr_count = int(
-                _nav_cr_df["status"].astype(str).str.strip().str.lower().eq("pending").sum()
-            )
-    _scr_nav_label = L["nav_cr"] + (f" ({_pending_scr_count})" if _pending_scr_count else "") \
-        + (" ⚠️" if _nav_cr_failed else "")
-
-    # Stable tab IDs and widget keys; only presentation and grouping change.
-    nav_items = [
-        ("account_tree", L["nav_org"], 0),
-        ("groups", L["nav_data"], 1),
-        ("supervisor_account", L["nav_manager"], 3),
-        ("fact_check", L["nav_compliance"], 2),
-    ]
-    if _scr_enabled:
-        nav_items.append(("edit_note", _scr_nav_label, 4))
-    nav_items.extend([
-        ("person_remove", "Offboarding Tracker", 5),
-        ("admin_panel_settings", "Admin Panel", 99),
-    ])
-
     active_idx = st.session_state.active_tab
-    if not _can_access_tab(_user_role, active_idx) or (active_idx == 4 and not _scr_enabled):
+    _personal_nav = [("account_tree", L["nav_org"], 0),
+                     ("schema", L["nav_builder"], 5)]
+    if not _can_access_tab(_user_role, active_idx) or active_idx not in {0, 5}:
         st.session_state.active_tab = 0
         active_idx = 0
-
     with st.container(key="sb_navigation"):
-        _first_group = True
-        for _group_label, _group_tabs in [
-            (_sb_copy["workspace"], {0, 1, 3}),
-            (_sb_copy["workflows"], {2, 4, 5}),
-            (_sb_copy["admin"], {99}),
-        ]:
-            _visible_items = [
-                item for item in nav_items
-                if item[2] in _group_tabs and _can_access_tab(_user_role, item[2])
-            ]
-            if not _visible_items:
+        st.markdown(f'<div class="od-sb-heading od-sb-heading-first">{_sb_copy["workspace"]}</div>', unsafe_allow_html=True)
+        for icon_nav, label_nav, tab_idx in _personal_nav:
+            if not _can_access_tab(_user_role, tab_idx):
                 continue
-            _heading_class = "od-sb-heading od-sb-heading-first" if _first_group else "od-sb-heading"
-            st.markdown(f'<div class="{_heading_class}">{_group_label}</div>', unsafe_allow_html=True)
-            _first_group = False
-            for icon_nav, label_nav, tab_idx in _visible_items:
-                is_active = (active_idx == tab_idx)
-                if st.button(label_nav, icon=f":material/{icon_nav}:", key=f"nav_{tab_idx}",
-                             use_container_width=True,
-                             type="primary" if is_active else "secondary"):
-                    st.session_state.active_tab = tab_idx
-                    st.rerun()
+            if st.button(label_nav, icon=f":material/{icon_nav}:", key=f"nav_{tab_idx}",
+                         use_container_width=True, type="primary" if active_idx == tab_idx else "secondary"):
+                st.session_state.active_tab = tab_idx
+                st.rerun()
 
-    # Counts retain the existing access-filtered dataset; secondary to navigation.
+    # Keep beta's existing navigation scope; metrics are secondary to tasks.
     total_karyawan = len(df)
     total_bu = df["Business Unit"].nunique()
     total_div = df["Division"].nunique()
     total_mgr = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
     with st.container(key="sb_overview"):
         with st.expander(_sb_copy["overview"], expanded=False):
-            _metrics = [
-                (total_karyawan, _sb_copy["employees"]), (total_mgr, _sb_copy["managers"]),
-                (total_bu, _sb_copy["business_units"]), (total_div, _sb_copy["divisions"]),
-            ]
+            _metrics = [(total_karyawan, _sb_copy["employees"]),
+                        (total_mgr, _sb_copy["managers"]),
+                        (total_bu, _sb_copy["business_units"]),
+                        (total_div, _sb_copy["divisions"])]
             _metric_html = "".join(
                 f'<div><div class="od-sb-metric-value">{value:,}</div>'
                 f'<div class="od-sb-metric-label">{label}</div></div>'
@@ -4169,49 +2337,18 @@ with st.sidebar:
                 st.session_state.dark_mode = not st.session_state.dark_mode; st.rerun()
 
     with st.container(key="sb_account"):
-        _uname = str(_user_info.get("name") or "User")
-        _initials = "".join(w[0].upper() for w in _uname.split()[:2]) or "U"
-        _role_display = str(_user_role).replace("_", " ").capitalize()
-        if _user_role in ("cxo", "hrbp"):
-            _role_display = _user_role.upper()
-        st.markdown(f"""
+        st.markdown("""
         <div class="od-sb-profile">
-            <div class="od-sb-avatar" aria-hidden="true">{html.escape(_initials)}</div>
+            <div class="od-sb-avatar" aria-hidden="true">B</div>
             <div class="od-sb-identity">
-                <div class="od-sb-name">{html.escape(_uname)}</div>
-                <div class="od-sb-role">{html.escape(_role_display)}</div>
+                <div class="od-sb-name">Beta Developer</div>
+                <div class="od-sb-role">Mode uji · tanpa login</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button(L['btn_logout'], icon=":material/logout:", use_container_width=True, key="logout_btn"):
-            log_activity(action_type="logout", detail="User logout")
-            for k in ["authenticated","user_email","user_info","acl_user_info","active_tab","session_id","connected","oauth_state","token","google_email","scr_approved_proposal","my_selected_proposal","cr_submit_success"]:
-                st.session_state.pop(k, None)
-            st.query_params.clear()
-            try:
-                _google_auth.logout()
-            except Exception:
-                pass
+        if st.button(L["lang_toggle"], icon=":material/language:", use_container_width=True, key="lang_btn"):
+            st.session_state.lang = "en" if st.session_state.lang == "id" else "id"
             st.rerun()
-
-    # Existing reload policy retained.
-    st.markdown("""
-    <script>
-    (function() {
-        var RELOAD_MS = 12 * 60 * 60 * 1000;
-        function scheduleReload() {
-            setTimeout(function() {
-                if (document.visibilityState === 'visible') {
-                    window.location.reload();
-                } else {
-                    setTimeout(scheduleReload, 30 * 60 * 1000);
-                }
-            }, RELOAD_MS);
-        }
-        scheduleReload();
-    })();
-    </script>
-    """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -4219,27 +2356,27 @@ with st.sidebar:
 # ══════════════════════════════════════════════════════════════════
 if st.session_state.get("active_tab", 0) == 0:
     st.markdown(f"""
-    <div style="padding:0 0 24px 0;margin-bottom:28px;border-bottom:1px solid {T['outline']};
-        display:flex;align-items:flex-end;justify-content:space-between;">
-        <div>
-            <div style="font-size:11px;font-weight:600;text-transform:uppercase;
-                letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;font-family:'Inter',sans-serif;">{L["header_supra"]}</div>
-            <div style="font-size:28px;font-weight:700;color:{T['text']};
-                font-family:'Inter',sans-serif;line-height:1.15;letter-spacing:-0.025em;">{L["header_title"]}</div>
-            <div style="font-size:13.5px;color:{T['text_variant']};margin-top:6px;font-weight:400;line-height:1.6;font-family:'Inter',sans-serif;">
-                {L["header_subtitle"]}
-            </div>
-        </div>
-        <div style="background:{T['primary']};
-            border-radius:8px;padding:12px 20px;text-align:right;
-            box-shadow:0 2px 16px rgba(142,148,242,0.3);min-width:140px;">
-            <div style="font-size:10px;font-weight:600;text-transform:uppercase;
-                letter-spacing:0.08em;color:rgba(255,255,255,0.75);margin-bottom:4px;font-family:'Inter',sans-serif;">{L["header_metric"]}</div>
-            <div style="font-size:26px;font-weight:700;color:white;
-                font-family:'Inter',sans-serif;letter-spacing:-0.03em;line-height:1.1;">{len(df):,}</div>
+<div style="padding:0 0 24px 0;margin-bottom:28px;border-bottom:1px solid {T['outline']};
+    display:flex;align-items:flex-end;justify-content:space-between;">
+    <div>
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;
+            letter-spacing:0.09em;color:{T['text3']};margin-bottom:6px;font-family:'Inter',sans-serif;">{L["header_supra"]}</div>
+        <div style="font-size:28px;font-weight:700;color:{T['text']};
+            font-family:'Inter',sans-serif;line-height:1.15;letter-spacing:-0.025em;">{L["header_title"]}</div>
+        <div style="font-size:13.5px;color:{T['text_variant']};margin-top:6px;font-weight:400;line-height:1.6;font-family:'Inter',sans-serif;">
+            {L["header_subtitle"]}
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    <div style="background:{T['primary']};
+        border-radius:8px;padding:12px 20px;text-align:right;
+        box-shadow:0 2px 16px rgba(142,148,242,0.3);min-width:140px;">
+        <div style="font-size:10px;font-weight:600;text-transform:uppercase;
+            letter-spacing:0.08em;color:rgba(255,255,255,0.75);margin-bottom:4px;font-family:'Inter',sans-serif;">{L["header_metric"]}</div>
+        <div style="font-size:26px;font-weight:700;color:white;
+            font-family:'Inter',sans-serif;letter-spacing:-0.03em;line-height:1.1;">{len(df):,}</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 
 _active = st.session_state.get("active_tab", 0)
@@ -4258,564 +2395,258 @@ if _active == 0:
         )
         st.session_state["_logged_orgchart_view"] = True
 
-    # [HoB VIEW — 22 Agt 2026] Toggle level-atas per brief PM/CEO. "Functional" = seluruh
-    # perilaku org chart yang SUDAH ADA (Per Divisi + Seluruh Perusahaan di bawahnya) —
-    # TIDAK DIUBAH SAMA SEKALI, cuma dibungkus di dalam blok if ini. "HoB View" = mode baru.
-    #
-    # [ROLE-GATE — deploy langsung ke main, 27 Agt 2026, atas keputusan Dave]
-    # Brief PM awalnya minta develop di branch `dev`. Karena keterbatasan
-    # branch-switching Streamlit Cloud (satu app cuma listen 1 branch),
-    # fitur ini di-deploy ke `main` TAPI dikunci role `super_admin` —
-    # user lain (admin/leader/employee/cxo) tidak pernah melihat toggle
-    # ini sama sekali; behavior mereka identik dengan sebelum fitur ini
-    # ada. Kalau HoB View sudah tervalidasi & mau dibuka lebih luas,
-    # tinggal ganti kondisi di bawah — jangan hapus role-gate ini
-    # diam-diam tanpa keputusan eksplisit soal siapa yang boleh akses.
-    if _user_role == "super_admin":
-        st.markdown(f"""
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.09em;color:{T['text3']};margin-bottom:10px;">TAMPILAN</div>
-        """, unsafe_allow_html=True)
-        top_mode = st.radio("Tampilan", ["Functional", "HoB View"], horizontal=True,
-                            label_visibility="collapsed", key="top_mode_orgchart")
-    else:
-        top_mode = "Functional"
+    st.markdown(f"""
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;
+        letter-spacing:0.09em;color:{T['text3']};margin-bottom:10px;">MODE TAMPILAN</div>
+    """, unsafe_allow_html=True)
+    view_mode = st.radio("", ["Per Divisi", "Seluruh Perusahaan"], horizontal=True, label_visibility="collapsed")
 
-    if top_mode == "Functional":
-        st.markdown(f"""
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;
-            letter-spacing:0.09em;color:{T['text3']};margin-bottom:10px;">{L["mode_label"]}</div>
-        """, unsafe_allow_html=True)
-        view_mode = st.radio("Mode Tampilan", [L["mode_division"], L["mode_company"]], horizontal=True, label_visibility="collapsed")
+    # ── Search Name ──────────────────────────────────────────────
+    # [FIX] Search sekarang cari di seluruh df, auto-set filter BU/Divisi
+    st.markdown(f"""
+    <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
+        letter-spacing:0.06em;margin:16px 0 8px 0;">Cari Karyawan</div>
+    """, unsafe_allow_html=True)
 
-        # ── [HoB OVERLAY — 27 Agt 2026] Toggle khusus mode Functional ──
-        # [FIX AKSES — 27 Agt 2026, konfirmasi Dave: development feature
-        # ini jalan di branch `main` dengan kategori app_users super_admin
-        # ONLY, sama seperti pola HoB View di atas]. Checkbox ini SEBELUMNYA
-        # tidak pernah di-gate — kelewat, cuma toggle "Functional/HoB View"
-        # yang di atas yang ke-gate. Sekarang digate juga: non-super_admin
-        # tidak pernah lihat checkbox ini sama sekali, show_hob_overlay
-        # otomatis False untuk mereka — behavior identik dengan sebelum
-        # fitur HoB Overlay ada.
-        if _user_role == "super_admin":
-            st.markdown(f"""
-            <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-                letter-spacing:0.06em;margin:4px 0 8px 0;">🔒 SUPER ADMIN ONLY</div>
-            """, unsafe_allow_html=True)
-            show_hob_overlay = st.checkbox(
-                "🏛️ Tampilkan HoB — garis penghubung C-1 ke Head of Business masing-masing",
-                value=False, key="show_hob_overlay",
-            )
-        else:
-            show_hob_overlay = False
+    col_search, col_search_info = st.columns([3, 5])
+    with col_search:
+        name_search = st.text_input(
+            "🔍 Search Name", placeholder="Ketik nama karyawan...",
+            key="org_name_search", label_visibility="collapsed"
+        )
 
-        # ── Search Name ──────────────────────────────────────────────
-        # [FIX] Search sekarang cari di seluruh df, auto-set filter BU/Divisi
-        st.markdown(f"""
-        <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-            letter-spacing:0.06em;margin:16px 0 8px 0;">{L["search_label"]}</div>
-        """, unsafe_allow_html=True)
+    # Cari di SELURUH df — bukan hanya divisi aktif
+    matched_global = pd.DataFrame()
+    if name_search.strip():
+        matched_global = df[
+            df["Employee Name"].str.contains(name_search.strip(), case=False, na=False)
+        ].copy()
 
-        col_search, col_search_info = st.columns([3, 5])
-        with col_search:
-            name_search = st.text_input(
-                L["search_label"], placeholder=L["search_ph"],
-                key="org_name_search", label_visibility="collapsed"
-            )
-
-        # Cari di SELURUH df — bukan hanya divisi aktif
-        matched_global = pd.DataFrame()
+    with col_search_info:
         if name_search.strip():
-            matched_global = df[
-                df["Employee Name"].str.contains(name_search.strip(), case=False, na=False)
-            ].copy()
+            if len(matched_global) == 0:
+                st.markdown(f"""<div style="padding:8px 12px;background:#fee2e2;border-radius:8px;
+                    font-size:12px;color:#991b1b;margin-top:4px;">
+                    ❌ Tidak ada karyawan bernama "<b>{name_search}</b>"</div>""",
+                    unsafe_allow_html=True)
+            elif len(matched_global) == 1:
+                emp = matched_global.iloc[0]
+                st.markdown(f"""<div style="padding:8px 12px;background:#dcfce7;border-radius:8px;
+                    font-size:12px;color:#166534;margin-top:4px;">
+                    ✅ Ditemukan: <b>{emp['Employee Name']}</b> — {emp.get('Job Position','')},
+                    <b>{emp.get('Division','')}</b> ({emp.get('Business Unit','')})</div>""",
+                    unsafe_allow_html=True)
+            else:
+                names_list = ", ".join(matched_global["Employee Name"].tolist()[:4])
+                suffix = f" +{len(matched_global)-4} lainnya" if len(matched_global) > 4 else ""
+                st.markdown(f"""<div style="padding:8px 12px;background:#fef9c3;border-radius:8px;
+                    font-size:12px;color:#854d0e;margin-top:4px;">
+                    ⚠️ Ditemukan <b>{len(matched_global)}</b> karyawan: {names_list}{suffix}.
+                    Pilih salah satu di bawah.</div>""", unsafe_allow_html=True)
 
-        with col_search_info:
-            if name_search.strip():
-                if len(matched_global) == 0:
-                    st.markdown(f"""<div style="padding:8px 12px;background:#fee2e2;border-radius:8px;
-                        font-size:12px;color:#991b1b;margin-top:4px;">
-                        ❌ {L["emp_not_found"]} "<b>{name_search}</b>"</div>""",
-                        unsafe_allow_html=True)
-                elif len(matched_global) == 1:
-                    emp = matched_global.iloc[0]
-                    st.markdown(f"""<div style="padding:8px 12px;background:#dcfce7;border-radius:8px;
-                        font-size:12px;color:#166534;margin-top:4px;">
-                        ✅ {L['emp_found']}: <b>{emp['Employee Name']}</b> — {emp.get('Job Position','')},
-                        <b>{emp.get('Division','')}</b> ({emp.get('Business Unit','')})</div>""",
-                        unsafe_allow_html=True)
-                else:
-                    names_list = ", ".join(matched_global["Employee Name"].tolist()[:4])
-                    suffix = f" +{len(matched_global)-4} {L['emp_more']}" if len(matched_global) > 4 else ""
-                    st.markdown(f"""<div style="padding:8px 12px;background:#fef9c3;border-radius:8px;
-                        font-size:12px;color:#854d0e;margin-top:4px;">
-                        ⚠️ {L["emp_found"]} <b>{len(matched_global)}</b> {L["employees"]}: {names_list}{suffix}.
-                        {L["emp_pick_below"]}</div>""", unsafe_allow_html=True)
+    # Jika >1 hasil → selectbox pilih karyawan spesifik
+    selected_emp_row = None
+    if len(matched_global) > 1:
+        emp_choices = ["— Pilih karyawan —"] + [
+            f"{r['Employee Name']}  ·  {r.get('Division','')}  ·  {r.get('Business Unit','')}"
+            for _, r in matched_global.iterrows()
+        ]
+        chosen_emp = st.selectbox("Pilih karyawan:", emp_choices,
+                                  key="search_emp_choice", label_visibility="collapsed")
+        if chosen_emp != "— Pilih karyawan —":
+            idx_c = emp_choices.index(chosen_emp) - 1
+            selected_emp_row = matched_global.iloc[idx_c]
+    elif len(matched_global) == 1:
+        selected_emp_row = matched_global.iloc[0]
 
-        # Jika >1 hasil → selectbox pilih karyawan spesifik
-        selected_emp_row = None
-        if len(matched_global) > 1:
-            emp_choices = [L["emp_select_ph"]] + [
-                f"{r['Employee Name']}  ·  {r.get('Division','')}  ·  {r.get('Business Unit','')}"
-                for _, r in matched_global.iterrows()
-            ]
-            chosen_emp = st.selectbox(L["emp_select_label"], emp_choices,
-                                      key="search_emp_choice", label_visibility="collapsed")
-            if chosen_emp != L["emp_select_ph"]:
-                idx_c = emp_choices.index(chosen_emp) - 1
-                selected_emp_row = matched_global.iloc[idx_c]
-        elif len(matched_global) == 1:
-            selected_emp_row = matched_global.iloc[0]
+    # AUTO-SET filter BU & Divisi berdasarkan karyawan yang ditemukan/dipilih
+    if selected_emp_row is not None:
+        _tbu  = str(selected_emp_row.get("Business Unit", ""))
+        _tdiv = str(selected_emp_row.get("Division", ""))
+        _bu_list_all = sorted(df["Business Unit"].dropna().unique().tolist())
+        if _tbu in _bu_list_all:
+            st.session_state["sel_bu"] = _tbu
+        _div_list_for = sorted(df[df["Business Unit"] == _tbu]["Division"].dropna().unique().tolist())
+        if _tdiv in _div_list_for:
+            st.session_state["sel_div"] = _tdiv
+        st.session_state["sel_sbu"]    = "Semua SBU"
+        st.session_state["sel_leader"] = "Semua (divisi penuh)"
 
-        # AUTO-SET filter BU & Divisi berdasarkan karyawan yang ditemukan/dipilih
-        if selected_emp_row is not None:
-            _tbu  = str(selected_emp_row.get("Business Unit", ""))
-            _tdiv = str(selected_emp_row.get("Division", ""))
-            _bu_list_all = sorted(df["Business Unit"].dropna().unique().tolist())
-            if _tbu in _bu_list_all:
-                st.session_state["sel_bu"] = _tbu
-            _div_list_for = sorted(df[df["Business Unit"] == _tbu]["Division"].dropna().unique().tolist())
-            if _tdiv in _div_list_for:
-                st.session_state["sel_div"] = _tdiv
-            st.session_state["sel_sbu"]    = L["filter_all_sbu"]
-            st.session_state["sel_leader"] = L["filter_all_div"]
+    # ── Auto-highlight: lookup Employee ID dari email login ─────────
+    # Jika user belum search manual, otomatis highlight node mereka sendiri
+    _login_email      = st.session_state.get("google_email", "")
+    _auto_highlight_id = None
+    if _login_email and "Email" in df.columns:
+        _self_row = df[df["Email"].str.lower() == _login_email.lower()]
+        if not _self_row.empty:
+            _auto_highlight_id = str(_self_row.iloc[0].get("Employee ID", ""))
+            # Auto-set filter ke divisi user sendiri saat pertama kali buka
+            if not st.session_state.get("_auto_filter_set", False) and selected_emp_row is None:
+                _tbu_self  = str(_self_row.iloc[0].get("Business Unit", ""))
+                _tdiv_self = str(_self_row.iloc[0].get("Division", ""))
+                _bu_list_all = sorted(df["Business Unit"].dropna().unique().tolist())
+                if _tbu_self in _bu_list_all:
+                    st.session_state["sel_bu"]  = _tbu_self
+                    st.session_state["sel_div"] = _tdiv_self
+                st.session_state["_auto_filter_set"] = True
 
-        # ── Auto-highlight: lookup Employee ID dari email login ─────────
-        # Jika user belum search manual, otomatis highlight node mereka sendiri
-        _login_email      = st.session_state.get("google_email", "")
-        _auto_highlight_id = None
-        if _login_email and "Email" in df.columns:
-            _self_row = df[df["Email"].str.lower() == _login_email.lower()]
-            if not _self_row.empty:
-                _auto_highlight_id = str(_self_row.iloc[0].get("Employee ID", ""))
-                # Auto-set filter ke divisi user sendiri saat pertama kali buka
-                if not st.session_state.get("_auto_filter_set", False) and selected_emp_row is None:
-                    _tbu_self  = str(_self_row.iloc[0].get("Business Unit", ""))
-                    _tdiv_self = str(_self_row.iloc[0].get("Division", ""))
-                    _bu_list_all = sorted(df["Business Unit"].dropna().unique().tolist())
-                    if _tbu_self in _bu_list_all:
-                        st.session_state["sel_bu"]  = _tbu_self
-                        st.session_state["sel_div"] = _tdiv_self
-                    st.session_state["_auto_filter_set"] = True
-
-        # ID karyawan target untuk highlight di tree
-        # Prioritas: search manual > auto-highlight dari login
-        search_highlight_id = (
-            str(selected_emp_row.get("Employee ID", "")) if selected_emp_row is not None
-            else _auto_highlight_id
-        )
-        if view_mode == L["mode_division"]:
-            st.markdown(f"""
-            <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-                letter-spacing:0.06em;margin:16px 0 10px 0;">{L["filter_label"]}</div>
-            """, unsafe_allow_html=True)
-            col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
-            with col_a:
-                bu_list    = sorted(df["Business Unit"].dropna().unique().tolist())
-                selected_bu = st.selectbox(L["filter_bu"], bu_list, key="sel_bu")
-            with col_b:
-                div_list    = sorted(df[df["Business Unit"] == selected_bu]["Division"].dropna().unique().tolist())
-                selected_div = st.selectbox(L["filter_div"], div_list, key="sel_div")
-            with col_c:
-                sbu_opts_raw = [s for s in df[
-                    (df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)
-                ]["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""]
-                selected_sbu = st.selectbox(L["filter_sbu"], [L["filter_all_sbu"]] + sorted(sbu_opts_raw), key="sel_sbu")
-
-            filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
-            if selected_sbu != L["filter_all_sbu"]:
-                filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
-
-            all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
-            with col_d:
-                selected_leader = st.selectbox(L["filter_leader"],
-                                               [L["filter_all_div"]] + sorted(all_leaders), key="sel_leader")
-
-            if selected_leader != L["filter_all_div"]:
-                leader_id = filtered[filtered["Employee Name"] == selected_leader]["Employee ID"].values
-                if len(leader_id) > 0:
-                    lid      = leader_id[0]
-                    sub_ids  = set()
-                    to_visit = [lid]
-                    while to_visit:
-                        curr = to_visit.pop()
-                        sub_ids.add(curr)
-                        to_visit.extend(df[df["Manager ID"] == curr]["Employee ID"].tolist())
-                    filtered = df[df["Employee ID"].isin(sub_ids)].copy()
-
-            # ── Cross-division subordinate fix ────────────────────────────
-            # Ketika user search nama seseorang, subordinate mereka yang ada
-            # di divisi lain tidak masuk ke filtered (karena filter by Division).
-            # Fix: BFS downward dari search target di SELURUH df, lalu gabungkan
-            # hasilnya dengan filtered agar semua subordinate lintas divisi muncul.
-            if search_highlight_id and selected_emp_row is not None:
-                _cross_ids  = set()
-                _cross_q    = [search_highlight_id]
-                while _cross_q:
-                    _curr = _cross_q.pop()
-                    _cross_ids.add(_curr)
-                    _cross_q.extend(df[df["Manager ID"] == _curr]["Employee ID"].tolist())
-                # Gabungkan dengan filtered (union), bukan replace
-                _cross_df   = df[df["Employee ID"].isin(_cross_ids)].copy()
-                filtered    = pd.concat([filtered, _cross_df]).drop_duplicates(
-                                  subset=["Employee ID"], keep="last").reset_index(drop=True)
-
-            # ── Metric Cards: dihitung SETELAH semua filter aktif ─────────────
-            # (leader filter + cross-division fix sudah diaplikasikan ke `filtered`)
-            _ldr_active  = selected_leader != L["filter_all_div"]
-            _scope_label = (
-                selected_leader if _ldr_active
-                else (selected_div if selected_sbu == L["filter_all_sbu"]
-                      else f"{selected_div} — {selected_sbu}")
-            )
-            _count_emp   = len(filtered)
-            _count_mgr   = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
-            _count_ic    = _count_emp - _count_mgr
-            st.markdown(f"""
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0 20px 0;">
-                <div style="background:{T['surface_lowest']};border-radius:10px;padding:14px 16px;
-                    box-shadow:0 1px 0 0 {T['outline']},0 2px 16px {T['metric_shadow']};position:relative;overflow:hidden;">
-                    <div style="position:absolute;top:0;left:0;right:0;height:3px;
-                        background:{T['primary']};opacity:0.7;border-radius:10px 10px 0 0;"></div>
-                    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
-                        color:{T['text3']};margin-bottom:6px;">👥 {L['div_emp_count_label']}</div>
-                    <div style="font-size:26px;font-weight:700;color:{T['text']};letter-spacing:-0.03em;line-height:1;">{_count_emp:,}</div>
-                    <div style="font-size:10px;color:{T['text3']};margin-top:4px;">{_scope_label}</div>
-                </div>
-                <div style="background:{T['surface_lowest']};border-radius:10px;padding:14px 16px;
-                    box-shadow:0 1px 0 0 {T['outline']},0 2px 16px {T['metric_shadow']};position:relative;overflow:hidden;">
-                    <div style="position:absolute;top:0;left:0;right:0;height:3px;
-                        background:#8b5cf6;opacity:0.7;border-radius:10px 10px 0 0;"></div>
-                    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
-                        color:{T['text3']};margin-bottom:6px;">📋 {L['div_mgr_count_label']}</div>
-                    <div style="font-size:26px;font-weight:700;color:{T['text']};letter-spacing:-0.03em;line-height:1;">{_count_mgr:,}</div>
-                    <div style="font-size:10px;color:{T['text3']};margin-top:4px;">IC: {_count_ic:,}</div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-            col_lv, col_info = st.columns([2, 4])
-            with col_lv:
-                level_opt = st.selectbox(L["expand_level"], ["All Level", "Top Level", "Level 1", "Level 2", "Level 3"])
-            with col_info:
-                if search_highlight_id and search_highlight_id in filtered["Employee ID"].values:
-                    # Ambil nama dari selected_emp_row (search manual) atau lookup dari df (auto-highlight)
-                    if selected_emp_row is not None:
-                        _emp_name_hl = selected_emp_row["Employee Name"]
-                    else:
-                        _hl_row = df[df["Employee ID"] == search_highlight_id]
-                        _emp_name_hl = _hl_row.iloc[0]["Employee Name"] if not _hl_row.empty else search_highlight_id
-                    st.caption(f"📊 {L['showing_emp']} **{len(filtered)}** {L['employees']} — 🎯 **{_emp_name_hl}** {L['emp_found_in']}")
-                else:
-                    st.caption(f"📊 {L['showing_emp']} **{len(filtered)}** {L['employees']} {L['emp_in_div']}")
-
-            selected_level  = {"All Level": "all", "Top Level": "top", "Level 1": "level1", "Level 2": "level2", "Level 3": "level3"}[level_opt]
-            all_ids_needed  = get_all_managers(filtered["Employee ID"].tolist(), df)
-            full_data       = df[df["Employee ID"].isin(all_ids_needed)].copy()
-            all_ids_set     = set(full_data["Employee ID"].tolist())
-
-            root_ids = full_data[
-                ~full_data["Manager ID"].isin(all_ids_set) | full_data["Manager ID"].isin({"", "nan"})
-            ]["Employee ID"].astype(str).tolist()
-
-            tree_data  = build_tree_json(full_data, selected_div, root_ids, mode="division")
-            if show_hob_overlay:
-                # full_data (parameter scope_data) SUDAH ter-filter BU/Div/SBU
-                # aktif — dipakai untuk lookup Primary Budget Holder siapa
-                # saja yang sedang tampil. Penentuan overlay MURNI dari
-                # kolom itu (lihat docstring annotate_hob_overlay) — tidak
-                # ada lagi ketergantungan ke CHIEF_ROOT/hierarchy level.
-                tree_data = annotate_hob_overlay(tree_data, full_data)
-            chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T, highlight_id=search_highlight_id, labels=L)
-            _render_chart_iframe(chart_html, height=680, scrolling=False)
-
-            st.markdown(f"**{L['download_data']}**")
-            col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
-            with col_dl1:
-                st.download_button("📄 CSV", filtered.to_csv(index=False).encode("utf-8"),
-                                   f"{selected_div}.csv", "text/csv", use_container_width=True)
-            with col_dl2:
-                st.download_button("📊 Excel", to_excel(filtered), f"{selected_div}.xlsx",
-                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            with col_dl3:
-                if st.button("📑 Generate PDF (Full)", key="gen_pdf_full_div", use_container_width=True):
-                    try:
-                        st.session_state["pdf_full_div_bytes"] = generate_pdf(
-                            tree_data, f"Org Chart — {selected_div} ({selected_bu})",
-                            div_name=selected_div, bu_name=selected_bu, max_level=selected_level)
-                    except Exception:
-                        st.session_state["pdf_full_div_bytes"] = None
-                        st.error("Gagal generate PDF.")
-                if st.session_state.get("pdf_full_div_bytes"):
-                    st.download_button("⬇️ Download PDF (Full)", st.session_state["pdf_full_div_bytes"],
-                                       f"{selected_div}_full.pdf", "application/pdf", use_container_width=True)
-            with col_dl4:
-                if st.button("📑 Generate PDF (Summary)", key="gen_pdf_sum_div", use_container_width=True):
-                    try:
-                        st.session_state["pdf_sum_div_bytes"] = generate_pdf_summary(
-                            tree_data, f"Org Chart Summary — {selected_div} ({selected_bu})",
-                            div_name=selected_div, bu_name=selected_bu)
-                    except Exception:
-                        st.session_state["pdf_sum_div_bytes"] = None
-                        st.error("Gagal generate PDF summary.")
-                if st.session_state.get("pdf_sum_div_bytes"):
-                    st.download_button("⬇️ Download PDF (Summary)", st.session_state["pdf_sum_div_bytes"],
-                                       f"{selected_div}_summary.pdf", "application/pdf", use_container_width=True)
-
-        else:
-            st.info(L["company_warning"])
-            col_lv2, col_inf2 = st.columns([2, 4])
-            with col_lv2:
-                level_opt2 = st.selectbox(L["expand_level"], ["All Level", "Top Level", "Level 1", "Level 2", "Level 3"], key="lv2")
-            with col_inf2:
-                st.caption(f"📊 {L['showing_emp']} **{len(df)}** {L['employees']}")
-
-            selected_level2 = {"All Level": "all", "Top Level": "top", "Level 1": "level1", "Level 2": "level2", "Level 3": "level3"}[level_opt2]
-            # Mode perusahaan: tampilkan seluruh tree (search sudah auto-switch ke Per Divisi)
-            root_ids2  = df[(df["Manager ID"] == "") | (df["Manager ID"].isna())]["Employee ID"].tolist()
-            tree_data2 = build_tree_json(df, "", root_ids2, mode="company")
-            if show_hob_overlay:
-                tree_data2 = annotate_hob_overlay(tree_data2, df)
-            chart_html2 = render_org_chart(json.dumps(tree_data2), chart_height=750, initial_level=selected_level2, theme=T, labels=L)
-            _render_chart_iframe(chart_html2, height=750, scrolling=False)
-
-            st.markdown(f"**{L['download_data']}**")
-            col_dl4, col_dl5, col_dl6, col_dl7 = st.columns(4)
-            with col_dl4:
-                st.download_button("📄 CSV", df.to_csv(index=False).encode("utf-8"),
-                                   "all_employees.csv", "text/csv", use_container_width=True)
-            with col_dl5:
-                st.download_button("📊 Excel", to_excel(df), "all_employees.xlsx",
-                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            with col_dl6:
-                if st.button("📑 Generate PDF (Full)", key="gen_pdf_full_co", use_container_width=True):
-                    try:
-                        st.session_state["pdf_full_co_bytes"] = generate_pdf(
-                            tree_data2, L["pdf_company_title"],
-                            div_name=L["pdf_all_div"], bu_name=L["pdf_all_bu"], max_level=selected_level2)
-                    except Exception:
-                        st.session_state["pdf_full_co_bytes"] = None
-                        st.error("Gagal generate PDF.")
-                if st.session_state.get("pdf_full_co_bytes"):
-                    st.download_button("⬇️ Download PDF (Full)", st.session_state["pdf_full_co_bytes"],
-                                       "orgchart_perusahaan_full.pdf", "application/pdf", use_container_width=True)
-            with col_dl7:
-                if st.button("📑 Generate PDF (Summary)", key="gen_pdf_sum_co", use_container_width=True):
-                    try:
-                        st.session_state["pdf_sum_co_bytes"] = generate_pdf_summary(
-                            tree_data2, f"{L['pdf_company_title']} (Summary)",
-                            div_name=L["pdf_all_div"], bu_name=L["pdf_all_bu"])
-                    except Exception:
-                        st.session_state["pdf_sum_co_bytes"] = None
-                        st.error("Gagal generate PDF summary.")
-                if st.session_state.get("pdf_sum_co_bytes"):
-                    st.download_button("⬇️ Download PDF (Summary)", st.session_state["pdf_sum_co_bytes"],
-                                       "orgchart_perusahaan_summary.pdf", "application/pdf", use_container_width=True)
-
-    else:  # top_mode == "HoB View"
-        st.info(
-            "🏛️ **HoB View** — struktur dikelompokkan berdasarkan **Primary Budget Holder**, "
-            "bukan reporting line langsung. HoB (Head of Business) sebagai root, C-1/Leader di "
-            "bawahnya adalah yang Budget Holder-nya = HoB tsb; dari situ ke bawah mengikuti "
-            "reporting line normal."
-        )
-
-        # ── [BUGFIX 27 Agt 2026] Search by name — sebelumnya tidak ada
-        # sama sekali di HoB View. Pola sengaja disamakan persis dengan
-        # search di Functional mode (baris ~3050-3070 di atas) supaya
-        # UX konsisten antar mode; bedanya, di sini hasil search JUGA
-        # auto-select "Filter HoB" ke HoB yang menaungi orang tsb.
+    # ID karyawan target untuk highlight di tree
+    # Prioritas: search manual > auto-highlight dari login
+    search_highlight_id = (
+        str(selected_emp_row.get("Employee ID", "")) if selected_emp_row is not None
+        else _auto_highlight_id
+    )
+    if view_mode == "Per Divisi":
         st.markdown(f"""
         <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-            letter-spacing:0.06em;margin:16px 0 8px 0;">{L["search_label"]}</div>
+            letter-spacing:0.06em;margin:16px 0 10px 0;">Filter</div>
         """, unsafe_allow_html=True)
+        col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
+        with col_a:
+            bu_list    = sorted(df["Business Unit"].dropna().unique().tolist())
+            selected_bu = st.selectbox("🏢 Business Unit", bu_list, key="sel_bu")
+        with col_b:
+            div_list    = sorted(df[df["Business Unit"] == selected_bu]["Division"].dropna().unique().tolist())
+            selected_div = st.selectbox("📁 Divisi", div_list, key="sel_div")
+        with col_c:
+            sbu_opts_raw = [s for s in df[
+                (df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)
+            ]["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""]
+            selected_sbu = st.selectbox("🏷️ SBU/Tribe", ["Semua SBU"] + sorted(sbu_opts_raw), key="sel_sbu")
 
-        col_search_h, col_search_info_h = st.columns([3, 5])
-        with col_search_h:
-            name_search_h = st.text_input(
-                L["search_label"], placeholder=L["search_ph"],
-                key="hob_name_search", label_visibility="collapsed",
-            )
+        filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
+        if selected_sbu != "Semua SBU":
+            filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
 
-        matched_global_h = pd.DataFrame()
-        if name_search_h.strip():
-            matched_global_h = df[
-                df["Employee Name"].str.contains(name_search_h.strip(), case=False, na=False)
-            ].copy()
+        all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
+        with col_d:
+            selected_leader = st.selectbox("👤 Filter by Leader",
+                                           ["Semua (divisi penuh)"] + sorted(all_leaders), key="sel_leader")
 
-        with col_search_info_h:
-            if name_search_h.strip():
-                if len(matched_global_h) == 0:
-                    st.markdown(f"""<div style="padding:8px 12px;background:#fee2e2;border-radius:8px;
-                        font-size:12px;color:#991b1b;margin-top:4px;">
-                        ❌ {L["emp_not_found"]} "<b>{name_search_h}</b>"</div>""", unsafe_allow_html=True)
-                elif len(matched_global_h) == 1:
-                    _emp_h = matched_global_h.iloc[0]
-                    st.markdown(f"""<div style="padding:8px 12px;background:#dcfce7;border-radius:8px;
-                        font-size:12px;color:#166534;margin-top:4px;">
-                        ✅ {L['emp_found']}: <b>{_emp_h['Employee Name']}</b> — {_emp_h.get('Job Position','')},
-                        <b>{_emp_h.get('Division','')}</b> ({_emp_h.get('Business Unit','')})</div>""", unsafe_allow_html=True)
+        if selected_leader != "Semua (divisi penuh)":
+            leader_id = filtered[filtered["Employee Name"] == selected_leader]["Employee ID"].values
+            if len(leader_id) > 0:
+                lid      = leader_id[0]
+                sub_ids  = set()
+                to_visit = [lid]
+                while to_visit:
+                    curr = to_visit.pop()
+                    sub_ids.add(curr)
+                    to_visit.extend(df[df["Manager ID"] == curr]["Employee ID"].tolist())
+                filtered = df[df["Employee ID"].isin(sub_ids)].copy()
+
+        # ── Cross-division subordinate fix ────────────────────────────
+        # Ketika user search nama seseorang, subordinate mereka yang ada
+        # di divisi lain tidak masuk ke filtered (karena filter by Division).
+        # Fix: BFS downward dari search target di SELURUH df, lalu gabungkan
+        # hasilnya dengan filtered agar semua subordinate lintas divisi muncul.
+        if search_highlight_id and selected_emp_row is not None:
+            _cross_ids  = set()
+            _cross_q    = [search_highlight_id]
+            while _cross_q:
+                _curr = _cross_q.pop()
+                _cross_ids.add(_curr)
+                _cross_q.extend(df[df["Manager ID"] == _curr]["Employee ID"].tolist())
+            # Gabungkan dengan filtered (union), bukan replace
+            _cross_df   = df[df["Employee ID"].isin(_cross_ids)].copy()
+            filtered    = pd.concat([filtered, _cross_df]).drop_duplicates(
+                              subset=["Employee ID"], keep="last").reset_index(drop=True)
+
+        col_lv, col_info = st.columns([2, 4])
+        with col_lv:
+            level_opt = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"],
+                                     help="Atur berapa level yang ditampilkan secara default")
+        with col_info:
+            if search_highlight_id and search_highlight_id in filtered["Employee ID"].values:
+                # Ambil nama dari selected_emp_row (search manual) atau lookup dari df (auto-highlight)
+                if selected_emp_row is not None:
+                    _emp_name_hl = selected_emp_row["Employee Name"]
                 else:
-                    _names_h = ", ".join(matched_global_h["Employee Name"].tolist()[:4])
-                    _suffix_h = f" +{len(matched_global_h)-4} {L['emp_more']}" if len(matched_global_h) > 4 else ""
-                    st.markdown(f"""<div style="padding:8px 12px;background:#fef9c3;border-radius:8px;
-                        font-size:12px;color:#854d0e;margin-top:4px;">
-                        ⚠️ {L["emp_found"]} <b>{len(matched_global_h)}</b> {L["employees"]}: {_names_h}{_suffix_h}.
-                        {L["emp_pick_below"]}</div>""", unsafe_allow_html=True)
+                    _hl_row = df[df["Employee ID"] == search_highlight_id]
+                    _emp_name_hl = _hl_row.iloc[0]["Employee Name"] if not _hl_row.empty else search_highlight_id
+                st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan — 🎯 **{_emp_name_hl}** ada di divisi ini")
+            else:
+                st.caption(f"📊 Menampilkan **{len(filtered)}** karyawan di divisi ini")
 
-        selected_emp_row_h = None
-        if len(matched_global_h) > 1:
-            emp_choices_h = [L["emp_select_ph"]] + [
-                f"{r['Employee Name']}  ·  {r.get('Division','')}  ·  {r.get('Business Unit','')}"
-                for _, r in matched_global_h.iterrows()
-            ]
-            chosen_emp_h = st.selectbox(L["emp_select_label"], emp_choices_h,
-                                        key="hob_search_emp_choice", label_visibility="collapsed")
-            if chosen_emp_h != L["emp_select_ph"]:
-                selected_emp_row_h = matched_global_h.iloc[emp_choices_h.index(chosen_emp_h) - 1]
-        elif len(matched_global_h) == 1:
-            selected_emp_row_h = matched_global_h.iloc[0]
+        selected_level  = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt]
+        all_ids_needed  = get_all_managers(filtered["Employee ID"].tolist(), df)
+        full_data       = df[df["Employee ID"].isin(all_ids_needed)].copy()
+        all_ids_set     = set(full_data["Employee ID"].tolist())
 
-        # Auto-set filter BU/Div/SBU + Filter HoB — HARUS dilakukan
-        # SEBELUM widget selectbox filter di bawah (col_h1..col_h4)
-        # diinstansiasi di run ini, kalau tidak Streamlit lempar
-        # StreamlitAPIException "cannot be modified after widget created".
-        search_highlight_id_h = None
-        if selected_emp_row_h is not None:
-            search_highlight_id_h = str(selected_emp_row_h.get("Employee ID", ""))
-            _tbu_h  = str(selected_emp_row_h.get("Business Unit", ""))
-            _tdiv_h = str(selected_emp_row_h.get("Division", ""))
-            _bu_list_all_h = sorted(df["Business Unit"].dropna().unique().tolist())
-            if _tbu_h in _bu_list_all_h:
-                st.session_state["hob_bu"] = _tbu_h
-            _div_list_for_h = sorted(df[df["Business Unit"] == _tbu_h]["Division"].dropna().unique().tolist())
-            if _tdiv_h in _div_list_for_h:
-                st.session_state["hob_div"] = _tdiv_h
-            st.session_state["hob_sbu"] = "Semua"
+        root_ids = full_data[
+            ~full_data["Manager ID"].isin(all_ids_set) | full_data["Manager ID"].isin({"", "nan"})
+        ]["Employee ID"].astype(str).tolist()
 
-            # Cari HoB mana yang menaungi orang ini — supaya "Filter HoB"
-            # auto-pindah ke situ. Fallback: kalau orang ini tidak
-            # ketemu di tree HoB manapun (misal data Budget Holder-nya
-            # putus di tengah rantai manager), biarkan "Filter HoB" apa
-            # adanya — jangan paksa "Semua HoB" karena itu bisa nutupin
-            # fakta bahwa ada masalah data untuk orang ini.
-            _membership_h = get_hob_membership_map(df)
-            _owner_hob_name = _membership_h.get(search_highlight_id_h)
-            if _owner_hob_name:
-                st.session_state["hob_sel"] = _owner_hob_name
+        tree_data  = build_tree_json(full_data, selected_div, root_ids, mode="division")
+        chart_html = render_org_chart(json.dumps(tree_data), chart_height=680, initial_level=selected_level, theme=T, highlight_id=search_highlight_id)
+        st.components.v1.html(chart_html, height=680, scrolling=False)
 
-        st.markdown(f"""
-        <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-            letter-spacing:0.06em;margin:16px 0 10px 0;">{L["filter_label"]}</div>
-        """, unsafe_allow_html=True)
+        st.markdown("**⬇️ Download Data**")
+        col_dl1, col_dl2, col_dl3, col_dl4 = st.columns(4)
+        with col_dl1:
+            st.download_button("📄 CSV", filtered.to_csv(index=False).encode("utf-8"),
+                               f"{selected_div}.csv", "text/csv", use_container_width=True)
+        with col_dl2:
+            st.download_button("📊 Excel", to_excel(filtered), f"{selected_div}.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        with col_dl3:
+            try:
+                pdf_data = generate_pdf(tree_data, f"Org Chart — {selected_div} ({selected_bu})",
+                                        div_name=selected_div, bu_name=selected_bu)
+                st.download_button("📑 PDF (Full)", pdf_data, f"{selected_div}_full.pdf", "application/pdf", use_container_width=True)
+            except Exception:
+                st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
+        with col_dl4:
+            try:
+                pdf_sum = generate_pdf_summary(tree_data, f"Org Chart Summary — {selected_div} ({selected_bu})",
+                                              div_name=selected_div, bu_name=selected_bu)
+                st.download_button("📑 PDF (Summary)", pdf_sum, f"{selected_div}_summary.pdf", "application/pdf", use_container_width=True)
+            except Exception:
+                st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
 
-        col_h1, col_h2, col_h3, col_h4 = st.columns([2, 2, 2, 2])
-        with col_h1:
-            hob_name_opts = ["Semua HoB"] + [v["name"] for v in HOB_MAPPING.values()]
-            hob_name_sel  = st.selectbox("Filter HoB", hob_name_opts, key="hob_sel")
-        with col_h2:
-            bu_h = st.selectbox(L["filter_bu"], ["Semua"] + sorted(df["Business Unit"].dropna().unique().tolist()), key="hob_bu")
-        with col_h3:
-            div_h_opts = (["Semua"] + sorted(df[df["Business Unit"] == bu_h]["Division"].dropna().unique().tolist())
-                          if bu_h != "Semua" else ["Semua"] + sorted(df["Division"].dropna().unique().tolist()))
-            div_h = st.selectbox(L["filter_div"], div_h_opts, key="hob_div")
-        with col_h4:
-            sbu_h_src = df.copy()
-            if bu_h  != "Semua": sbu_h_src = sbu_h_src[sbu_h_src["Business Unit"] == bu_h]
-            if div_h != "Semua": sbu_h_src = sbu_h_src[sbu_h_src["Division"] == div_h]
-            sbu_h_opts = ["Semua"] + sorted([s for s in sbu_h_src["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""])
-            sbu_h = st.selectbox(L["filter_sbu"], sbu_h_opts, key="hob_sbu")
+    else:
+        st.info("⚠️ Mode seluruh perusahaan menampilkan semua karyawan. Gunakan zoom out dan collapse untuk navigasi.")
+        col_lv2, col_inf2 = st.columns([2, 4])
+        with col_lv2:
+            level_opt2 = st.selectbox("📶 Expand Level", ["All Level", "Top Level", "Level 1"], key="lv2")
+        with col_inf2:
+            st.caption(f"📊 Menampilkan **{len(df)}** karyawan")
 
-        # ── Scope data untuk HoB tree ───────────────────────────────
-        # Filter BU/Div/SBU MENYEMPITKAN siapa saja yang boleh muncul
-        # sebagai node (baik HoB root maupun turunannya) — konsisten
-        # dengan constraint brief "semua filter existing tetap berfungsi".
-        # PENTING: filter ini diterapkan ke seluruh `df`, BUKAN cuma ke
-        # kandidat C-1 — supaya turunan lintas-BU/Divisi di bawah C-1
-        # tetap ikut ketampung (sama prinsipnya dengan get_all_managers
-        # di mode Functional, cuma arahnya ke bawah bukan ke atas).
-        hob_scope = df.copy()
-        if bu_h  != "Semua": hob_scope = hob_scope[hob_scope["Business Unit"] == bu_h]
-        if div_h != "Semua": hob_scope = hob_scope[hob_scope["Division"] == div_h]
-        if sbu_h != "Semua": hob_scope = hob_scope[hob_scope["SBU/Tribe"] == sbu_h]
+        selected_level2 = {"All Level": "all", "Top Level": "top", "Level 1": "level1"}[level_opt2]
+        # Mode perusahaan: tampilkan seluruh tree (search sudah auto-switch ke Per Divisi)
+        root_ids2  = df[(df["Manager ID"] == "") | (df["Manager ID"].isna())]["Employee ID"].tolist()
+        tree_data2 = build_tree_json(df, "", root_ids2, mode="company")
+        chart_html2 = render_org_chart(json.dumps(tree_data2), chart_height=750, initial_level=selected_level2, theme=T)
+        st.components.v1.html(chart_html2, height=750, scrolling=False)
 
-        # HoB node sendiri harus selalu ikut kebawa meski dia sendiri
-        # secara kebetulan ke-filter keluar oleh BU/Div/SBU (biar root
-        # tetap muncul, walau kosong tanpa anak — user jadi tahu filter
-        # kombinasi ini "menutup" HoB tsb, bukan aplikasi yang error).
-        _hob_ids_all = [v["id"] for v in HOB_MAPPING.values()]
-        hob_scope = pd.concat([hob_scope, df[df["Employee ID"].isin(_hob_ids_all)]]).drop_duplicates(
-            subset=["Employee ID"], keep="last").reset_index(drop=True)
-
-        hob_ids_filter = ()
-        if hob_name_sel != "Semua HoB":
-            hob_ids_filter = tuple(v["id"] for v in HOB_MAPPING.values() if v["name"] == hob_name_sel)
-
-        col_lv_h, col_info_h = st.columns([2, 4])
-        with col_lv_h:
-            # [Definisi Done] Default expand = "Level 3" sesuai brief PM
-            # ("Default expand HoB View di Level 3 / C-1").
-            level_opts_h = ["All Level", "Top Level", "Level 1", "Level 2", "Level 3"]
-            level_opt_h  = st.selectbox(L["expand_level"], level_opts_h, index=level_opts_h.index("Level 3"), key="hob_level")
-        with col_info_h:
-            st.caption(f"📊 Menampilkan **{len(hob_scope)}** karyawan dalam scope filter saat ini")
-
-        selected_level_h = {"All Level": "all", "Top Level": "top", "Level 1": "level1",
-                            "Level 2": "level2", "Level 3": "level3"}[level_opt_h]
-
-        tree_data_hob  = build_hob_tree_json(hob_scope, hob_ids_filter=hob_ids_filter)
-        if not tree_data_hob:
-            st.warning(
-                "⚠️ Tidak ada HoB yang cocok dengan kombinasi filter ini. Coba longgarkan filter "
-                "BU/Divisi/SBU, atau cek apakah HoB yang dipilih memang berada di scope tsb."
-            )
-        else:
-            chart_html_hob = render_org_chart(json.dumps(tree_data_hob), chart_height=750,
-                                              initial_level=selected_level_h, theme=T,
-                                              highlight_id=search_highlight_id_h, labels=L)
-            _render_chart_iframe(chart_html_hob, height=750, scrolling=False)
-
-            st.markdown(f"**{L['download_data']}**")
-            col_hd1, col_hd2, col_hd3, col_hd4 = st.columns(4)
-            with col_hd1:
-                st.download_button("📄 CSV", hob_scope.to_csv(index=False).encode("utf-8"),
-                                   "hob_view.csv", "text/csv", use_container_width=True)
-            with col_hd2:
-                st.download_button("📊 Excel", to_excel(hob_scope), "hob_view.xlsx",
-                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
-            with col_hd3:
-                if st.button("📑 Generate PDF (Full)", key="gen_pdf_full_hob", use_container_width=True):
-                    try:
-                        st.session_state["pdf_full_hob_bytes"] = generate_pdf(
-                            tree_data_hob, f"Org Chart — HoB View ({hob_name_sel})",
-                            div_name=hob_name_sel, bu_name="HoB View", max_level=selected_level_h)
-                    except Exception:
-                        st.session_state["pdf_full_hob_bytes"] = None
-                        st.error("Gagal generate PDF.")
-                if st.session_state.get("pdf_full_hob_bytes"):
-                    st.download_button("⬇️ Download PDF (Full)", st.session_state["pdf_full_hob_bytes"],
-                                       "hob_view_full.pdf", "application/pdf", use_container_width=True)
-            with col_hd4:
-                if st.button("📑 Generate PDF (Summary)", key="gen_pdf_sum_hob", use_container_width=True):
-                    try:
-                        st.session_state["pdf_sum_hob_bytes"] = generate_pdf_summary(
-                            tree_data_hob, f"Org Chart Summary — HoB View ({hob_name_sel})",
-                            div_name=hob_name_sel, bu_name="HoB View")
-                    except Exception:
-                        st.session_state["pdf_sum_hob_bytes"] = None
-                        st.error("Gagal generate PDF summary.")
-                if st.session_state.get("pdf_sum_hob_bytes"):
-                    st.download_button("⬇️ Download PDF (Summary)", st.session_state["pdf_sum_hob_bytes"],
-                                       "hob_view_summary.pdf", "application/pdf", use_container_width=True)
+        st.markdown("**⬇️ Download Data**")
+        col_dl4, col_dl5, col_dl6, col_dl7 = st.columns(4)
+        with col_dl4:
+            st.download_button("📄 CSV", df.to_csv(index=False).encode("utf-8"),
+                               "all_employees.csv", "text/csv", use_container_width=True)
+        with col_dl5:
+            st.download_button("📊 Excel", to_excel(df), "all_employees.xlsx",
+                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+        with col_dl6:
+            try:
+                pdf2 = generate_pdf(tree_data2, "Org Chart — Seluruh Perusahaan",
+                                    div_name="Semua Divisi", bu_name="Seluruh BU")
+                st.download_button("📑 PDF (Full)", pdf2, "orgchart_perusahaan_full.pdf", "application/pdf", use_container_width=True)
+            except Exception:
+                st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
+        with col_dl7:
+            try:
+                pdf_sum2 = generate_pdf_summary(tree_data2, "Org Chart Summary — Seluruh Perusahaan",
+                                               div_name="Semua Divisi", bu_name="Seluruh BU")
+                st.download_button("📑 PDF (Summary)", pdf_sum2, "orgchart_perusahaan_summary.pdf", "application/pdf", use_container_width=True)
+            except Exception:
+                st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════
 # TAB 2 — DATA KARYAWAN
 # ══════════════════════════════════════════════════════════════════
 elif _active == 1:
-    if not _can_access_tab(_user_role, 1):
-        st.error("🚫 Akses ditolak — fitur ini hanya untuk Super Admin.")
-        st.stop()
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Data Karyawan</div>
@@ -4861,9 +2692,6 @@ elif _active == 1:
 # TAB 3 — COMPLIANCE CHECK
 # ══════════════════════════════════════════════════════════════════
 elif _active == 2:
-    if not _can_access_tab(_user_role, 2):
-        st.error("🚫 Akses ditolak — fitur ini hanya untuk Super Admin.")
-        st.stop()
     _title_cc = L["tab_cc_title"]
     _sub_cc   = L["tab_cc_sub"]
     st.markdown(f"""
@@ -4890,17 +2718,17 @@ elif _active == 2:
     )
     k2.metric(
         L["cc_mismatch"],
-        L["cc_unavailable"] if mpp_df.empty else len(mis_df),
+        len(mis_df),
         help="Karyawan yang Job ID-nya cocok di Employee Data & MPP, namun ada field yang berbeda (contoh: nama divisi, career stage). Indikasi data tidak sinkron antar sistem."
     )
     k3.metric(
         L["cc_ghost"],
-        L["cc_unavailable"] if mpp_df.empty else len(ghost_df),
+        len(ghost_df),
         help="Karyawan terdaftar di Employee Data namun Job ID-nya tidak ada di MPP. Kemungkinan posisi belum di-plot di MPP atau Job ID belum diinput."
     )
     k4.metric(
         L["cc_vacancy"],
-        L["cc_unavailable"] if mpp_df.empty else len(vac_df),
+        len(vac_df),
         help="Job ID terdaftar di Master MPP namun belum terisi di Employee Data — posisi yang direncanakan namun belum terpenuhi (open headcount)."
     )
 
@@ -4950,133 +2778,121 @@ elif _active == 2:
 
     # ── Data Tidak Konsisten ──────────────────────────────────────
     with cc_t2:
-        if mpp_df.empty:
-            st.info(L["cc_no_mpp"])
+        if st.session_state.lang == "id":
+            _mis_note = "Karyawan dengan Job ID yang <b>cocok</b> antara Employee Data dan MPP, namun terdapat <b>perbedaan nilai pada field tertentu</b> (contoh: Divisi di Employee Data berbeda dengan Divisi di MPP). Ini mengindikasikan data tidak sinkron — perlu direkonsiliasi."
         else:
-            if st.session_state.lang == "id":
-                _mis_note = "Karyawan dengan Job ID yang <b>cocok</b> antara Employee Data dan MPP, namun terdapat <b>perbedaan nilai pada field tertentu</b> (contoh: Divisi di Employee Data berbeda dengan Divisi di MPP). Ini mengindikasikan data tidak sinkron — perlu direkonsiliasi."
-            else:
-                _mis_note = "Employees whose Job ID <b>matches</b> between Employee Data and MPP, but have <b>field-level differences</b> (e.g., Division in Employee Data differs from MPP). This indicates out-of-sync data that needs reconciliation."
-            st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>🔀 <b>{'Data Tidak Konsisten' if st.session_state.lang == 'id' else 'Data Inconsistency'}</b> — {_mis_note}</div>", unsafe_allow_html=True)
+            _mis_note = "Employees whose Job ID <b>matches</b> between Employee Data and MPP, but have <b>field-level differences</b> (e.g., Division in Employee Data differs from MPP). This indicates out-of-sync data that needs reconciliation."
+        st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>🔀 <b>{'Data Tidak Konsisten' if st.session_state.lang == 'id' else 'Data Inconsistency'}</b> — {_mis_note}</div>", unsafe_allow_html=True)
 
-            if mis_df.empty:
-                st.success(L["cc_clean"])
-            else:
-                col_mf1, col_mf2, col_mf3 = st.columns([2, 2, 2])
-                with col_mf1:
-                    _field_opts = sorted(mis_df["Field"].unique().tolist())
-                    sel_fields = st.multiselect("Filter Field", _field_opts, default=_field_opts, key="cc_mismatch_fields")
-                with col_mf2:
-                    _jobid_opts_mis = ["Semua"] + sorted(mis_df["Job ID"].dropna().unique().tolist()) if "Job ID" in mis_df.columns else ["Semua"]
-                    sel_jobid_mis = st.selectbox("🔑 Filter Job ID", _jobid_opts_mis, key="cc_mis_jobid")
-                with col_mf3:
-                    jobid_search_mis = st.text_input("🔍 Cari Job ID (manual)", placeholder="Ketik Job ID...", key="cc_mis_jobid_search")
+        if mis_df.empty:
+            st.success(L["cc_clean"])
+        else:
+            col_mf1, col_mf2, col_mf3 = st.columns([2, 2, 2])
+            with col_mf1:
+                _field_opts = sorted(mis_df["Field"].unique().tolist())
+                sel_fields = st.multiselect("Filter Field", _field_opts, default=_field_opts, key="cc_mismatch_fields")
+            with col_mf2:
+                _jobid_opts_mis = ["Semua"] + sorted(mis_df["Job ID"].dropna().unique().tolist()) if "Job ID" in mis_df.columns else ["Semua"]
+                sel_jobid_mis = st.selectbox("🔑 Filter Job ID", _jobid_opts_mis, key="cc_mis_jobid")
+            with col_mf3:
+                jobid_search_mis = st.text_input("🔍 Cari Job ID (manual)", placeholder="Ketik Job ID...", key="cc_mis_jobid_search")
 
-                view_mis = mis_df.copy()
-                if sel_fields: view_mis = view_mis[view_mis["Field"].isin(sel_fields)]
-                if "Job ID" in view_mis.columns:
-                    if sel_jobid_mis != "Semua": view_mis = view_mis[view_mis["Job ID"] == sel_jobid_mis]
-                    if jobid_search_mis.strip(): view_mis = view_mis[view_mis["Job ID"].astype(str).str.contains(jobid_search_mis.strip(), case=False, na=False)]
+            view_mis = mis_df.copy()
+            if sel_fields: view_mis = view_mis[view_mis["Field"].isin(sel_fields)]
+            if "Job ID" in view_mis.columns:
+                if sel_jobid_mis != "Semua": view_mis = view_mis[view_mis["Job ID"] == sel_jobid_mis]
+                if jobid_search_mis.strip(): view_mis = view_mis[view_mis["Job ID"].astype(str).str.contains(jobid_search_mis.strip(), case=False, na=False)]
 
-                st.caption(f"{L['showing']} **{len(view_mis)}** isu")
-                st.dataframe(view_mis, use_container_width=True, height=400)
+            st.caption(f"{L['showing']} **{len(view_mis)}** isu")
+            st.dataframe(view_mis, use_container_width=True, height=400)
 
-                st.divider()
-                _bkd2_title = "Breakdown by Field" if st.session_state.lang == "en" else "Breakdown per Field"
-                st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:8px;'>{_bkd2_title}</div>", unsafe_allow_html=True)
-                field_bkd = view_mis.groupby(["Field","Severity"]).size().reset_index(name="Count").sort_values("Count",ascending=False)
-                st.dataframe(field_bkd, use_container_width=True, height=200)
-                st.divider()
-                c1, c2, _ = st.columns([1,1,3])
-                with c1: st.download_button(L["download_csv"], view_mis.to_csv(index=False).encode("utf-8"),"data_inconsistency.csv","text/csv",use_container_width=True)
-                with c2: st.download_button(L["download_excel"], to_excel(view_mis),"data_inconsistency.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+            st.divider()
+            _bkd2_title = "Breakdown by Field" if st.session_state.lang == "en" else "Breakdown per Field"
+            st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:8px;'>{_bkd2_title}</div>", unsafe_allow_html=True)
+            field_bkd = view_mis.groupby(["Field","Severity"]).size().reset_index(name="Count").sort_values("Count",ascending=False)
+            st.dataframe(field_bkd, use_container_width=True, height=200)
+            st.divider()
+            c1, c2, _ = st.columns([1,1,3])
+            with c1: st.download_button(L["download_csv"], view_mis.to_csv(index=False).encode("utf-8"),"data_inconsistency.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(view_mis),"data_inconsistency.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
 
     # ── Tidak Terpetakan (sebelumnya: Ghost Employee) ─────────────
     with cc_t3:
-        if mpp_df.empty:
-            st.info(L["cc_no_mpp"])
+        if st.session_state.lang == "id":
+            _ghost_note = "Karyawan terdaftar di <b>Employee Data</b> namun <b>Job ID-nya tidak ditemukan di MPP</b>. Kemungkinan posisi belum di-plot di MPP, atau Job ID belum diinput di sistem."
         else:
-            if st.session_state.lang == "id":
-                _ghost_note = "Karyawan terdaftar di <b>Employee Data</b> namun <b>Job ID-nya tidak ditemukan di MPP</b>. Kemungkinan posisi belum di-plot di MPP, atau Job ID belum diinput di sistem."
-            else:
-                _ghost_note = "Employee exists in <b>Employee Data</b> but their <b>Job ID has no match in MPP Data</b>. Position may not be plotted in MPP, or Job ID not yet entered."
-            st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>🔍 <b>{'Karyawan Tidak Terpetakan' if st.session_state.lang == 'id' else 'Unmapped Employees'}</b> — {_ghost_note}</div>", unsafe_allow_html=True)
+            _ghost_note = "Employee exists in <b>Employee Data</b> but their <b>Job ID has no match in MPP Data</b>. Position may not be plotted in MPP, or Job ID not yet entered."
+        st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>🔍 <b>{'Karyawan Tidak Terpetakan' if st.session_state.lang == 'id' else 'Unmapped Employees'}</b> — {_ghost_note}</div>", unsafe_allow_html=True)
 
-            if ghost_df.empty:
-                st.success(L["cc_clean"])
-            else:
-                col_g1, col_g2, col_g3 = st.columns([2, 2, 2])
-                with col_g1:
-                    _bu_g_opts = ["Semua"] + sorted(ghost_df["Business Unit"].dropna().unique().tolist()) if "Business Unit" in ghost_df.columns else ["Semua"]
-                    bu_g = st.selectbox(L["filter_bu_plain"], _bu_g_opts, key="cc_ghost_bu")
-                with col_g2:
-                    _jobid_opts_g = ["Semua"] + sorted(ghost_df["Job ID"].dropna().unique().tolist()) if "Job ID" in ghost_df.columns else ["Semua"]
-                    sel_jobid_g = st.selectbox("🔑 Filter Job ID", _jobid_opts_g, key="cc_ghost_jobid")
-                with col_g3:
-                    jobid_search_g = st.text_input("🔍 Cari Job ID (manual)", placeholder="Ketik Job ID...", key="cc_ghost_jobid_search")
+        if ghost_df.empty:
+            st.success(L["cc_clean"])
+        else:
+            col_g1, col_g2, col_g3 = st.columns([2, 2, 2])
+            with col_g1:
+                _bu_g_opts = ["Semua"] + sorted(ghost_df["Business Unit"].dropna().unique().tolist()) if "Business Unit" in ghost_df.columns else ["Semua"]
+                bu_g = st.selectbox(L["filter_bu_plain"], _bu_g_opts, key="cc_ghost_bu")
+            with col_g2:
+                _jobid_opts_g = ["Semua"] + sorted(ghost_df["Job ID"].dropna().unique().tolist()) if "Job ID" in ghost_df.columns else ["Semua"]
+                sel_jobid_g = st.selectbox("🔑 Filter Job ID", _jobid_opts_g, key="cc_ghost_jobid")
+            with col_g3:
+                jobid_search_g = st.text_input("🔍 Cari Job ID (manual)", placeholder="Ketik Job ID...", key="cc_ghost_jobid_search")
 
-                view_ghost = ghost_df.copy()
-                if "Business Unit" in view_ghost.columns and bu_g != "Semua":
-                    view_ghost = view_ghost[view_ghost["Business Unit"] == bu_g]
-                if "Job ID" in view_ghost.columns:
-                    if sel_jobid_g != "Semua": view_ghost = view_ghost[view_ghost["Job ID"] == sel_jobid_g]
-                    if jobid_search_g.strip(): view_ghost = view_ghost[view_ghost["Job ID"].astype(str).str.contains(jobid_search_g.strip(), case=False, na=False)]
+            view_ghost = ghost_df.copy()
+            if "Business Unit" in view_ghost.columns and bu_g != "Semua":
+                view_ghost = view_ghost[view_ghost["Business Unit"] == bu_g]
+            if "Job ID" in view_ghost.columns:
+                if sel_jobid_g != "Semua": view_ghost = view_ghost[view_ghost["Job ID"] == sel_jobid_g]
+                if jobid_search_g.strip(): view_ghost = view_ghost[view_ghost["Job ID"].astype(str).str.contains(jobid_search_g.strip(), case=False, na=False)]
 
-                st.caption(f"{L['showing']} **{len(view_ghost)}** {L['employees']}")
-                st.dataframe(view_ghost, use_container_width=True, height=430)
-                st.divider()
-                c1, c2, _ = st.columns([1,1,3])
-                with c1: st.download_button(L["download_csv"], view_ghost.to_csv(index=False).encode("utf-8"),"unmapped_employees.csv","text/csv",use_container_width=True)
-                with c2: st.download_button(L["download_excel"], to_excel(view_ghost),"unmapped_employees.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+            st.caption(f"{L['showing']} **{len(view_ghost)}** {L['employees']}")
+            st.dataframe(view_ghost, use_container_width=True, height=430)
+            st.divider()
+            c1, c2, _ = st.columns([1,1,3])
+            with c1: st.download_button(L["download_csv"], view_ghost.to_csv(index=False).encode("utf-8"),"unmapped_employees.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(view_ghost),"unmapped_employees.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
 
     # ── Master MPP (sebelumnya: Vacancy) ─────────────────────────
     with cc_t4:
-        if mpp_df.empty:
-            st.info(L["cc_no_mpp"])
+        if st.session_state.lang == "id":
+            _vac_note = "Seluruh Job ID yang terdaftar di <b>Master MPP</b>. Posisi yang <b>belum terisi</b> di Employee Data merupakan open headcount — perlu diisi rekrutmen atau ditinjau validitasnya."
         else:
-            if st.session_state.lang == "id":
-                _vac_note = "Seluruh Job ID yang terdaftar di <b>Master MPP</b>. Posisi yang <b>belum terisi</b> di Employee Data merupakan open headcount — perlu diisi rekrutmen atau ditinjau validitasnya."
-            else:
-                _vac_note = "All Job IDs registered in <b>Master MPP</b>. Positions <b>not yet filled</b> in Employee Data are open headcount — requires recruitment action or validity review."
-            st.markdown(f"<div style='background:{T['accent_bg']};border:1px solid {T['border2']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['accent']};'>📋 <b>Master MPP</b> — {_vac_note}</div>", unsafe_allow_html=True)
+            _vac_note = "All Job IDs registered in <b>Master MPP</b>. Positions <b>not yet filled</b> in Employee Data are open headcount — requires recruitment action or validity review."
+        st.markdown(f"<div style='background:{T['accent_bg']};border:1px solid {T['border2']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['accent']};'>📋 <b>Master MPP</b> — {_vac_note}</div>", unsafe_allow_html=True)
 
-            if vac_df.empty:
-                st.success(L["cc_clean"])
-            else:
-                col_v1, col_v2, col_v3, col_v4 = st.columns([2, 2, 2, 2])
-                with col_v1:
-                    _bu_v_opts = ["Semua"] + sorted(vac_df["BU"].dropna().unique().tolist()) if "BU" in vac_df.columns else ["Semua"]
-                    bu_v = st.selectbox("Filter BU", _bu_v_opts, key="cc_vac_bu")
-                with col_v2:
-                    _div_v_opts = ["Semua"] + sorted(vac_df["Division"].dropna().unique().tolist()) if "Division" in vac_df.columns else ["Semua"]
-                    div_v = st.selectbox("Filter Divisi", _div_v_opts, key="cc_vac_div")
-                with col_v3:
-                    _status_v_opts = ["Semua"] + sorted(vac_df["Fulfillment Status"].dropna().unique().tolist()) if "Fulfillment Status" in vac_df.columns else ["Semua"]
-                    status_v = st.selectbox("Filter Fulfillment Status", _status_v_opts, key="cc_vac_status")
-                with col_v4:
-                    jobid_search_v = st.text_input("🔑 Cari Job ID", placeholder="Ketik Job ID atau sebagian...", key="cc_vac_jobid_search")
+        if vac_df.empty:
+            st.success(L["cc_clean"])
+        else:
+            col_v1, col_v2, col_v3, col_v4 = st.columns([2, 2, 2, 2])
+            with col_v1:
+                _bu_v_opts = ["Semua"] + sorted(vac_df["BU"].dropna().unique().tolist()) if "BU" in vac_df.columns else ["Semua"]
+                bu_v = st.selectbox("Filter BU", _bu_v_opts, key="cc_vac_bu")
+            with col_v2:
+                _div_v_opts = ["Semua"] + sorted(vac_df["Division"].dropna().unique().tolist()) if "Division" in vac_df.columns else ["Semua"]
+                div_v = st.selectbox("Filter Divisi", _div_v_opts, key="cc_vac_div")
+            with col_v3:
+                _status_v_opts = ["Semua"] + sorted(vac_df["Fulfillment Status"].dropna().unique().tolist()) if "Fulfillment Status" in vac_df.columns else ["Semua"]
+                status_v = st.selectbox("Filter Fulfillment Status", _status_v_opts, key="cc_vac_status")
+            with col_v4:
+                jobid_search_v = st.text_input("🔑 Cari Job ID", placeholder="Ketik Job ID atau sebagian...", key="cc_vac_jobid_search")
 
-                view_vac = vac_df.copy()
-                if "BU" in view_vac.columns and bu_v != "Semua":          view_vac = view_vac[view_vac["BU"] == bu_v]
-                if "Division" in view_vac.columns and div_v != "Semua":    view_vac = view_vac[view_vac["Division"] == div_v]
-                if "Fulfillment Status" in view_vac.columns and status_v != "Semua":
-                    view_vac = view_vac[view_vac["Fulfillment Status"] == status_v]
-                if jobid_search_v.strip() and "JOBID" in view_vac.columns:
-                    view_vac = view_vac[view_vac["JOBID"].astype(str).str.contains(jobid_search_v.strip(), case=False, na=False)]
+            view_vac = vac_df.copy()
+            if "BU" in view_vac.columns and bu_v != "Semua":          view_vac = view_vac[view_vac["BU"] == bu_v]
+            if "Division" in view_vac.columns and div_v != "Semua":    view_vac = view_vac[view_vac["Division"] == div_v]
+            if "Fulfillment Status" in view_vac.columns and status_v != "Semua":
+                view_vac = view_vac[view_vac["Fulfillment Status"] == status_v]
+            if jobid_search_v.strip() and "JOBID" in view_vac.columns:
+                view_vac = view_vac[view_vac["JOBID"].astype(str).str.contains(jobid_search_v.strip(), case=False, na=False)]
 
-                st.caption(f"{L['showing']} **{len(view_vac)}** posisi MPP")
-                st.dataframe(view_vac, use_container_width=True, height=430)
-                st.divider()
-                c1, c2, _ = st.columns([1,1,3])
-                with c1: st.download_button(L["download_csv"], view_vac.to_csv(index=False).encode("utf-8"),"master_mpp.csv","text/csv",use_container_width=True)
-                with c2: st.download_button(L["download_excel"], to_excel(view_vac),"master_mpp.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+            st.caption(f"{L['showing']} **{len(view_vac)}** posisi MPP")
+            st.dataframe(view_vac, use_container_width=True, height=430)
+            st.divider()
+            c1, c2, _ = st.columns([1,1,3])
+            with c1: st.download_button(L["download_csv"], view_vac.to_csv(index=False).encode("utf-8"),"master_mpp.csv","text/csv",use_container_width=True)
+            with c2: st.download_button(L["download_excel"], to_excel(view_vac),"master_mpp.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
 # ══════════════════════════════════════════════════════════════════
 # TAB 4 — DAFTAR MANAGER
 # ══════════════════════════════════════════════════════════════════
 elif _active == 3:
-    if not _can_access_tab(_user_role, 3):
-        st.error("🚫 Akses ditolak — fitur ini hanya untuk Super Admin.")
-        st.stop()
     st.markdown(f"""
     <div style="margin-bottom:20px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Daftar Manager</div>
@@ -5084,12 +2900,22 @@ elif _active == 3:
     </div>
     """, unsafe_allow_html=True)
 
-    # [REFACTOR 27 Agt 2026] get_level_from_root() dipindah ke module-level
-    # (dekat HOB_MAPPING) supaya HoB Overlay bisa pakai definisi "Chief/
-    # C-1/C-2" yang SAMA PERSIS dengan tab ini — sebelumnya fungsi ini
-    # cuma didefinisikan inline di sini, dan HoB Overlay sempat punya
-    # definisi "C-1" versinya sendiri yang salah (lihat docstring
-    # annotate_hob_overlay). Definisi lokal duplikat dihapus dari sini.
+    def get_level_from_root(root_id: str, all_df: pd.DataFrame, max_depth: int = 2) -> dict:
+        levels: dict = {}
+        current = [root_id]
+        for depth in range(max_depth + 1):
+            next_lvl = []
+            for mgr_id in current:
+                children = all_df[all_df["Manager ID"] == mgr_id]["Employee ID"].tolist()
+                for child in children:
+                    if child not in levels:
+                        levels[child] = depth
+                        next_lvl.append(child)
+            current = next_lvl
+            if not current:
+                break
+        return levels
+
     hierarchy_levels = get_level_from_root(CHIEF_ROOT, df, max_depth=2)
 
     level0_ids = set(df[df["Career Stage"].astype(str).str.strip().str.lower() == "level 0"]["Employee ID"].tolist())
@@ -5185,367 +3011,165 @@ elif _active == 3:
                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
 
-
 # ══════════════════════════════════════════════════════════════════
 # TAB 5 — CHANGE REQUEST
 # ══════════════════════════════════════════════════════════════════
 elif _active == 4:
-    # Defense in depth: URL/session manipulation tidak boleh melewati beta + RBAC gate.
-    if not _scr_beta_enabled() or not _can_access_tab(_user_role, 4):
-        st.error("🚫 Akses ditolak — modul SCR belum aktif atau role Anda tidak memiliki akses.")
-        st.stop()
-
     st.markdown(f"""
     <div style="margin-bottom:24px;">
         <div style="font-size:20px;font-weight:700;color:{T['text']};">Structure Change Request</div>
         <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
-            Kelola permintaan perubahan struktur organisasi — 8 tipe perubahan
+            Kelola permintaan perubahan struktur organisasi — Reporting Line & Divisi
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    if st.session_state.get("scr_approved_proposal"):
-        st.success("✅ Request berhasil disetujui. Proposal People Ops telah dibuat otomatis.")
-        render_scr_proposal(
-            st.session_state["scr_approved_proposal"], T, "just_approved_proposal"
-        )
-        if st.button("Tutup preview proposal", key="close_approved_proposal"):
-            st.session_state.pop("scr_approved_proposal", None)
-            st.rerun()
+    cr_tab1, cr_tab2, cr_tab3 = st.tabs(["➕  Buat Request", "📥  Inbox & Review", "📜  History"])
 
-    # [SCR Fase 1a] Sub-tab dibangun dari kapabilitas role. Sub-tab yang tidak
-    # diizinkan bernilai None dan isinya TIDAK PERNAH dieksekusi (lihat `if ... is not None` di bawah).
-    _scr_tab_defs = [
-        ("submit",  "➕  Buat Request"),
-        ("my",      "🔎  My Requests"),
-        ("inbox",   "📥  Inbox & Review"),
-        ("history", "📜  History"),
-    ]
-    _scr_tab_vis = [(k, lbl) for k, lbl in _scr_tab_defs if _scr_can(_user_role, k)]
-    if not _scr_tab_vis:
-        st.error("🚫 Akses ditolak — role Anda tidak memiliki akses ke fitur SCR.")
-        st.stop()
-    _scr_tab_objs = dict(zip([k for k, _ in _scr_tab_vis], st.tabs([lbl for _, lbl in _scr_tab_vis])))
-    cr_tab1   = _scr_tab_objs.get("submit")
-    cr_tab_my = _scr_tab_objs.get("my")
-    cr_tab2   = _scr_tab_objs.get("inbox")
-    cr_tab3   = _scr_tab_objs.get("history")
+    def make_template(change_type_tmpl):
+        cols = (["Employee ID", "Employee Name", "Previous Manager", "New Manager"]
+                if change_type_tmpl == "Reporting Line"
+                else ["Employee ID", "Employee Name", "Nama Divisi Lama", "Nama Divisi Baru"])
+        return pd.DataFrame(columns=cols)
 
-    # [SCR-G2/G3 — 26 Agt 2026] Form single-request, name-first, dengan
-    # autocomplete + auto-fill. Bulk-submit (banyak employee dalam 1 form)
-    # SENGAJA DIHAPUS — REQUIREMENTS.md Section 3 eksplisit menyatakan
-    # Bulk SCR di luar scope MVP. Kalau butuh proses banyak employee
-    # sekaligus, submit satu-satu; ini juga lebih konsisten dengan model
-    # audit trail per-tiket (1 SCR number = 1 keputusan approve/reject).
-    def _cr_field_options(col_name: str, company_wide: bool = False) -> list:
-        """Unique non-blank values untuk dropdown 'after'. company_wide=True memakai
-        data seluruh perusahaan (tujuan perubahan), False memakai data sesuai scope user."""
-        _src = df_all if company_wide else df
-        if col_name not in _src.columns:
-            return []
-        vals = _src[col_name].dropna().astype(str).str.strip()
-        return sorted([v for v in vals.unique().tolist() if v and v.lower() != "nan"])
+    def process_and_save(rows_data, req_name, req_email, change_type, alasan, eff_date):
+        valid_rows = [(str(eid).strip(), str(en).strip(), str(ov).strip(), str(nv).strip())
+                      for eid, en, ov, nv in rows_data if str(eid).strip() or str(en).strip()]
+        if not valid_rows:
+            return [], [], 0
+        warnings_list = []
+        for emp_id, emp_name, old_val, new_val in valid_rows:
+            if emp_id and emp_id not in df["Employee ID"].values:
+                warnings_list.append(f"Employee ID **{emp_id}** tidak ditemukan di data.")
+            if change_type == "Reporting Line" and new_val:
+                if len(df[df["Employee Name"].str.lower() == new_val.lower()]) == 0:
+                    warnings_list.append(f"Manager baru **{new_val}** tidak ditemukan di data.")
+        success_count = 0
+        for emp_id, emp_name, old_val, new_val in valid_rows:
+            row = {
+                "request_id":      generate_request_id(),
+                "submitted_date":  datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "requester_name":  req_name.strip(),
+                "requester_email": req_email.strip(),
+                "change_type":     change_type,
+                "employee_id":     emp_id,
+                "employee_name":   emp_name,
+                "data_lama":       old_val,
+                "data_baru":       new_val,
+                "alasan":          f"{alasan.strip()} | Effective: {eff_date}",
+                "status":          "Pending",
+                "reviewed_by":     "",
+                "reviewed_date":   "",
+                "catatan":         "",
+            }
+            if save_change_request(row):
+                success_count += 1
+        return valid_rows, warnings_list, success_count
 
-    def _cr_employee_options(exclude_id: str = None, company_wide: bool = False) -> list:
-        """List 'Nama (Employee ID)' untuk dropdown pilih karyawan/manager/budget holder.
-        company_wide=True = seluruh perusahaan (tujuan perubahan); False = sesuai scope user."""
-        _src = df_all if company_wide else df
-        opt_df = _src[["Employee ID", "Employee Name"]].dropna().drop_duplicates(subset=["Employee ID"])
-        if exclude_id:
-            opt_df = opt_df[opt_df["Employee ID"] != exclude_id]
-        opt_df = opt_df.sort_values("Employee Name")
-        return [f"{r['Employee Name']} ({r['Employee ID']})" for _, r in opt_df.iterrows()]
-
-    def _cr_parse_id_from_display(display_str: str) -> str:
-        """'Budi Santoso (EMP001)' -> 'EMP001'"""
-        if "(" in display_str and display_str.endswith(")"):
-            return display_str.rsplit("(", 1)[1][:-1].strip()
-        return ""
-
-    def _cr_parse_name_from_display(display_str: str) -> str:
-        """'Budi Santoso (EMP001)' -> 'Budi Santoso'"""
-        if "(" in display_str:
-            return display_str.rsplit("(", 1)[0].strip()
-        return display_str.strip()
-
-    def render_cr_field_input(field_name: str, emp_row: pd.Series, fv: int) -> dict:
-        """
-        Render input 'after' untuk satu tipe perubahan, return dict
-        {"field","before","after", ...} siap masuk ke change_request JSON.
-        `fv` = form_version, dipakai sebagai key-suffix supaya widget
-        reset bersih setiap form berhasil submit (lihat cr_form_version).
-        """
-        before_col = CR_FIELD_TO_DFCOL[field_name]
-        before_val = str(emp_row.get(before_col, "")).strip()
-        st.markdown(f"**{field_name}**  ·  saat ini: `{before_val or '-'}`")
-
-        if field_name == "Job Title":
-            jt_mode = st.radio(
-                "Sumber Job Title Baru", ["Pilih dari daftar existing", "Buat Baru (belum ada di data)"],
-                horizontal=True, key=f"cr_jt_mode_{fv}", label_visibility="collapsed",
-            )
-            if jt_mode == "Pilih dari daftar existing":
-                jt_options = ["-- Pilih Job Title --"] + [o for o in _cr_field_options("Job Position", company_wide=True) if o != before_val]
-                after_sel = st.selectbox("Job Title Baru", jt_options, key=f"cr_jt_after_{fv}", label_visibility="collapsed")
-                after_val = "" if after_sel == "-- Pilih Job Title --" else after_sel
-                return {"field": field_name, "before": before_val, "after": after_val}
-            else:
-                new_title = st.text_input("Nama Job Title Baru *", key=f"cr_jt_new_{fv}", placeholder="cth: Senior Product Analyst")
-                jd_file = st.file_uploader(
-                    "Upload Job Description (wajib untuk Job Title baru) *",
-                    type=["pdf", "doc", "docx"], key=f"cr_jt_jd_{fv}",
-                )
-                st.caption(
-                    "⚠️ File JD belum otomatis tersimpan ke storage manapun (belum ada integrasi Drive di "
-                    "aplikasi ini). Nama file akan dicatat di tiket, tapi **kirim file fisiknya manual ke "
-                    "email OD** sampai G4/penyimpanan file dibangun."
-                )
-                return {
-                    "field": field_name, "before": before_val,
-                    "after": f"{new_title.strip()} (NEW)" if new_title.strip() else "",
-                    "jd_filename": jd_file.name if jd_file else "",
-                }
-
-        elif field_name == "Reporting Line":
-            mgr_options = ["-- Pilih Manager Baru --"] + _cr_employee_options(exclude_id=emp_row.get("Employee ID", ""), company_wide=True)
-            after_sel = st.selectbox("Manager Baru", mgr_options, key=f"cr_mgr_after_{fv}", label_visibility="collapsed")
-            after_val = "" if after_sel == "-- Pilih Manager Baru --" else _cr_parse_name_from_display(after_sel)
-            return {"field": field_name, "before": before_val, "after": after_val}
-
-        elif field_name in ("Division", "SBU", "Business Unit"):
-            opts = ["-- Pilih --"] + [o for o in _cr_field_options(before_col, company_wide=True) if o != before_val]
-            after_sel = st.selectbox(f"{field_name} Baru", opts, key=f"cr_{field_name}_after_{fv}", label_visibility="collapsed")
-            after_val = "" if after_sel == "-- Pilih --" else after_sel
-            return {"field": field_name, "before": before_val, "after": after_val}
-
-        else:  # Primary Budget Holder / Secondary Budget Holder
-            # [Asumsi — perlu dikonfirmasi Dave] Budget Holder diperlakukan
-            # sebagai nama orang, konsisten dengan Reporting Line. Kalau di
-            # data aktual Budget Holder ternyata bukan nama karyawan
-            # (misal kode cost-center), field ini perlu diganti jadi
-            # text_input bebas, bukan dropdown employee.
-            bh_options = ["-- Pilih --"] + _cr_employee_options(company_wide=True)
-            after_sel = st.selectbox(f"{field_name} Baru", bh_options, key=f"cr_bh_{field_name}_{fv}", label_visibility="collapsed")
-            after_val = "" if after_sel == "-- Pilih --" else _cr_parse_name_from_display(after_sel)
-            return {"field": field_name, "before": before_val, "after": after_val}
-
-    if cr_tab1 is not None:
-      with cr_tab1:
-        # form_version naik setiap sukses submit -> semua widget key di
-        # bawah pakai suffix ini, jadi form otomatis "reset" tanpa perlu
-        # manual clear session_state satu-satu.
-        _fv = st.session_state.get("cr_form_version", 0)
-        _submitted_id = st.session_state.pop("cr_submit_success", None)
-        if _submitted_id:
-            st.success(f"Request **{_submitted_id}** berhasil dikirim. Pantau statusnya di tab My Requests.")
-            import re as _re_t
-            if _re_t.search(r"-T[0-9A-F]{10}$", str(_submitted_id)):
-                st.warning("⚠️ Request tersimpan dengan nomor SEMENTARA. Catat nomor ini; OD akan menormalkannya.")
-
-        st.markdown(f"""<div style="font-size:15px;font-weight:600;color:{T['text']};margin-bottom:12px;">
+    with cr_tab1:
+        st.markdown(f"""<div style="font-size:15px;font-weight:600;color:{T['text']};margin-bottom:16px;">
             Form Permintaan Perubahan Struktur</div>""", unsafe_allow_html=True)
 
-        # ── Step 1: Cari Karyawan (autocomplete via searchable selectbox) ──
-        st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;">
-            1️⃣ Cari Karyawan yang Akan Diubah *</div>""", unsafe_allow_html=True)
-        emp_display_options = ["-- Ketik nama untuk mencari --"] + _cr_employee_options()
-        selected_emp_display = st.selectbox(
-            "Cari Karyawan", emp_display_options, key=f"cr_emp_select_{_fv}", label_visibility="collapsed",
-        )
+        col_r1, col_r2 = st.columns(2)
+        with col_r1: req_name_shared  = st.text_input("Nama Requester *", placeholder="Nama lengkap pengirim request", key="req_name_shared")
+        with col_r2: req_email_shared = st.text_input("Email Requester *", placeholder="email@dave.com", key="req_email_shared")
+        st.markdown(f"<div style='height:1px;background:{T['border']};margin:16px 0;'></div>", unsafe_allow_html=True)
 
-        # Identity comes from OAuth, shown as context rather than disabled fields.
-        req_name_shared = _user_info.get("name", "") or "-"
-        req_email_shared = st.session_state.get("user_email", "-")
-        _req_name_display = html.escape(str(req_name_shared))
-        _req_email_display = html.escape(str(req_email_shared))
-        st.markdown(f"""
-        <div style="border:1px solid {T['outline']};background:{T['bg3']};
-            border-radius:10px;padding:12px 16px;margin:8px 0 18px 0;
-            color:{T['text_variant']};font-size:13px;line-height:1.5;">
-            <span style="font-weight:600;color:{T['text']};">Diajukan oleh {_req_name_display}</span>
-            <span style="margin-left:8px;overflow-wrap:anywhere;">{_req_email_display}</span>
-            <div style="font-size:12px;margin-top:2px;">Identitas diambil dari akun login.</div>
-        </div>
-        """, unsafe_allow_html=True)
+        col_ct, col_ed = st.columns(2)
+        with col_ct: change_type_shared = st.selectbox("Jenis Perubahan *", ["Reporting Line", "Nama Divisi"], key="ct_shared")
+        with col_ed: eff_date_shared    = st.date_input("Effective Date", value=datetime.today(), key="ed_shared")
+        st.markdown(f"<div style='height:1px;background:{T['border']};margin:16px 0;'></div>", unsafe_allow_html=True)
+        alasan_shared = st.text_area("Alasan / Keterangan *", placeholder="Jelaskan alasan perubahan struktur ini...", height=90, key="alasan_shared")
+        st.markdown(f"<div style='height:1px;background:{T['border']};margin:16px 0;'></div>", unsafe_allow_html=True)
 
-        if selected_emp_display == "-- Ketik nama untuk mencari --":
-            st.caption("Pilih karyawan untuk melihat data saat ini dan mengisi detail perubahan.")
-        else:
-            emp_id_sel = _cr_parse_id_from_display(selected_emp_display)
-            emp_match  = df[df["Employee ID"] == emp_id_sel]
-            if emp_match.empty:
-                st.error("❌ Data karyawan tidak ditemukan — coba pilih ulang.")
-            else:
-                emp_row = emp_match.iloc[0]
+        input_mode = st.radio("", ["✏️  Input Manual (1–5 karyawan)", "📤  Upload Spreadsheet (>5 karyawan)"],
+                              horizontal=True, label_visibility="collapsed", key="input_mode")
 
-                # Auto-fill card — current data
-                st.markdown(f"""
-                <div style="background:{T['bg3']};border:1px solid {T['border']};border-radius:10px;padding:14px 16px;margin:8px 0 16px 0;">
-                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
-                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;">Job Title</div>
-                            <div style="font-size:13px;font-weight:600;color:{T['text']};">{emp_row.get('Job Position','-') or '-'}</div></div>
-                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;">Division</div>
-                            <div style="font-size:13px;font-weight:600;color:{T['text']};">{emp_row.get('Division','-') or '-'}</div></div>
-                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;">Business Unit</div>
-                            <div style="font-size:13px;font-weight:600;color:{T['text']};">{emp_row.get('Business Unit','-') or '-'}</div></div>
-                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;">SBU/Tribe</div>
-                            <div style="font-size:13px;font-weight:600;color:{T['text']};">{emp_row.get('SBU/Tribe','-') or '-'}</div></div>
-                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;">Manager</div>
-                            <div style="font-size:13px;font-weight:600;color:{T['text']};">{emp_row.get('Manager Name','-') or '-'}</div></div>
-                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;">Employee ID</div>
-                            <div style="font-size:13px;font-weight:600;color:{T['text']};">{emp_row.get('Employee ID','-')}</div></div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+        if input_mode == "✏️  Input Manual (1–5 karyawan)":
+            with st.form("cr_form_manual", clear_on_submit=True):
+                num_rows = st.number_input("Jumlah karyawan", min_value=1, max_value=5, value=1, step=1)
+                h1c, h2c, h3c, h4c = st.columns([1.5, 2, 2.5, 2.5])
+                h1c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text_variant']};'>Employee ID</div>", unsafe_allow_html=True)
+                h2c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text_variant']};'>Nama Karyawan</div>", unsafe_allow_html=True)
+                h3c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text_variant']};'>{'Previous Manager' if change_type_shared=='Reporting Line' else 'Divisi Lama'}</div>", unsafe_allow_html=True)
+                h4c.markdown(f"<div style='font-size:11px;font-weight:700;color:{T['text_variant']};'>{'New Manager' if change_type_shared=='Reporting Line' else 'Divisi Baru'}</div>", unsafe_allow_html=True)
+                rows_data_manual = []
+                for i in range(int(num_rows)):
+                    c1, c2, c3, c4 = st.columns([1.5, 2, 2.5, 2.5])
+                    with c1: emp_id = st.text_input("", key=f"eid_{i}", placeholder="EMP001", label_visibility="collapsed")
+                    with c2:
+                        match = df[df["Employee ID"] == emp_id]["Employee Name"].values
+                        emp_name = st.text_input("", key=f"ename_{i}", value=match[0] if len(match) > 0 else "",
+                                                 placeholder="Nama lengkap", label_visibility="collapsed")
+                    with c3: old_val = st.text_input("", key=f"old_{i}", label_visibility="collapsed",
+                                                     placeholder="Manager lama" if change_type_shared=="Reporting Line" else "Divisi saat ini")
+                    with c4: new_val = st.text_input("", key=f"new_{i}", label_visibility="collapsed",
+                                                     placeholder="Manager baru" if change_type_shared=="Reporting Line" else "Divisi tujuan")
+                    rows_data_manual.append((emp_id, emp_name, old_val, new_val))
+                submitted_manual = st.form_submit_button("📨  Kirim Request", use_container_width=True)
 
-                st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;">
-                    2️⃣ Jenis Perubahan *</div>""", unsafe_allow_html=True)
-                change_type_shared = st.selectbox("Jenis Perubahan", CR_CHANGE_TYPES, key=f"cr_ct_{_fv}", label_visibility="collapsed")
-                st.markdown(f"<div style='height:1px;background:{T['border']};margin:12px 0;'></div>", unsafe_allow_html=True)
-
-                st.markdown(f"""<div style="font-size:13px;font-weight:700;color:{T['text']};margin-bottom:8px;">
-                    3️⃣ Detail Perubahan *</div>""", unsafe_allow_html=True)
-
-                field_changes = []
-                if change_type_shared != "Kombinasi":
-                    field_changes = [render_cr_field_input(change_type_shared, emp_row, _fv)]
+            if submitted_manual:
+                errors = []
+                if not req_name_shared.strip(): errors.append("Nama Requester harus diisi")
+                if not req_email_shared.strip() or "@" not in req_email_shared: errors.append("Email tidak valid")
+                if not alasan_shared.strip(): errors.append("Alasan perubahan harus diisi")
+                if errors:
+                    for e in errors: st.error(f"❌ {e}")
                 else:
-                    combo_fields = st.multiselect(
-                        "Pilih minimal 2 field yang berubah bersamaan",
-                        CR_BASE_TYPES, key=f"cr_combo_{_fv}",
-                    )
-                    if len(combo_fields) < 2:
-                        st.warning("⚠️ Pilih minimal **2 field** untuk Kombinasi. Kalau hanya 1 field, pilih tipe itu langsung tanpa 'Kombinasi'.")
-                    else:
-                        for cf in combo_fields:
-                            st.markdown(f"<div style='height:1px;background:{T['border']};margin:10px 0;'></div>", unsafe_allow_html=True)
-                            field_changes.append(render_cr_field_input(cf, emp_row, f"{_fv}_{cf.replace(' ','_')}"))
+                    valid_rows, warnings_list, success_count = process_and_save(
+                        rows_data_manual, req_name_shared, req_email_shared,
+                        change_type_shared, alasan_shared, eff_date_shared)
+                    for w in warnings_list: st.warning(f"⚠️ {w}")
+                    if success_count > 0:
+                        st.success(f"✅ **{success_count} request** berhasil dikirim!")
+                        st.balloons()
 
-                st.markdown(f"<div style='height:1px;background:{T['border']};margin:16px 0;'></div>", unsafe_allow_html=True)
-                col_al, col_ed = st.columns([3, 1])
-                with col_al:
-                    alasan_shared = st.text_area("Justifikasi / Alasan Perubahan *", placeholder="Jelaskan alasan perubahan struktur ini...",
-                                                 height=90, key=f"cr_alasan_{_fv}")
-                with col_ed:
-                    eff_date_shared = st.date_input("Effective Date", value=datetime.today(), key=f"cr_ed_{_fv}")
-
-                if st.button("📨  Kirim Request", use_container_width=True, key=f"cr_submit_{_fv}"):
-                    errors = []
-                    if not alasan_shared.strip():
-                        errors.append("Justifikasi/alasan wajib diisi.")
-                    if not field_changes:
-                        errors.append("Belum ada detail perubahan yang valid.")
-                    for fc in field_changes:
-                        if not fc.get("after"):
-                            errors.append(f"Nilai baru untuk **{fc['field']}** belum dipilih/diisi.")
-                        if fc["field"] == "Job Title" and "jd_filename" in fc and not fc["jd_filename"]:
-                            errors.append("Job Title baru wajib disertai upload Job Description.")
-
-                    # [SCR-RULE — 3 Okt 2026] Requester tidak boleh mengajukan SCR untuk dirinya sendiri.
-                    _me_email = str(req_email_shared).strip().lower()
-                    _me_empid = str(_user_info.get("employee_id", "")).strip().upper()
-                    _emp_email = str(emp_row.get("Email", "")).strip().lower()
-                    _emp_id    = str(emp_row.get("Employee ID", "")).strip().upper()
-                    if (_me_email and _emp_email and _me_email == _emp_email) or \
-                       (_me_empid and _emp_id and _me_empid == _emp_id):
-                        errors.append("Anda tidak dapat mengajukan perubahan struktur untuk diri sendiri. "
-                                      "Minta atasan atau HRBP Anda untuk mengajukannya.")
-
-                    if errors:
-                        for e in errors:
-                            st.error(f"❌ {e}")
-                    else:
-                        request_id = generate_request_id()
-                        summary_lama = "; ".join(f"{fc['field']}: {fc['before'] or '-'}" for fc in field_changes)
-                        summary_baru = "; ".join(f"{fc['field']}: {fc['after'] or '-'}" for fc in field_changes)
-                        row = {
-                            "request_id":      request_id,
-                            "submitted_date":  datetime.now(_WIB).strftime("%Y-%m-%d %H:%M"),
-                            "requester_name":  req_name_shared,
-                            "requester_email": req_email_shared,
-                            "change_type":     (change_type_shared if change_type_shared != "Kombinasi"
-                            else "Kombinasi: " + " + ".join(fc["field"] for fc in field_changes)),
-                            "employee_id":     emp_row.get("Employee ID", ""),
-                            "employee_name":   emp_row.get("Employee Name", ""),
-                            "data_lama":       summary_lama,
-                            "data_baru":       summary_baru,
-                            "alasan":          f"{alasan_shared.strip()} | Effective: {eff_date_shared}",
-                            "status":          "Pending",
-                            "reviewed_by":     "",
-                            "reviewed_date":   "",
-                            "catatan":         "",
-                            "change_request":  build_change_request_json(field_changes),
-                        }
-                        if save_change_request(row):
-                            request_id = row["request_id"]   # nomor final dari save_change_request()
-                            log_activity(
-                                action_type="submit_scr",
-                                detail=f"{request_id} · {change_type_shared} · {emp_row.get('Employee Name','')}",
-                            )
-                            st.session_state["cr_submit_success"] = request_id
-                            load_change_requests.clear()
-                            st.session_state["cr_form_version"] = _fv + 1
-                            st.rerun()
-                        else:
-                            # [FIX 30 Sep 2026] Dulu tidak ada else sama sekali —
-                            # kalau save_change_request() gagal, tombol diklik dan
-                            # TIDAK ADA REAKSI APAPUN (persis bug yang dilaporkan
-                            # Dave di testing 30 Sep 2026). save_change_request()
-                            # sudah menampilkan st.error dengan alasan spesifik;
-                            # baris ini cuma jaring pengaman terakhir.
-                            st.warning("⚠️ Request tidak tersimpan. Lihat pesan error di atas, perbaiki, lalu coba kirim ulang.")
-
-    if cr_tab_my is not None:
-      with cr_tab_my:
-        my_email = st.session_state.get("user_email", "").strip().lower()
-        my_cr_df = load_change_requests()
-        if cr_load_failed(my_cr_df):
-            st.error("❌ Gagal memuat data request dari Google Sheets. Ini BUKAN berarti tidak ada request. "
-                     "Klik Refresh atau coba lagi sebentar lagi; bila berulang hubungi OD Team.")
-        elif my_cr_df.empty or "requester_email" not in my_cr_df.columns:
-            st.info("📭 Anda belum memiliki request.")
         else:
-            my_requests = my_cr_df[
-                my_cr_df["requester_email"].astype(str).str.strip().str.lower().eq(my_email)
-            ].copy()
-            if my_requests.empty:
-                st.info("📭 Anda belum memiliki request.")
-            else:
-                if "submitted_date" in my_requests.columns:
-                    my_requests = my_requests.sort_values("submitted_date", ascending=False)
-                st.caption(f"Menampilkan **{len(my_requests)}** request milik **{my_email}**")
-                status_icons = {
-                    "Pending": "🟡", "In Review": "🔵", "Approved": "✅", "Rejected": "❌"
-                }
-                for my_idx, (_, my_row) in enumerate(my_requests.iterrows()):
-                    my_request_id = str(my_row.get("request_id", "-"))
-                    my_status = str(my_row.get("status", "Pending") or "Pending").strip()
-                    icon = status_icons.get(my_status, "⚪")
-                    is_selected_proposal = st.session_state.get("my_selected_proposal") == my_request_id
-                    with st.expander(
-                        f"{icon} {my_request_id} · {my_row.get('employee_name', '-')} · {my_status}",
-                        expanded=is_selected_proposal,
-                    ):
-                        c_my1, c_my2 = st.columns(2)
-                        c_my1.write(f"**Tipe perubahan:** {my_row.get('change_type', '-')}")
-                        c_my1.write(f"**Tanggal submit:** {my_row.get('submitted_date', '-')}")
-                        c_my2.write(f"**Employee ID:** {my_row.get('employee_id', '-')}")
-                        c_my2.write(f"**Status:** {my_status}")
-                        st.write(f"**Justifikasi:** {my_row.get('alasan', '-')}")
-                        if my_status == "Rejected":
-                            st.error(f"Alasan penolakan OD: {my_row.get('catatan', '-') or '-'}")
-                        elif my_status == "Approved":
-                            if st.button(
-                                "Lihat Proposal Document",
-                                key=f"view_my_proposal_{my_idx}_{my_request_id}",
-                            ):
-                                st.session_state["my_selected_proposal"] = my_request_id
-                                st.rerun()
-                            if is_selected_proposal:
-                                render_scr_proposal(dict(my_row), T, f"my_proposal_{my_idx}")
+            template_df = make_template(change_type_shared)
+            col_tmpl, _ = st.columns([2, 4])
+            with col_tmpl:
+                st.download_button("⬇️  Download Template", data=to_excel(template_df),
+                    file_name=f"template_cr_{change_type_shared.lower().replace(' ','_')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
-    if cr_tab2 is not None:
-      with cr_tab2:
+            uploaded_file = st.file_uploader("Upload file Excel (.xlsx) atau CSV (.csv)", type=["xlsx", "csv"], key="cr_upload")
+            if uploaded_file:
+                try:
+                    upload_df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
+                    upload_df.columns = upload_df.columns.str.strip()
+                    upload_df = upload_df.dropna(how="all")
+                    if change_type_shared == "Reporting Line":
+                        required_cols = ["Employee ID", "Employee Name", "Previous Manager", "New Manager"]
+                        old_col, new_col = "Previous Manager", "New Manager"
+                    else:
+                        required_cols = ["Employee ID", "Employee Name", "Nama Divisi Lama", "Nama Divisi Baru"]
+                        old_col, new_col = "Nama Divisi Lama", "Nama Divisi Baru"
+                    missing_cols = [c for c in required_cols if c not in upload_df.columns]
+                    if missing_cols:
+                        st.error(f"❌ Kolom tidak sesuai template. Kurang: {', '.join(missing_cols)}")
+                    else:
+                        st.caption(f"Preview Data ({len(upload_df)} karyawan)")
+                        st.dataframe(upload_df[required_cols], use_container_width=True, height=200)
+                        errors_upload = []
+                        if not req_name_shared.strip(): errors_upload.append("Nama Requester harus diisi")
+                        if not req_email_shared.strip() or "@" not in req_email_shared: errors_upload.append("Email tidak valid")
+                        if not alasan_shared.strip(): errors_upload.append("Alasan perubahan harus diisi")
+                        if errors_upload:
+                            for e in errors_upload: st.error(f"❌ {e}")
+                        else:
+                            if st.button("📨  Kirim Semua Request dari File", use_container_width=True, key="submit_upload"):
+                                rows_from_file = [(str(r.get("Employee ID","")).strip(), str(r.get("Employee Name","")).strip(),
+                                                   str(r.get(old_col,"")).strip(), str(r.get(new_col,"")).strip())
+                                                  for _, r in upload_df.iterrows()]
+                                _, _, success_count = process_and_save(rows_from_file, req_name_shared, req_email_shared,
+                                                                       change_type_shared, alasan_shared, eff_date_shared)
+                                if success_count > 0:
+                                    st.success(f"✅ **{success_count} request** dari file berhasil dikirim!")
+                                    st.balloons()
+                except Exception as e:
+                    st.error(f"❌ Gagal membaca file: {str(e)}")
+
+    with cr_tab2:
         st.markdown(f"""
         <style>
         [data-testid="stButton"] button.approve-btn {{
@@ -5565,23 +3189,12 @@ elif _active == 4:
                 st.cache_data.clear(); st.rerun()
 
         cr_df = load_change_requests()
-        if cr_load_failed(cr_df):
-            st.error("❌ Gagal memuat data request dari Google Sheets. Ini BUKAN berarti tidak ada request. "
-                     "Klik Refresh atau coba lagi sebentar lagi; bila berulang hubungi OD Team.")
-        elif cr_df.empty:
+        if cr_df.empty:
             st.info("📭 Belum ada request yang masuk.")
         else:
             if "status" not in cr_df.columns:
                 cr_df["status"] = "Pending"
             pending_df = cr_df[cr_df["status"] == "Pending"].copy()
-            # [QA ID-01] Nomor tiket ganda: tampilkan peringatan dan blokir keputusan pada tiket tsb.
-            _dup_ids = set()
-            if "request_id" in cr_df.columns:
-                _rid = cr_df["request_id"].astype(str).str.strip()
-                _dup_ids = set(_rid[_rid.duplicated(keep=False)])
-            if _dup_ids:
-                st.warning("⚠️ Ada nomor tiket ganda: " + ", ".join(sorted(_dup_ids))
-                           + ". Approve/Reject untuk tiket ini diblokir sampai nomor dinormalkan di sheet.")
 
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("📥 Total Masuk",  len(cr_df))
@@ -5610,36 +3223,7 @@ elif _active == 4:
                         f"{row.get('employee_name','-')}  ·  dari {row.get('requester_name','-')}", expanded=False):
                         col_info, col_action = st.columns([3, 2])
                         with col_info:
-                            # [SCR-G2/G3] Parse change_request JSON untuk render per-field
-                            # before/after. Fallback ke data_lama/data_baru (satu baris teks)
-                            # untuk tiket lama yang dibuat sebelum kolom ini ada.
-                            _fc_list = parse_change_request_json(row.get("change_request", ""))
-                            if _fc_list:
-                                _diff_rows_html = ""
-                                for _fc in _fc_list:
-                                    _jd_note = ""
-                                    if _fc.get("jd_filename"):
-                                        _jd_note = f"<div style='font-size:11px;color:{T['text_variant']};margin-top:2px;'>📎 JD: {_fc['jd_filename']} (kirim manual ke OD)</div>"
-                                    _diff_rows_html += f"""
-                                    <div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px dashed {T['border']};">
-                                        <div style="font-size:11px;font-weight:700;color:{T['text']};margin-bottom:4px;">{_fc.get('field','-')}</div>
-                                        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                                            <div style="font-size:13px;color:#ef4444;font-weight:500;">❌ {_fc.get('before','-') or '-'}</div>
-                                            <div style="font-size:13px;color:#22c55e;font-weight:500;">✅ {_fc.get('after','-') or '-'}</div>
-                                        </div>
-                                        {_jd_note}
-                                    </div>"""
-                                _diff_block = _diff_rows_html
-                            else:
-                                _diff_block = f"""
-                                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                                    <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Sebelum</div>
-                                        <div style="font-size:13px;color:#ef4444;font-weight:500;">❌ {row.get('data_lama','-')}</div></div>
-                                    <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Sesudah</div>
-                                        <div style="font-size:13px;color:#22c55e;font-weight:500;">✅ {row.get('data_baru','-')}</div></div>
-                                </div>"""
-
-                            _card_html = f"""
+                            st.markdown(f"""
                             <div style="background:{T['bg3']};border-radius:12px;padding:16px;border:1px solid {T['border']};">
                                 <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
                                     <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Request ID</div>
@@ -5652,94 +3236,45 @@ elif _active == 4:
                                         <div style="font-size:13px;font-weight:600;color:{T['accent']};">{row.get('change_type','-')}</div></div>
                                 </div>
                                 <div style="margin-top:12px;padding-top:12px;border-top:1px solid {T['border']};">
-                                    {_diff_block}
+                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+                                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Sebelum</div>
+                                            <div style="font-size:13px;color:#ef4444;font-weight:500;">❌ {row.get('data_lama','-')}</div></div>
+                                        <div><div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Sesudah</div>
+                                            <div style="font-size:13px;color:#22c55e;font-weight:500;">✅ {row.get('data_baru','-')}</div></div>
+                                    </div>
                                 </div>
                                 <div style="margin-top:12px;padding-top:12px;border-top:1px solid {T['border']};">
                                     <div style="font-size:10px;color:{T['text_variant']};text-transform:uppercase;letter-spacing:0.06em;">Alasan</div>
                                     <div style="font-size:13px;color:{T['text_variant']};">{row.get('alasan','-')}</div>
                                 </div>
                             </div>
-                            """
-                            st.markdown(
-                                "\n".join(_l.strip() for _l in _card_html.splitlines() if _l.strip()),
-                                unsafe_allow_html=True,
-                            )
+                            """, unsafe_allow_html=True)
 
                         with col_action:
-                            reviewer = str(_user_info.get("name", "") or st.session_state.get("user_email", "")).strip()
-                            # [SCR Fase 1a] Reviewer tidak boleh memutuskan request yang dia ajukan sendiri.
-                            # Fail-closed: tanpa email login, keputusan juga diblokir.
-                            _me_rv = str(st.session_state.get("user_email", "")).strip().lower()
-                            _is_dup = str(row.get("request_id", "")).strip() in _dup_ids
-                            _blocked = (
-                                (not _scr_can(_user_role, "decide"))
-                                or (not _me_rv)
-                                or (str(row.get("requester_email", "")).strip().lower() == _me_rv)
-                                or _is_dup
-                            )
-                            if _is_dup:
-                                st.caption("🔒 Nomor tiket ini ganda di sheet; keputusan diblokir sampai dinormalkan.")
-                            elif _blocked:
-                                st.caption("🔒 Anda tidak dapat menyetujui/menolak request yang Anda ajukan sendiri. "
-                                           "Request ini perlu direview reviewer lain.")
-                            st.text_input(
-                                "Reviewer",
-                                value=reviewer,
-                                disabled=True,
-                                key=f"reviewer_{row.get('request_id','')}",
-                            )
-                            catatan_review = st.text_area(
-                                "Catatan OD (wajib untuk Reject)",
-                                key=f"catatan_{row.get('request_id','')}",
-                                height=80,
-                            )
+                            reviewer       = st.text_input("Nama Reviewer *", key=f"reviewer_{row.get('request_id','')}", placeholder="Nama Anda")
+                            catatan_review = st.text_area("Catatan (opsional)", key=f"catatan_{row.get('request_id','')}", height=80)
                             col_a, col_r = st.columns(2)
                             with col_a:
-                                if st.button("✅ Approve", key=f"approve_{row.get('request_id','')}", use_container_width=True, disabled=_blocked):
-                                    if _blocked: st.error("Tidak diizinkan: Anda tidak dapat memutuskan request ini.")
-                                    elif not reviewer: st.error("Identitas reviewer tidak tersedia dari sesi login.")
+                                if st.button("✅ Approve", key=f"approve_{row.get('request_id','')}", use_container_width=True):
+                                    if not reviewer.strip(): st.error("Nama reviewer harus diisi")
                                     else:
                                         if update_cr_status(row.get("request_id",""), "Approved", reviewer.strip(), catatan_review.strip()):
-                                            approved_record = dict(row)
-                                            approved_record.update({
-                                                "status": "Approved",
-                                                "reviewed_by": reviewer,
-                                                "reviewed_date": datetime.now(_WIB).strftime("%Y-%m-%d %H:%M"),
-                                                "catatan": catatan_review.strip(),
-                                            })
-                                            st.session_state["scr_approved_proposal"] = approved_record
-                                            log_activity(
-                                                action_type="approve_scr",
-                                                detail=f"{row.get('request_id','')} · {row.get('employee_name','')}",
-                                            )
-                                            load_change_requests.clear()
                                             st.success("✅ Approved!"); st.rerun()
                             with col_r:
-                                if st.button("❌ Reject", key=f"reject_{row.get('request_id','')}", use_container_width=True, disabled=_blocked):
-                                    if _blocked: st.error("Tidak diizinkan: Anda tidak dapat memutuskan request ini.")
-                                    elif not reviewer: st.error("Identitas reviewer tidak tersedia dari sesi login.")
-                                    elif not catatan_review.strip(): st.error("Alasan penolakan wajib diisi.")
+                                if st.button("❌ Reject", key=f"reject_{row.get('request_id','')}", use_container_width=True):
+                                    if not reviewer.strip(): st.error("Nama reviewer harus diisi")
                                     else:
                                         if update_cr_status(row.get("request_id",""), "Rejected", reviewer.strip(), catatan_review.strip()):
-                                            log_activity(
-                                                action_type="reject_scr",
-                                                detail=f"{row.get('request_id','')} · {row.get('employee_name','')}",
-                                            )
-                                            load_change_requests.clear()
                                             st.warning("❌ Rejected"); st.rerun()
 
-    if cr_tab3 is not None:
-      with cr_tab3:
+    with cr_tab3:
         col_rl, _ = st.columns([1, 5])
         with col_rl:
             if st.button("🔄 Refresh", key="refresh_hist"):
                 st.cache_data.clear(); st.rerun()
 
         cr_hist = load_change_requests()
-        if cr_load_failed(cr_hist):
-            st.error("❌ Gagal memuat data request dari Google Sheets. Ini BUKAN berarti tidak ada request. "
-                     "Klik Refresh atau coba lagi sebentar lagi; bila berulang hubungi OD Team.")
-        elif cr_hist.empty:
+        if cr_hist.empty:
             st.info("📭 Belum ada history request.")
         else:
             processed = cr_hist[cr_hist["status"].isin(["Approved","Rejected"])].copy()
@@ -5768,19 +3303,6 @@ elif _active == 4:
                 available_cols = [c for c in display_cols if c in view_hist.columns]
                 st.caption(f"Menampilkan **{len(view_hist)}** request")
                 st.dataframe(view_hist[available_cols].reset_index(drop=True), use_container_width=True, height=480)
-                approved_view = view_hist[view_hist["status"] == "Approved"].copy()
-                if not approved_view.empty:
-                    proposal_ids = approved_view["request_id"].astype(str).tolist()
-                    selected_proposal_id = st.selectbox(
-                        "Lihat Proposal Document",
-                        ["— pilih tiket approved —"] + proposal_ids,
-                        key="history_proposal_id",
-                    )
-                    if selected_proposal_id != "— pilih tiket approved —":
-                        selected_row = approved_view[
-                            approved_view["request_id"].astype(str) == selected_proposal_id
-                        ].iloc[0]
-                        render_scr_proposal(dict(selected_row), T, "history_proposal")
                 st.divider()
                 col_hd1, col_hd2, _ = st.columns([1,1,3])
                 with col_hd1:
@@ -5792,303 +3314,895 @@ elif _active == 4:
 
 
 # ══════════════════════════════════════════════════════════════════
-# TAB 99 — ADMIN PANEL (role=super_admin only)
-# Diakses via tab_idx=99, hanya muncul di navigasi untuk super_admin.
+# TAB 5 — ORG CHART BUILDER (BETA)
+# Canvas interaktif untuk draft proposal struktur organisasi.
+# MVP Scope:
+#   - Panel kiri: daftar karyawan dari data aktif
+#   - Canvas: drag karyawan → muncul sebagai kotak
+#   - Connect: klik dua kotak untuk buat garis hierarki
+#   - Save: simpan draft ke Google Sheets (worksheet: org_builder_drafts)
+#   - Load: tarik draft yang pernah disimpan
 # ══════════════════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 5 — ORG CHART BUILDER (BETA)
+
+# ══════════════════════════════════════════════════════════════════
+# TAB 5 — ORG CHART BUILDER  (React Flow via CDN)
 # ══════════════════════════════════════════════════════════════════
 elif _active == 5:
-    # Role gate — double-check, same pattern as Tab 99
-    if not _can_access_tab(_user_role, 5):
-        st.error("🚫 Akses ditolak — fitur ini hanya untuk Admin dan Super Admin.")
+    if not _is_admin:
+        st.error("🚫 Akses ditolak — fitur ini hanya untuk Admin.")
         st.stop()
 
+    import json as _jb
+
+    _c_primary = T.get('primary', '#8E94F2')
+    _c_bg      = T.get('bg',      '#F5F5FF')
+    _c_card    = T.get('card',    '#FFFFFF')
+    _c_text1   = T.get('text1',   '#1a1a2e')
+    _c_text3   = T.get('text3',   '#7b7b9d')
+    _c_outline = T.get('outline', '#e0e0f0')
+    _c_sidebar = T.get('sidebar', '#F0F0FF')
+
     st.markdown(f"""
-    <div style="margin-bottom:24px;">
-        <div style="font-size:20px;font-weight:700;color:{T['text']};">🚪 Offboarding Tracker</div>
-        <div style="font-size:13px;color:{T['text_variant']};margin-top:4px;">
-            Pantau karyawan yang akan offboard — identifikasi people manager yang masih memiliki direct reports aktif
-        </div>
+    <div style="margin-bottom:4px;">
+      <div style="font-size:20px;font-weight:700;color:{_c_text1};letter-spacing:-0.02em;">
+        Org Chart Builder
+      </div>
+      <div style="font-size:13px;color:{_c_text3};margin-top:4px;">
+        Draft proposal perubahan struktur organisasi secara visual
+      </div>
     </div>
+    <hr style="border:none;border-top:1px solid {_c_outline};margin:14px 0 10px;">
     """, unsafe_allow_html=True)
 
-    # ── Context banner ─────────────────────────────────────────────
-    st.markdown(f"""
-    <div style="background:{T['accent_bg']};border:1px solid {T['border2']};border-radius:8px;
-        padding:12px 16px;margin-bottom:20px;font-size:13px;color:{T['text_variant']};">
-        💡 <b>Cara baca tabel:</b> Kolom <b>Employee Under</b> berisi nama-nama karyawan aktif yang
-        masih melapor ke karyawan yang akan resign. Kolom kosong = karyawan resign tersebut bukan people manager.
-        OD perlu mengkonfirmasi ke leader di atasnya: subordinate akan dipindah ke mana sebelum offboarding terjadi.
-    </div>
-    """, unsafe_allow_html=True)
+    col_n, col_s, col_l, col_r = st.columns([3,1,1,1])
+    with col_n:
+        draft_name = st.text_input("nama", placeholder="Nama draft — contoh: Proposal Q3 2026",
+                                   label_visibility="collapsed", key="builder_draft_name")
+    with col_s: do_save  = st.button("Simpan", icon=":material/save:", use_container_width=True, key="bld_save")
+    with col_l: do_load  = st.button("Muat", icon=":material/folder_open:", use_container_width=True, key="bld_load")
+    with col_r: do_reset = st.button("Reset", icon=":material/refresh:", use_container_width=True, key="bld_reset")
 
-    # ── Date Range Picker ──────────────────────────────────────────
-    st.markdown(f"""
-    <div style="font-size:12px;font-weight:600;color:{T['text3']};text-transform:uppercase;
-        letter-spacing:0.06em;margin-bottom:10px;">RENTANG TANGGAL OFFBOARDING</div>
-    """, unsafe_allow_html=True)
+    emp_list = []
+    if df is not None and not df.empty:
+        for _, _row in df.iterrows():
+            emp_list.append({
+                "id":    str(_row.get("Employee ID",   "")),
+                "name":  str(_row.get("Employee Name", "")),
+                "title": str(_row.get("Job Position",  "")),
+                "div":   str(_row.get("Division",      "")),
+            })
 
-    _today     = datetime.now(_WIB).date()
-    _default_end = _today + timedelta(days=7)
+    if "bld_nodes" not in st.session_state: st.session_state.bld_nodes = []
+    if "bld_edges" not in st.session_state: st.session_state.bld_edges = []
 
-    col_sd, col_ed, col_info_date = st.columns([2, 2, 4])
-    with col_sd:
-        ot_start = st.date_input("Start Date", value=_today,        key="ot_start")
-    with col_ed:
-        ot_end   = st.date_input("End Date",   value=_default_end,  key="ot_end")
-
-    # ── Validation: max 30-day range ──────────────────────────────
-    _range_days = (ot_end - ot_start).days
-
-    with col_info_date:
-        if ot_end < ot_start:
-            st.markdown(f"""
-            <div style="background:#fee2e2;border:1px solid #fca5a5;border-radius:8px;
-                padding:8px 12px;margin-top:6px;font-size:12px;color:#991b1b;">
-                ❌ End Date tidak boleh sebelum Start Date.
-            </div>""", unsafe_allow_html=True)
-        elif _range_days > 30:
-            st.markdown(f"""
-            <div style="background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;
-                padding:8px 12px;margin-top:6px;font-size:12px;color:{T['warn_txt']};">
-                ⚠️ Rentang maksimal 30 hari. Saat ini: <b>{_range_days} hari</b>.
-                Kurangi rentang tanggal untuk melihat data.
-            </div>""", unsafe_allow_html=True)
+    if do_save:
+        if not draft_name.strip():
+            st.warning("⚠️ Isi nama draft terlebih dahulu.")
         else:
-            st.markdown(f"""
-            <div style="background:{T['success_bg']};border:1px solid {T['success_bdr']};border-radius:8px;
-                padding:8px 12px;margin-top:6px;font-size:12px;color:{T['success_txt']};">
-                ✅ Menampilkan karyawan offboard <b>{ot_start.strftime('%d %b %Y')}</b>
-                — <b>{ot_end.strftime('%d %b %Y')}</b> ({_range_days} hari)
-            </div>""", unsafe_allow_html=True)
+            try:
+                import uuid as _ub
+                from datetime import datetime as _dtb
+                _gcl = get_gspread_client()
+                _sh  = _gcl.open_by_key(SHEET_ID)
+                try:    _ws = _sh.worksheet("org_builder_drafts")
+                except Exception:
+                    _ws = _sh.add_worksheet("org_builder_drafts", rows=1000, cols=6)
+                    _ws.append_row(["draft_id","draft_name","created_by","created_at","nodes_json","edges_json"])
+                _ws.append_row([
+                    str(_ub.uuid4())[:8], draft_name.strip(),
+                    _user_info.get("name","Beta Developer"),
+                    _dtb.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    _jb.dumps(st.session_state.bld_nodes),
+                    _jb.dumps(st.session_state.bld_edges),
+                ])
+                st.success(f"✅ Draft **{draft_name}** disimpan.")
+            except Exception as _es:
+                st.error(f"❌ Gagal simpan: {_es}")
 
-    st.markdown(f"<div style='height:1px;background:{T['border']};margin:16px 0;'></div>", unsafe_allow_html=True)
+    if do_load:
+        try:
+            _gcl  = get_gspread_client()
+            _ws   = _gcl.open_by_key(SHEET_ID).worksheet("org_builder_drafts")
+            _rows = _ws.get_all_records()
+            if _rows: st.session_state["bld_draft_list"] = _rows
+            else:     st.info("Belum ada draft tersimpan.")
+        except Exception as _el:
+            st.error(f"❌ Gagal muat: {_el}")
 
-    # ── Guard: hanya render tabel jika range valid ─────────────────
-    if ot_end >= ot_start and _range_days <= 30:
+    if do_reset:
+        st.session_state.bld_nodes = []
+        st.session_state.bld_edges = []
+        st.rerun()
 
-        # ── Load data ──────────────────────────────────────────────
-        _df_resigned, _df_active = load_offboarding_data()
+    if st.session_state.get("bld_draft_list"):
+        _drafts = st.session_state["bld_draft_list"]
+        _opts   = {f"{d['draft_name']}  ({d['created_at']})": d for d in _drafts}
+        _chosen = st.selectbox("Pilih draft:", list(_opts.keys()), key="bld_picker")
+        if st.button("✅ Buka Draft Ini", key="bld_open"):
+            _d = _opts[_chosen]
+            st.session_state.bld_nodes = _jb.loads(_d.get("nodes_json","[]"))
+            st.session_state.bld_edges = _jb.loads(_d.get("edges_json","[]"))
+            del st.session_state["bld_draft_list"]
+            st.rerun()
 
-        if _df_resigned is None:
-            st.error("⚠️ Gagal memuat data dari Google Sheets. Pastikan koneksi aktif dan coba refresh.")
-            st.stop()
+    _nodes_j = _jb.dumps(st.session_state.bld_nodes)
+    _edges_j = _jb.dumps(st.session_state.bld_edges)
+    _emps_j  = _jb.dumps(emp_list)
 
-        if _df_resigned.empty:
-            st.info("📭 Tidak ada data karyawan dengan Resign Date di sheet.")
-            st.stop()
+    _html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',sans-serif;}}
+html,body{{height:100%;overflow:hidden;background:{_c_bg};}}
+#wrap{{display:flex;height:680px;width:100%;}}
 
-        # ── Parse & filter Resign Date dalam range ─────────────────
-        # Resign Date di sheet bisa dalam berbagai format string.
-        # pd.to_datetime dengan errors='coerce' akan handle berbagai
-        # format umum; baris yang tidak bisa di-parse jadi NaT (diabaikan).
-        _rd_series = pd.to_datetime(
-            _df_resigned["Resign Date"], errors="coerce", dayfirst=True
-        )
-        _df_resigned = _df_resigned.copy()
-        _df_resigned["_resign_date_parsed"] = _rd_series
+/* ── Panel ── */
+#panel{{
+  width:200px;min-width:200px;background:{_c_sidebar};
+  border-right:1.5px solid {_c_outline};
+  display:flex;flex-direction:column;
+}}
+#panel-title{{
+  font-size:10px;font-weight:700;letter-spacing:.08em;
+  text-transform:uppercase;color:{_c_text3};
+  padding:10px 12px 8px;border-bottom:1px solid {_c_outline};
+}}
+#psearch{{
+  margin:8px;padding:6px 10px;width:calc(100% - 16px);
+  border:1.5px solid {_c_outline};border-radius:6px;
+  font-size:12px;color:{_c_text1};background:#fff;outline:none;
+}}
+#psearch:focus{{border-color:{_c_primary};}}
+#plist{{overflow-y:auto;flex:1;padding:4px 6px 10px;}}
+.ecard{{
+  padding:8px 10px;margin-bottom:4px;
+  background:#fff;border:1.5px solid {_c_outline};
+  border-radius:7px;cursor:grab;user-select:none;
+  transition:border-color .12s,box-shadow .12s;
+}}
+.ecard:hover{{
+  border-color:{_c_primary};
+  box-shadow:0 2px 8px rgba(142,148,242,.18);
+}}
+.en{{font-size:11.5px;font-weight:600;color:{_c_text1};}}
+.et{{font-size:10px;color:{_c_text3};margin-top:2px;}}
 
-        _mask_range = (
-            _df_resigned["_resign_date_parsed"].notna() &
-            (_df_resigned["_resign_date_parsed"].dt.date >= ot_start) &
-            (_df_resigned["_resign_date_parsed"].dt.date <= ot_end)
-        )
-        _df_in_range = _df_resigned[_mask_range].copy()
+/* ── Canvas ── */
+#canvas-area{{flex:1;position:relative;overflow:hidden;}}
+#cvs{{width:100%;height:100%;display:block;}}
+#cvs.grabbing{{cursor:grabbing;}}
 
-        # ── KPI row ────────────────────────────────────────────────
-        _total_offboard = len(_df_in_range)
-        _people_mgrs    = 0  # dihitung setelah compute Employee Under
+/* ── Toolbar overlay ── */
+#toolbar{{
+  position:absolute;top:10px;left:50%;transform:translateX(-50%);
+  display:flex;gap:6px;z-index:20;
+  background:rgba(255,255,255,.95);
+  border:1.5px solid {_c_outline};
+  border-radius:10px;padding:6px 10px;
+  box-shadow:0 2px 12px rgba(0,0,0,.08);
+}}
+.tbtn{{
+  padding:5px 12px;font-size:11px;font-weight:600;
+  border:1.5px solid {_c_outline};border-radius:6px;
+  background:#fff;cursor:pointer;color:#3d3d5c;
+  transition:all .12s;white-space:nowrap;
+}}
+.tbtn:hover{{background:{_c_primary};color:#fff;border-color:{_c_primary};}}
+.tbtn.active{{background:{_c_primary};color:#fff;border-color:{_c_primary};}}
+.tbtn.del:hover{{background:#ff4d4f;border-color:#ff4d4f;color:#fff;}}
+.tsep{{width:1px;background:{_c_outline};margin:0 2px;}}
 
-        # ── Compute "Employee Under" ───────────────────────────────
-        if not _df_in_range.empty:
-            _df_in_range["Employee Under"] = _compute_employee_under(
-                _df_in_range, _df_active
-            )
-            _people_mgrs = (_df_in_range["Employee Under"] != "").sum()
+/* ── Mode badge ── */
+#modebadge{{
+  position:absolute;top:56px;left:50%;transform:translateX(-50%);
+  background:rgba(255,255,255,.92);border:1.5px solid {_c_outline};
+  border-radius:20px;padding:4px 14px;font-size:11px;
+  color:{_c_text3};z-index:15;pointer-events:none;
+  white-space:nowrap;
+}}
 
-        # ── KPI cards ──────────────────────────────────────────────
-        kpi1, kpi2, kpi3 = st.columns(3)
-        kpi1.metric(
-            "🚪 Total Offboarding",
-            _total_offboard,
-            help=f"Karyawan dengan Resign Date antara {ot_start} — {ot_end}"
-        )
-        kpi2.metric(
-            "👔 People Manager",
-            int(_people_mgrs),
-            help="Dari total offboarding, berapa yang masih punya direct report aktif"
-        )
-        kpi3.metric(
-            "👤 Bukan Manager",
-            int(_total_offboard - _people_mgrs),
-            help="Karyawan resign yang tidak punya direct report — tidak perlu tindak lanjut subordinate"
-        )
+/* ── Controls ── */
+#ctrl{{
+  position:absolute;bottom:40px;left:10px;
+  display:flex;flex-direction:column;gap:4px;z-index:10;
+}}
+.cbtn{{
+  width:30px;height:30px;background:#fff;
+  border:1.5px solid {_c_outline};border-radius:7px;
+  font-size:15px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:border-color .12s;color:#3d3d5c;
+}}
+.cbtn:hover{{border-color:{_c_primary};color:{_c_primary};}}
 
-        st.markdown(f"<div style='height:1px;background:{T['border']};margin:16px 0;'></div>", unsafe_allow_html=True)
+/* ── Hint bar ── */
+#hint{{
+  position:absolute;bottom:0;left:0;right:0;
+  background:rgba(255,255,255,.9);
+  border-top:1px solid {_c_outline};
+  padding:5px 14px;font-size:10.5px;color:{_c_text3};
+  pointer-events:none;line-height:1.5;
+}}
 
-        if _df_in_range.empty:
-            st.success(f"✅ Tidak ada karyawan yang offboard antara {ot_start.strftime('%d %b %Y')} — {ot_end.strftime('%d %b %Y')}.")
-        else:
-            # ── Optional filter: hanya tampilkan people manager ────
-            _show_mgr_only = st.checkbox(
-                "🔍 Tampilkan hanya people manager (yang memiliki direct reports)",
-                value=False,
-                key="ot_mgr_only"
-            )
+/* ── Connection tooltip on handle hover ── */
+.conn-tip{{
+  position:absolute;
+  background:{_c_primary};color:#fff;
+  font-size:10px;padding:3px 7px;border-radius:4px;
+  pointer-events:none;white-space:nowrap;z-index:30;
+}}
+</style>
+</head>
+<body>
+<div id="wrap">
 
-            _display_df = _df_in_range.copy()
-            if _show_mgr_only:
-                _display_df = _display_df[_display_df["Employee Under"] != ""]
+  <!-- Left panel -->
+  <div id="panel">
+    <div id="panel-title">📋 Daftar Karyawan</div>
+    <input id="psearch" placeholder="🔍 Cari nama atau jabatan..."
+           oninput="filterCards(this.value)">
+    <div id="plist"></div>
+  </div>
 
-            # ── Build display table dengan kolom sesuai brief ──────
-            # Urutan kolom: EID | Name | Reporting Line | Organization |
-            #               Job ID | Job Position | SBU/Tribe | Resign Date |
-            #               Employee will be resign | Employee Under
-            _col_map = {
-                "Employee ID":                    "EID",
-                "Full Name":                      "Name",
-                "Employment Approval Line Name":  "Reporting Line",
-                "Organization":                   "Organization",
-                "Job ID":                         "Job ID",
-                "Job Position":                   "Job Position",
-                "SBU/Tribe":                      "SBU/Tribe",
-                "Resign Date":                    "Resign Date",
-            }
-            # Ambil hanya kolom yang tersedia (defensive)
-            _src_cols = [c for c in _col_map if c in _display_df.columns]
-            _tbl      = _display_df[_src_cols].copy()
-            _tbl      = _tbl.rename(columns=_col_map)
+  <!-- Canvas -->
+  <div id="canvas-area"
+       ondragover="event.preventDefault()"
+       ondrop="onDrop(event)">
 
-            # "Employee will be resign" = sama dengan Name (brief spec)
-            if "Name" in _tbl.columns:
-                _tbl.insert(
-                    _tbl.columns.get_loc("Resign Date") + 1,
-                    "Employee will be resign",
-                    _tbl["Name"]
-                )
-
-            # Tambahkan "Employee Under" di akhir
-            _tbl["Employee Under"] = _display_df["Employee Under"].values
-
-            # Sort by Resign Date ascending
-            if "Resign Date" in _tbl.columns:
-                _tbl["_sort_key"] = pd.to_datetime(_tbl["Resign Date"], errors="coerce", dayfirst=True)
-                _tbl = _tbl.sort_values("_sort_key").drop(columns=["_sort_key"])
-
-            st.caption(
-                f"Menampilkan **{len(_tbl)}** karyawan"
-                + (" (people manager saja)" if _show_mgr_only else "")
-                + f" · {int(_people_mgrs)} memerlukan tindak lanjut subordinate"
-            )
-
-            # ── Highlight rows: people manager pakai warning color ─
-            def _highlight_mgr(row):
-                """Style rows dimana Employee Under tidak kosong (= people manager)."""
-                if row.get("Employee Under", ""):
-                    return [f"background-color: {'#231b00' if dm else '#fffbeb'}; color: {'#fde68a' if dm else '#854d0e'};"] * len(row)
-                return [""] * len(row)
-
-            _styled = _tbl.reset_index(drop=True).style.apply(_highlight_mgr, axis=1)
-
-            st.dataframe(
-                _styled,
-                use_container_width=True,
-                height=min(60 + len(_tbl) * 35 + 40, 520),  # dynamic height, cap at 520px
-            )
-
-            # ── People manager detail expanders ────────────────────
-            _mgr_rows = _tbl[_tbl["Employee Under"] != ""]
-            if not _mgr_rows.empty:
-                st.markdown(f"""
-                <div style="font-size:14px;font-weight:600;color:{T['text']};margin:20px 0 12px 0;">
-                    ⚠️ People Manager yang Perlu Tindak Lanjut ({len(_mgr_rows)} orang)
-                </div>
-                """, unsafe_allow_html=True)
-
-                for _, _mgr_row in _mgr_rows.iterrows():
-                    _mgr_name     = _mgr_row.get("Name", "-")
-                    _mgr_resign   = _mgr_row.get("Resign Date", "-")
-                    _mgr_org      = _mgr_row.get("Organization", "-")
-                    _mgr_pos      = _mgr_row.get("Job Position", "-")
-                    _mgr_rl       = _mgr_row.get("Reporting Line", "-")
-                    _directs_str  = _mgr_row.get("Employee Under", "")
-                    _directs_list = [d.strip() for d in _directs_str.split(",") if d.strip()]
-
-                    with st.expander(
-                        f"👔 {_mgr_name}  ·  {_mgr_org}  ·  Resign: {_mgr_resign}  ·  {len(_directs_list)} direct report",
-                        expanded=False
-                    ):
-                        col_det1, col_det2 = st.columns([2, 3])
-                        with col_det1:
-                            st.markdown(f"""
-                            <div style="background:{T['bg3']};border-radius:10px;padding:14px 16px;
-                                border:1px solid {T['border']};">
-                                <div style="margin-bottom:10px;">
-                                    <div style="font-size:10px;color:{T['text3']};text-transform:uppercase;
-                                        letter-spacing:0.07em;margin-bottom:3px;">Nama</div>
-                                    <div style="font-size:14px;font-weight:700;color:{T['text']};">{_mgr_name}</div>
-                                </div>
-                                <div style="margin-bottom:10px;">
-                                    <div style="font-size:10px;color:{T['text3']};text-transform:uppercase;
-                                        letter-spacing:0.07em;margin-bottom:3px;">Posisi</div>
-                                    <div style="font-size:13px;color:{T['text_variant']};">{_mgr_pos}</div>
-                                </div>
-                                <div style="margin-bottom:10px;">
-                                    <div style="font-size:10px;color:{T['text3']};text-transform:uppercase;
-                                        letter-spacing:0.07em;margin-bottom:3px;">Organisasi</div>
-                                    <div style="font-size:13px;color:{T['text_variant']};">{_mgr_org}</div>
-                                </div>
-                                <div style="margin-bottom:10px;">
-                                    <div style="font-size:10px;color:{T['text3']};text-transform:uppercase;
-                                        letter-spacing:0.07em;margin-bottom:3px;">Reporting Line</div>
-                                    <div style="font-size:13px;color:{T['text_variant']};">{_mgr_rl}</div>
-                                </div>
-                                <div>
-                                    <div style="font-size:10px;color:{T['text3']};text-transform:uppercase;
-                                        letter-spacing:0.07em;margin-bottom:3px;">Resign Date</div>
-                                    <div style="font-size:13px;font-weight:600;color:#dc2626;">{_mgr_resign}</div>
-                                </div>
-                            </div>
-                            """, unsafe_allow_html=True)
-                        with col_det2:
-                            st.markdown(f"""
-                            <div style="background:{T['warn_bg']};border:1px solid {T['warn_bdr']};
-                                border-radius:10px;padding:14px 16px;">
-                                <div style="font-size:10px;color:{T['warn_txt']};text-transform:uppercase;
-                                    letter-spacing:0.07em;font-weight:700;margin-bottom:10px;">
-                                    ⚠️ {len(_directs_list)} Direct Report Perlu Dialihkan
-                                </div>
-                            """, unsafe_allow_html=True)
-                            for _d in _directs_list:
-                                st.markdown(f"""
-                                <div style="background:{T['surface_lowest']};border-radius:6px;
-                                    padding:7px 12px;margin-bottom:6px;font-size:13px;
-                                    color:{T['text']};border:1px solid {T['border']};">
-                                    👤 {_d}
-                                </div>
-                                """, unsafe_allow_html=True)
-                            st.markdown("</div>", unsafe_allow_html=True)
-
-    # ── Version marker — prevents debugging stale deploys ─────────
-    st.markdown(f"""
-    <div style="text-align:right;font-size:10px;color:{T['text3']};margin-top:16px;opacity:0.5;">
-        Offboarding Tracker v1.0 · {datetime.now(_WIB).strftime('%d %b %Y')}
+    <!-- Toolbar -->
+    <div id="toolbar">
+      <button class="tbtn active" id="btn-move"    onclick="setMode('move')"
+              title="Pilih dan pindah node">↖ Pilih</button>
+      <button class="tbtn"        id="btn-connect" onclick="setMode('connect')"
+              title="Buat garis koneksi antar node">⟶ Hubungkan</button>
+      <div class="tsep"></div>
+      <button class="tbtn del"    id="btn-del"     onclick="deleteSelected()"
+              title="Hapus yang dipilih (Del)">🗑 Hapus</button>
+      <div class="tsep"></div>
+      <button class="tbtn"        id="btn-fit"     onclick="fitView()"
+              title="Sesuaikan tampilan">⊡ Fit</button>
+      <button class="tbtn"        id="btn-export"  onclick="exportPNG()"
+              title="Export sebagai gambar PNG">📷 Export</button>
     </div>
-    """, unsafe_allow_html=True)
+
+    <!-- Mode badge -->
+    <div id="modebadge">↖ Mode Pilih — klik node untuk seleksi, drag untuk pindah</div>
+
+    <svg id="cvs">
+      <defs>
+        <marker id="arr" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L10,3 z" fill="{_c_primary}"/>
+        </marker>
+        <marker id="arr-sel" markerWidth="10" markerHeight="10"
+                refX="8" refY="3" orient="auto">
+          <path d="M0,0 L0,6 L10,3 z" fill="#ff4d4f"/>
+        </marker>
+        <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="1.2" fill="#d0d0e8"/>
+        </pattern>
+        <filter id="shadow">
+          <feDropShadow dx="2" dy="3" stdDeviation="3" flood-opacity="0.08"/>
+        </filter>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#dots)"/>
+      <g id="zg">
+        <g id="el"></g>
+        <g id="nl"></g>
+        <!-- Connection handles rendered on top -->
+        <g id="hl"></g>
+      </g>
+    </svg>
+
+    <!-- Zoom controls -->
+    <div id="ctrl">
+      <button class="cbtn" onclick="zoom(1.2)" title="Zoom in">+</button>
+      <button class="cbtn" onclick="zoom(0.85)" title="Zoom out">−</button>
+      <button class="cbtn" onclick="fitView()" title="Fit">⊡</button>
+    </div>
+
+    <!-- Hint bar -->
+    <div id="hint" id="hintbar">
+      💡 Drag kartu karyawan dari panel kiri ke canvas untuk menambah node
+    </div>
+
+    <!-- Connection tooltip (hidden by default) -->
+    <div class="conn-tip" id="conn-tip" style="display:none"></div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════
+// DATA
+// ════════════════════════════════════════════════════════
+const EMPS      = {_emps_j};
+const NW = 170, NH = 68;
+const COL_PRI   = '{_c_primary}';
+const COL_BG    = '{_c_card}';
+const COL_TEXT  = '{_c_text1}';
+const COL_SUB   = '{_c_text3}';
+const COL_SEL   = '#ff4d4f';
+const COL_CONN  = '#f5a623';
+
+// ════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════
+let nodes    = {_nodes_j}.map(n=>normalize(n));
+let edges    = {_edges_j}.map(e=>normalizeEdge(e));
+let nid      = nodes.length ? Math.max(...nodes.map(n=>parseInt(n.id)||0))+1 : 1;
+let eid      = edges.length ? Math.max(...edges.map(e=>parseInt(e.id)||0))+1 : 1;
+
+let mode     = 'move';    // 'move' | 'connect'
+let selNode  = null;
+let selEdge  = null;
+
+// Drag
+let dragN=null, dragOff={{x:0,y:0}}, didDrag=false;
+// Pan
+let panning=false, panStart={{x:0,y:0}};
+// View
+let vt={{x:0,y:0,s:1}};
+// Connect
+let connSrc=null, connPrev=null;
+// Hover
+let hovNode=null;
+
+function normalize(n){{
+  return {{
+    id:   String(n.id||nid),
+    x:    n.x ?? n.position?.x ?? 100,
+    y:    n.y ?? n.position?.y ?? 100,
+    name: n.name || n.data?.name || '',
+    title:n.title|| n.data?.title|| '',
+    div:  n.div  || n.data?.div  || '',
+    status: n.status || 'default', // default|new|vacant|promoted|removed
+  }};
+}}
+function normalizeEdge(e){{
+  return {{
+    id:  String(e.id||eid),
+    src: String(e.src||e.source||''),
+    tgt: String(e.tgt||e.target||''),
+  }};
+}}
+
+// Status color map
+const STATUS_COLORS = {{
+  default:  {{ fill:'#fff',          stroke: COL_PRI,  label:'' }},
+  new:      {{ fill:'#e8f5e9',       stroke:'#43a047', label:'🆕 Posisi Baru' }},
+  vacant:   {{ fill:'#fff8e1',       stroke:'#f9a825', label:'⬜ Vacant' }},
+  promoted: {{ fill:'#e3f2fd',       stroke:'#1e88e5', label:'⬆ Promoted' }},
+  removed:  {{ fill:'#fce4ec',       stroke:'#e53935', label:'❌ Dihapus' }},
+}};
+
+// ════════════════════════════════════════════════════════
+// DOM
+// ════════════════════════════════════════════════════════
+const svg  = document.getElementById('cvs');
+const zg   = document.getElementById('zg');
+const el   = document.getElementById('el');
+const nl   = document.getElementById('nl');
+const hl   = document.getElementById('hl');
+const hint = document.getElementById('hint');
+const tip  = document.getElementById('conn-tip');
+const badge= document.getElementById('modebadge');
+
+function mk(t){{ return document.createElementNS('http://www.w3.org/2000/svg',t); }}
+function trunc(s,n){{ s=s||''; return s.length>n?s.slice(0,n)+'…':s; }}
+function svgPt(cx,cy){{
+  const r=svg.getBoundingClientRect();
+  return {{x:(cx-r.left-vt.x)/vt.s, y:(cy-r.top-vt.y)/vt.s}};
+}}
+function screenPt(x,y){{
+  const r=svg.getBoundingClientRect();
+  return {{x:x*vt.s+vt.x+r.left, y:y*vt.s+vt.y+r.top}};
+}}
+
+// ════════════════════════════════════════════════════════
+// VIEW
+// ════════════════════════════════════════════════════════
+function applyVT(){{
+  zg.setAttribute('transform',
+    `translate(${{vt.x.toFixed(1)}},${{vt.y.toFixed(1)}}) scale(${{vt.s.toFixed(4)}})`);
+}}
+function zoom(f){{
+  const W=svg.clientWidth,H=svg.clientHeight;
+  const pt=svgPt(W/2,H/2);
+  vt.s=Math.min(3,Math.max(0.1,vt.s*f));
+  vt.x=W/2-pt.x*vt.s; vt.y=H/2-pt.y*vt.s;
+  applyVT();
+}}
+function fitView(){{
+  if(!nodes.length){{vt={{x:20,y:20,s:1}};applyVT();return;}}
+  const W=svg.clientWidth,H=svg.clientHeight;
+  const xs=nodes.map(n=>n.x), ys=nodes.map(n=>n.y);
+  const minX=Math.min(...xs)-24, maxX=Math.max(...xs)+NW+24;
+  const minY=Math.min(...ys)-24, maxY=Math.max(...ys)+NH+24;
+  const s=Math.min(1.4,Math.min((W-48)/(maxX-minX),(H-48)/(maxY-minY)));
+  vt={{x:-minX*s+(W-(maxX-minX)*s)/2, y:-minY*s+(H-(maxY-minY)*s)/2, s}};
+  applyVT();
+}}
+
+// ════════════════════════════════════════════════════════
+// MODE
+// ════════════════════════════════════════════════════════
+function setMode(m){{
+  mode=m; connSrc=null; connPrev=null; selNode=null; selEdge=null;
+  document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn-'+m).classList.add('active');
+
+  if(m==='move'){{
+    badge.textContent='↖ Mode Pilih — klik node untuk seleksi, drag untuk pindah';
+    hint.innerHTML='💡 Klik node untuk memilih · Drag node untuk memindahkan · Tekan <b>Delete</b> untuk menghapus yang dipilih';
+    svg.style.cursor='default';
+  }} else {{
+    badge.textContent='⟶ Mode Hubungkan — klik node ASAL, lalu klik node TUJUAN';
+    hint.innerHTML='⟶ <b>Klik node pertama</b> (akan berubah warna oranye) → <b>klik node kedua</b> untuk membuat garis · Tekan <b>Esc</b> untuk batal';
+    svg.style.cursor='crosshair';
+  }}
+  render();
+}}
+
+// ════════════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════════════
+function render(){{
+  renderEdges();
+  renderNodes();
+  renderHandles();
+}}
+
+function renderEdges(){{
+  el.innerHTML='';
+  edges.forEach((e,idx)=>{{
+    const s=nodes.find(n=>n.id===e.src);
+    const t=nodes.find(n=>n.id===e.tgt);
+    if(!s||!t) return;
+    const isSel=(idx===selEdge);
+    const x1=s.x+NW/2, y1=s.y+NH+2;
+    const x2=t.x+NW/2, y2=t.y-2;
+    const cy=(y1+y2)/2;
+    const d=`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{x2}},${{cy}} ${{x2}},${{y2}}`;
+
+    // Hit area
+    const hit=mk('path');
+    hit.setAttribute('d',d);
+    hit.setAttribute('stroke','transparent');
+    hit.setAttribute('stroke-width','16');
+    hit.setAttribute('fill','none');
+    hit.setAttribute('cursor','pointer');
+    hit.addEventListener('click',ev=>{{
+      ev.stopPropagation();
+      if(mode!=='connect'){{ selEdge=idx; selNode=null; render(); }}
+    }});
+    el.appendChild(hit);
+
+    // Visible
+    const path=mk('path');
+    path.setAttribute('d',d);
+    path.setAttribute('stroke',isSel?COL_SEL:COL_PRI);
+    path.setAttribute('stroke-width',isSel?'2.5':'1.8');
+    path.setAttribute('fill','none');
+    path.setAttribute('opacity',isSel?'1':'0.75');
+    path.setAttribute('marker-end',`url(#arr${{isSel?'-sel':''}})`);
+    path.setAttribute('pointer-events','none');
+    el.appendChild(path);
+  }});
+
+  // Preview line while connecting
+  if(connSrc&&connPrev){{
+    const s=nodes.find(n=>n.id===connSrc);
+    if(s){{
+      const x1=s.x+NW/2,y1=s.y+NH;
+      const cy=(y1+connPrev.y)/2;
+      const prev=mk('path');
+      prev.setAttribute('d',`M${{x1}},${{y1}} C${{x1}},${{cy}} ${{connPrev.x}},${{cy}} ${{connPrev.x}},${{connPrev.y}}`);
+      prev.setAttribute('stroke',COL_PRI);
+      prev.setAttribute('stroke-width','2');
+      prev.setAttribute('stroke-dasharray','6,4');
+      prev.setAttribute('fill','none');
+      prev.setAttribute('opacity','0.5');
+      prev.setAttribute('pointer-events','none');
+      el.appendChild(prev);
+    }}
+  }}
+}}
+
+function renderNodes(){{
+  nl.innerHTML='';
+  nodes.forEach(n=>{{
+    const isSel  =(n.id===selNode);
+    const isConn =(n.id===connSrc);
+    const isHov  =(n.id===hovNode);
+    const sc     = STATUS_COLORS[n.status]||STATUS_COLORS.default;
+
+    const g=mk('g');
+    g.setAttribute('transform',`translate(${{n.x}},${{n.y}})`);
+    g.setAttribute('cursor', mode==='move'?'move':'pointer');
+    g.dataset.nid=n.id;
+
+    // Shadow
+    const sh=mk('rect');
+    sh.setAttribute('x','2');sh.setAttribute('y','4');
+    sh.setAttribute('width',NW);sh.setAttribute('height',NH);
+    sh.setAttribute('rx','10');sh.setAttribute('fill','rgba(0,0,0,.07)');
+    sh.setAttribute('pointer-events','none');
+    g.appendChild(sh);
+
+    // Card background
+    const rc=mk('rect');
+    rc.setAttribute('width',NW);rc.setAttribute('height',NH);rc.setAttribute('rx','10');
+    rc.setAttribute('fill', sc.fill);
+    rc.setAttribute('stroke', isConn?COL_CONN:isSel?COL_SEL:isHov?COL_PRI:sc.stroke);
+    rc.setAttribute('stroke-width',(isConn||isSel)?'2.5':isHov?'2':'1.5');
+    rc.setAttribute('filter','url(#shadow)');
+    g.appendChild(rc);
+
+    // Accent bar
+    const bar=mk('rect');
+    bar.setAttribute('x','0');bar.setAttribute('y','0');
+    bar.setAttribute('width','5');bar.setAttribute('height',NH);
+    bar.setAttribute('rx','4');
+    bar.setAttribute('fill',isConn?COL_CONN:isSel?COL_SEL:sc.stroke);
+    bar.setAttribute('pointer-events','none');
+    g.appendChild(bar);
+
+    // Status badge
+    if(sc.label){{
+      const bg=mk('rect');
+      bg.setAttribute('x',NW-60);bg.setAttribute('y','4');
+      bg.setAttribute('width','56');bg.setAttribute('height','14');
+      bg.setAttribute('rx','4');bg.setAttribute('fill',sc.stroke);bg.setAttribute('opacity','.15');
+      g.appendChild(bg);
+      const lb=mk('text');
+      lb.setAttribute('x',NW-32);lb.setAttribute('y','14');
+      lb.setAttribute('font-size','7.5');lb.setAttribute('fill',sc.stroke);
+      lb.setAttribute('text-anchor','middle');lb.setAttribute('font-weight','700');
+      lb.textContent=sc.label;
+      g.appendChild(lb);
+    }}
+
+    // Name
+    const tn=mk('text');
+    tn.setAttribute('x','14');tn.setAttribute('y','25');
+    tn.setAttribute('font-size','12');tn.setAttribute('font-weight','700');
+    tn.setAttribute('fill',COL_TEXT);tn.setAttribute('pointer-events','none');
+    tn.textContent=trunc(n.name,18);
+    g.appendChild(tn);
+
+    // Title
+    const tt=mk('text');
+    tt.setAttribute('x','14');tt.setAttribute('y','40');
+    tt.setAttribute('font-size','10');tt.setAttribute('fill',COL_SUB);
+    tt.setAttribute('pointer-events','none');
+    tt.textContent=trunc(n.title,22);
+    g.appendChild(tt);
+
+    // Division
+    const td=mk('text');
+    td.setAttribute('x','14');td.setAttribute('y','55');
+    td.setAttribute('font-size','9');td.setAttribute('fill','#b0b0c8');
+    td.setAttribute('pointer-events','none');
+    td.textContent=trunc(n.div,24);
+    g.appendChild(td);
+
+    // Events
+    g.addEventListener('mouseenter',()=>{{ hovNode=n.id; renderHandles(); renderNodes(); }});
+    g.addEventListener('mouseleave',()=>{{ hovNode=null; renderHandles(); renderNodes(); }});
+    g.addEventListener('mousedown', ev=>{{
+      ev.stopPropagation();
+      if(mode==='move'){{
+        const pt=svgPt(ev.clientX,ev.clientY);
+        dragN=n; dragOff={{x:pt.x-n.x,y:pt.y-n.y}}; didDrag=false;
+        selNode=n.id; selEdge=null; render();
+      }}
+    }});
+    g.addEventListener('click', ev=>{{
+      ev.stopPropagation();
+      if(mode==='move'){{
+        if(!didDrag){{ selNode=n.id; selEdge=null; render(); }}
+      }} else {{
+        // Connect mode
+        if(connSrc===null){{
+          connSrc=n.id; connPrev=null;
+          hint.innerHTML=`⟶ <b>"${{n.name}}"</b> dipilih sebagai ASAL → sekarang klik node TUJUAN · <b>Esc</b> untuk batal`;
+          render();
+        }} else if(connSrc!==n.id){{
+          if(!edges.some(e=>e.src===connSrc&&e.tgt===n.id)){{
+            edges.push({{id:String(eid++),src:connSrc,tgt:n.id}});
+          }}
+          const srcName=(nodes.find(nd=>nd.id===connSrc)||{{}}).name||'';
+          hint.innerHTML=`✅ Koneksi <b>${{srcName}}</b> → <b>${{n.name}}</b> berhasil dibuat · Klik node lain untuk lanjut menghubungkan`;
+          connSrc=null; connPrev=null; render();
+        }} else {{
+          connSrc=null; connPrev=null; render();
+        }}
+      }}
+    }});
+
+    // Right-click context menu for status
+    g.addEventListener('contextmenu', ev=>{{
+      ev.preventDefault(); ev.stopPropagation();
+      showContextMenu(ev.clientX, ev.clientY, n.id);
+    }});
+
+    nl.appendChild(g);
+  }});
+}}
+
+// ── Connection handles (shown on hover, big and obvious) ──────────
+function renderHandles(){{
+  hl.innerHTML='';
+  if(!hovNode && !connSrc) return;
+  const targetId = connSrc || hovNode;
+  const n=nodes.find(nd=>nd.id===targetId);
+  if(!n) return;
+
+  // We show TWO big handles: top and bottom
+  const handleDefs=[
+    {{cx:n.x+NW/2, cy:n.y-1,   label:'Dari sini'}},  // top (source going up)
+    {{cx:n.x+NW/2, cy:n.y+NH+1, label:'Dari sini'}},  // bottom (source going down)
+  ];
+
+  handleDefs.forEach(h=>{{
+    // Outer glow ring
+    const glow=mk('circle');
+    glow.setAttribute('cx',h.cx);glow.setAttribute('cy',h.cy);
+    glow.setAttribute('r','10');
+    glow.setAttribute('fill',COL_PRI);glow.setAttribute('opacity','0.15');
+    glow.setAttribute('pointer-events','none');
+    hl.appendChild(glow);
+
+    // Inner dot
+    const dot=mk('circle');
+    dot.setAttribute('cx',h.cx);dot.setAttribute('cy',h.cy);
+    dot.setAttribute('r','6');
+    dot.setAttribute('fill',connSrc===targetId?COL_CONN:COL_PRI);
+    dot.setAttribute('stroke','#fff');dot.setAttribute('stroke-width','2');
+    dot.setAttribute('cursor','crosshair');
+    dot.setAttribute('opacity','0.95');
+
+    dot.addEventListener('mouseenter',()=>{{
+      tip.style.display='block';
+      tip.textContent='Drag atau klik untuk mulai koneksi';
+      const r=svg.getBoundingClientRect();
+      tip.style.left=(h.cx*vt.s+vt.x+r.left-60)+'px';
+      tip.style.top=(h.cy*vt.s+vt.y+r.top-28)+'px';
+    }});
+    dot.addEventListener('mouseleave',()=>{{ tip.style.display='none'; }});
+    dot.addEventListener('mousedown',ev=>{{
+      ev.stopPropagation();
+      setMode('connect');
+      connSrc=targetId; connPrev=null;
+      const srcN=nodes.find(nd=>nd.id===targetId);
+      hint.innerHTML=`⟶ <b>"${{srcN?.name||''}}"</b> dipilih → sekarang klik node TUJUAN · <b>Esc</b> untuk batal`;
+      render();
+    }});
+    hl.appendChild(dot);
+  }});
+}}
+
+// ════════════════════════════════════════════════════════
+// CONTEXT MENU (right-click on node → change status)
+// ════════════════════════════════════════════════════════
+let ctxMenu=null;
+function showContextMenu(cx,cy,nodeId){{
+  removeContextMenu();
+  const menu=document.createElement('div');
+  menu.id='ctx';
+  menu.style.cssText=`position:fixed;left:${{cx}}px;top:${{cy}}px;
+    background:#fff;border:1.5px solid #e0e0f0;border-radius:8px;
+    box-shadow:0 4px 16px rgba(0,0,0,.12);z-index:999;
+    padding:6px 0;min-width:160px;font-size:12px;`;
+
+  const items=[
+    {{key:'default',  icon:'⬜', label:'Normal'}},
+    {{key:'new',      icon:'🆕', label:'Posisi Baru'}},
+    {{key:'vacant',   icon:'📭', label:'Vacant / Kosong'}},
+    {{key:'promoted', icon:'⬆',  label:'Promoted'}},
+    {{key:'removed',  icon:'❌', label:'Dihapus / Removed'}},
+  ];
+
+  const title=document.createElement('div');
+  title.style.cssText='padding:4px 14px 6px;font-size:10px;font-weight:700;color:#9e9ea0;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #f0f0f0;margin-bottom:4px;';
+  title.textContent='Tandai Status Node';
+  menu.appendChild(title);
+
+  items.forEach(it=>{{
+    const row=document.createElement('div');
+    row.style.cssText=`padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;
+      color:#1a1a2e;transition:background .1s;`;
+    row.innerHTML=`<span>${{it.icon}}</span><span>${{it.label}}</span>`;
+    row.addEventListener('mouseenter',()=>row.style.background='#f5f5ff');
+    row.addEventListener('mouseleave',()=>row.style.background='');
+    row.addEventListener('click',()=>{{
+      const n=nodes.find(nd=>nd.id===nodeId);
+      if(n) n.status=it.key;
+      removeContextMenu(); render();
+    }});
+    menu.appendChild(row);
+  }});
+
+  // Delete option
+  const sep=document.createElement('div');
+  sep.style.cssText='height:1px;background:#f0f0f0;margin:4px 0;';
+  menu.appendChild(sep);
+
+  const delRow=document.createElement('div');
+  delRow.style.cssText='padding:7px 14px;cursor:pointer;display:flex;align-items:center;gap:8px;color:#e53935;';
+  delRow.innerHTML='<span>🗑</span><span>Hapus Node Ini</span>';
+  delRow.addEventListener('mouseenter',()=>delRow.style.background='#fff5f5');
+  delRow.addEventListener('mouseleave',()=>delRow.style.background='');
+  delRow.addEventListener('click',()=>{{
+    nodes=nodes.filter(n=>n.id!==nodeId);
+    edges=edges.filter(e=>e.src!==nodeId&&e.tgt!==nodeId);
+    selNode=null; removeContextMenu(); render();
+  }});
+  menu.appendChild(delRow);
+
+  document.body.appendChild(menu);
+  ctxMenu=menu;
+  setTimeout(()=>document.addEventListener('click',removeContextMenu,{{once:true}}),10);
+}}
+function removeContextMenu(){{
+  if(ctxMenu){{ ctxMenu.remove(); ctxMenu=null; }}
+}}
+
+// ════════════════════════════════════════════════════════
+// DELETE
+// ════════════════════════════════════════════════════════
+function deleteSelected(){{
+  if(selNode!==null){{
+    nodes=nodes.filter(n=>n.id!==selNode);
+    edges=edges.filter(e=>e.src!==selNode&&e.tgt!==selNode);
+    selNode=null;
+  }} else if(selEdge!==null){{
+    edges.splice(selEdge,1); selEdge=null;
+  }}
+  render();
+}}
+
+// ════════════════════════════════════════════════════════
+// EXPORT PNG
+// ════════════════════════════════════════════════════════
+function exportPNG(){{
+  const svgEl=document.getElementById('cvs');
+  const data=new XMLSerializer().serializeToString(svgEl);
+  const blob=new Blob([data],{{type:'image/svg+xml'}});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='org-chart-draft.svg';
+  a.click(); URL.revokeObjectURL(url);
+}}
+
+// ════════════════════════════════════════════════════════
+// DROP FROM PANEL
+// ════════════════════════════════════════════════════════
+function onDrop(ev){{
+  ev.preventDefault();
+  const emp=JSON.parse(ev.dataTransfer.getData('emp'));
+  const pt=svgPt(ev.clientX,ev.clientY);
+  nodes.push({{
+    id:String(nid++), x:pt.x-NW/2, y:pt.y-NH/2,
+    name:emp.name, title:emp.title, div:emp.div, status:'default',
+  }});
+  render();
+}}
+
+// ════════════════════════════════════════════════════════
+// CANVAS EVENTS
+// ════════════════════════════════════════════════════════
+svg.addEventListener('mousedown',ev=>{{
+  const onBg=ev.target===svg||ev.target.id==='zg'||
+             ev.target.parentElement?.id==='zg'||ev.target.tagName==='rect'&&ev.target.getAttribute('fill')==='url(#dots)';
+  if(onBg){{
+    if(connSrc){{ connSrc=null; connPrev=null; render(); return; }}
+    selNode=null; selEdge=null;
+    panning=true;
+    panStart={{x:ev.clientX-vt.x,y:ev.clientY-vt.y}};
+    svg.classList.add('grabbing');
+    render();
+  }}
+}});
+
+window.addEventListener('mousemove',ev=>{{
+  if(dragN&&mode==='move'){{
+    const pt=svgPt(ev.clientX,ev.clientY);
+    dragN.x=pt.x-dragOff.x; dragN.y=pt.y-dragOff.y;
+    didDrag=true; render();
+  }} else if(panning){{
+    vt.x=ev.clientX-panStart.x; vt.y=ev.clientY-panStart.y;
+    applyVT();
+  }} else if(connSrc){{
+    connPrev=svgPt(ev.clientX,ev.clientY); render();
+  }}
+}});
+
+window.addEventListener('mouseup',()=>{{
+  dragN=null; panning=false;
+  svg.classList.remove('grabbing');
+}});
+
+svg.addEventListener('wheel',ev=>{{
+  ev.preventDefault();
+  const r=svg.getBoundingClientRect();
+  const pt=svgPt(ev.clientX,ev.clientY);
+  const f=ev.deltaY>0?0.88:1.14;
+  vt.s=Math.min(3,Math.max(0.1,vt.s*f));
+  vt.x=ev.clientX-r.left-pt.x*vt.s;
+  vt.y=ev.clientY-r.top -pt.y*vt.s;
+  applyVT();
+}},{{passive:false}});
+
+svg.addEventListener('click',ev=>{{
+  if(ev.target===svg){{ selNode=null; selEdge=null; render(); }}
+}});
+
+window.addEventListener('keydown',ev=>{{
+  if(ev.target.tagName==='INPUT') return;
+  if(ev.key==='Delete'||ev.key==='Backspace') deleteSelected();
+  if(ev.key==='Escape'){{
+    connSrc=null; connPrev=null;
+    setMode('move');
+  }}
+  if(ev.key==='h'||ev.key==='H') setMode('connect');
+}});
+
+// ════════════════════════════════════════════════════════
+// PANEL
+// ════════════════════════════════════════════════════════
+function buildPanel(){{
+  const list=document.getElementById('plist');
+  EMPS.forEach(e=>{{
+    const c=document.createElement('div');
+    c.className='ecard'; c.draggable=true;
+    c.innerHTML=`<div class="en">${{e.name}}</div><div class="et">${{e.title}}</div>`;
+    c.addEventListener('dragstart',ev=>{{
+      ev.dataTransfer.setData('emp',JSON.stringify(e));
+      ev.dataTransfer.effectAllowed='move';
+    }});
+    list.appendChild(c);
+  }});
+}}
+
+function filterCards(q){{
+  const lq=q.toLowerCase();
+  document.querySelectorAll('.ecard').forEach((c,i)=>{{
+    const e=EMPS[i];
+    c.style.display=(e.name.toLowerCase().includes(lq)||
+                     e.title.toLowerCase().includes(lq))?'':'none';
+  }});
+}}
+
+// ════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════
+buildPanel();
+render();
+if(nodes.length) fitView();
+</script>
+</body>
+</html>"""
+
+    st.components.v1.html(_html, height=720, scrolling=False)
+    st.caption(
+        "💡 **Drag** kartu dari panel kiri ke canvas · "
+        "**Hover node** → muncul titik biru → klik untuk mulai koneksi · "
+        "**Klik kanan node** → ubah status (New, Vacant, Promoted, Removed) · "
+        "**Klik garis/node** lalu tekan Delete untuk hapus"
+    )
 
 
-# ══════════════════════════════════════════════════════════════════
-# TAB 99 — ADMIN PANEL (role=super_admin only)
-# Diakses via tab_idx=99, hanya muncul di navigasi untuk super_admin.
-# ══════════════════════════════════════════════════════════════════
+
 elif _active == 99:
-    # Gate keamanan: double-check role di sini, bukan hanya di nav.
-    # Sengaja pakai _can_access_tab() yang sama dengan filter nav —
-    # single source of truth, supaya nav dan gate ini tidak pernah
-    # desync (sebelumnya pakai flag _is_admin terpisah yang hardcode
-    # ke "admin", sehingga role baru "super_admin" akan lolos nav tapi
-    # ditolak di sini kalau tidak disamakan).
-    if not _can_access_tab(_user_role, 99):
-        st.error("🚫 Akses ditolak — fitur ini hanya untuk Super Admin.")
+    # Gate keamanan: double-check role di sini, bukan hanya di nav
+    if not _is_admin:
+        st.error("🚫 Akses ditolak — fitur ini hanya untuk Admin.")
         st.stop()
 
     admin_email = st.session_state.get("user_email", "system")
@@ -6127,7 +4241,7 @@ elif _active == 99:
         col_ap_m1, col_ap_m2, col_ap_m3, col_ap_m4 = st.columns(4)
         col_ap_m1.metric("Total User", len(acl_display_df))
         col_ap_m2.metric("Aktif", len(acl_display_df[acl_display_df["Status"] == "✅ Aktif"]) if not acl_display_df.empty else 0)
-        col_ap_m3.metric("Admin",  len(acl_display_df[acl_display_df["Role"].isin(["admin", "super_admin"])])  if not acl_display_df.empty else 0)
+        col_ap_m3.metric("Admin",  len(acl_display_df[acl_display_df["Role"] == "admin"])  if not acl_display_df.empty else 0)
         col_ap_m4.metric("Nonaktif", len(acl_display_df[acl_display_df["Status"] == "🔴 Nonaktif"]) if not acl_display_df.empty else 0)
 
         st.markdown("---")
@@ -6135,7 +4249,7 @@ elif _active == 99:
         if not acl_display_df.empty:
             col_af1, col_af2, col_af3 = st.columns(3)
             with col_af1:
-                f_role_ap = st.selectbox("Filter Role", ["Semua", "super_admin", "od_reviewer", "admin", "cxo", "hrbp", "leader", "employee"], key="ap_f_role")
+                f_role_ap = st.selectbox("Filter Role", ["Semua", "admin", "cxo", "leader", "employee"], key="ap_f_role")
             with col_af2:
                 f_status_ap = st.selectbox("Filter Status", ["Semua", "✅ Aktif", "🔴 Nonaktif"], key="ap_f_status")
             with col_af3:
@@ -6161,9 +4275,9 @@ elif _active == 99:
         st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin-bottom:12px;'>Aksi Cepat</div>", unsafe_allow_html=True)
         col_qa1, col_qa2, col_qa3 = st.columns(3)
         with col_qa1:
-            target_deact = st.text_input("Email untuk Nonaktifkan", key="qa_deact", placeholder="user@mekari.com")
+            target_deact = st.text_input("Email untuk Nonaktifkan", key="qa_deact", placeholder="user@dave.com")
         with col_qa2:
-            target_react = st.text_input("Email untuk Aktifkan", key="qa_react", placeholder="user@mekari.com")
+            target_react = st.text_input("Email untuk Aktifkan", key="qa_react", placeholder="user@dave.com")
         with col_qa3:
             st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
 
@@ -6208,7 +4322,7 @@ elif _active == 99:
                 edit_target_email = edit_choice
                 prefill = acl_dict.get(edit_choice, {})
 
-        VALID_ROLES_AP = ["employee", "leader", "hrbp", "cxo", "admin", "od_reviewer", "super_admin"]
+        VALID_ROLES_AP = ["employee", "leader", "cxo", "admin"]
 
         # Get BU & SBU options from live data
         all_bus_ap  = sorted(df["Business Unit"].dropna().unique().tolist()) if df is not None else []
@@ -6220,7 +4334,7 @@ elif _active == 99:
             with col_f1:
                 f_email_ap  = st.text_input("Email *",
                                             value=edit_target_email or "",
-                                            placeholder="user@mekari.com",
+                                            placeholder="user@dave.com",
                                             disabled=is_edit_mode,
                                             key="ap_f_email")
                 f_name_ap   = st.text_input("Nama Lengkap *",
@@ -6245,7 +4359,7 @@ elif _active == 99:
                              if prefill.get("allowed_bus") and prefill.get("allowed_bus") != "*"
                              else ["*"]),
                     key="ap_f_bus",
-                    help="Pilih '*' untuk semua BU. Hanya relevan untuk role 'leader' dan 'hrbp'."
+                    help="Pilih '*' untuk semua BU. Hanya relevan untuk role 'leader'."
                 )
                 f_sbus_ap  = st.multiselect(
                     "Allowed SBU / Tribe",
@@ -6288,10 +4402,8 @@ elif _active == 99:
                 errors_ap.append("Password awal harus diisi")
             if f_role_ap_f == "employee" and not f_eid_ap.strip():
                 errors_ap.append("Employee ID wajib untuk role 'employee' agar RLS bisa berjalan")
-            if f_role_ap_f in ("leader", "hrbp") and (not f_bus_ap or not f_sbus_ap):
-                errors_ap.append("Role leader/hrbp wajib memiliki scope BU dan SBU. Pilih '*' secara eksplisit bila memang untuk semua.")
-            if f_role_ap_f in ("super_admin", "admin", "cxo", "od_reviewer") and "*" not in f_bus_ap:
-                errors_ap.append("Role super_admin, admin, cxo, dan od_reviewer harus memiliki BU scope '*' (full access)")
+            if f_role_ap_f in ("admin", "cxo") and "*" not in f_bus_ap:
+                errors_ap.append("Role admin dan cxo harus memiliki BU scope '*' (full access)")
 
             if errors_ap:
                 for e in errors_ap:
@@ -6410,3 +4522,4 @@ elif _active == 99:
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key="dl_log"
                 )
+
