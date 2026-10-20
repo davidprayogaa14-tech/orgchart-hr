@@ -55,7 +55,7 @@ LANG = {
         "header_subtitle":"Dashboard Visualisasi Data Organisasi","header_metric":"Total Karyawan",
         "mode_label":"MODE TAMPILAN","mode_division":"Per Divisi","mode_company":"Seluruh Perusahaan",
         "search_label":"Cari Karyawan","search_ph":"Ketik nama karyawan...",
-        "filter_label":"Filter","filter_bu":"🏢 Division","filter_div":"📁 Divisi",
+        "filter_label":"Filter","filter_bu":"🏢 Division","filter_div":"📁 Department",
         "filter_sbu":"🏷️ Unit","filter_leader":"👤 Filter by Leader",
         "filter_all_sbu":"Semua Unit","filter_all_div":"Semua (divisi penuh)",
         "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
@@ -78,9 +78,9 @@ LANG = {
         "tab_mgr_sub":"Seluruh karyawan yang memiliki bawahan langsung beserta analisis Span of Control",
         "tab_cr_title":"Structure Change Request",
         "tab_cr_sub":"Kelola permintaan perubahan struktur organisasi",
-        "showing":"Menampilkan","breakdown_div":"Breakdown per Divisi",
+        "showing":"Menampilkan","breakdown_div":"Breakdown per Department",
         "download_csv":"📄 CSV","download_excel":"📊 Excel",
-        "filter_bu_plain":"Filter Division","filter_div_plain":"Filter Divisi",
+        "filter_bu_plain":"Filter Division","filter_div_plain":"Filter Department",
         "emp_in_div":"karyawan di divisi ini","emp_found_in":"ada di divisi ini",
     },
     "en": {
@@ -1054,10 +1054,10 @@ def _draw_pdf_header(c, page_w, page_h, title_text, subtitle, total_nodes, downl
     t = title_text if len(title_text) <= 90 else title_text[:87] + "..."
     c.drawString(logo_x, logo_y - 28, t)
 
-    # Metadata baris: Divisi · BU · Tanggal · Total
+    # Metadata baris: Department · Division · Tanggal · Total
     meta_parts = []
-    if div_name:  meta_parts.append(f"Divisi: {div_name}")
-    if bu_name:   meta_parts.append(f"BU: {bu_name}")
+    if div_name:  meta_parts.append(f"Department: {div_name}")
+    if bu_name:   meta_parts.append(f"Division: {bu_name}")
     meta_parts.append(f"Diunduh: {downloaded_at}")
     meta_parts.append(f"Total ditampilkan: {total_nodes} karyawan")
 
@@ -1569,8 +1569,8 @@ def render_org_chart(tree_json_str, chart_height=700, initial_level="all", theme
 </div>
 <div id="canvas"><div id="tree-root"></div></div>
 <div class="legend">
-  <div class="legend-item"><div class="legend-dot" style="background:{node_in_bdr};border:1px solid {node_in_bdr}"></div><span>Divisi ini</span></div>
-  <div class="legend-item"><div class="legend-dot" style="background:{node_out_bdr};border:1px solid {node_out_bdr}"></div><span>Atasan luar divisi</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:{node_in_bdr};border:1px solid {node_in_bdr}"></div><span>Department ini</span></div>
+  <div class="legend-item"><div class="legend-dot" style="background:{node_out_bdr};border:1px solid {node_out_bdr}"></div><span>Atasan luar department</span></div>
   <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;border-radius:999px"></div><span>Jml subordinate</span></div>
   <div class="legend-item" id="legend-highlight" style="display:none;">
     <div class="legend-dot" style="background:#f59e0b;border:2px solid #d97706;border-radius:3px;"></div>
@@ -2105,7 +2105,7 @@ _sb_copy = {
         "workspace": "Organisasi", "workflows": "Operasional",
         "admin": "Administrasi", "overview": "Ringkasan data",
         "scope": "Dataset beta pribadi", "employees": "Karyawan",
-        "managers": "Manager", "divisions": "Divisi", "business_units": "Business unit",
+        "managers": "Manager", "divisions": "Department", "business_units": "Division",
         "refresh": "Perbarui", "refresh_help": "Muat ulang data dashboard",
         "sheets": "Data dari Google Sheets", "local": "Data dari CSV lokal",
     },
@@ -2113,7 +2113,7 @@ _sb_copy = {
         "workspace": "Organization", "workflows": "Workflows",
         "admin": "Administration", "overview": "Data overview",
         "scope": "Personal beta dataset", "employees": "Employees",
-        "managers": "Managers", "divisions": "Departments", "business_units": "Business units",
+        "managers": "Managers", "divisions": "Departments", "business_units": "Divisions",
         "refresh": "Refresh", "refresh_help": "Reload dashboard data",
         "sheets": "Data from Google Sheets", "local": "Data from local CSV",
     },
@@ -2500,7 +2500,7 @@ if _active == 0:
             selected_bu = st.selectbox("🏢 Division", bu_list, key="sel_bu")
         with col_b:
             div_list    = sorted(df[df["Division"] == selected_bu]["Department"].dropna().unique().tolist())
-            selected_div = st.selectbox("📁 Divisi", div_list, key="sel_div")
+            selected_div = st.selectbox("📁 Department", div_list, key="sel_div")
         with col_c:
             sbu_opts_raw = [s for s in df[
                 (df["Division"] == selected_bu) & (df["Department"] == selected_div)
@@ -2623,14 +2623,14 @@ if _active == 0:
         with col_dl6:
             try:
                 pdf2 = generate_pdf(tree_data2, "Org Chart — Seluruh Perusahaan",
-                                    div_name="Semua Divisi", bu_name="Seluruh BU")
+                                    div_name="Semua Department", bu_name="Seluruh Division")
                 st.download_button("📑 PDF (Full)", pdf2, "orgchart_perusahaan_full.pdf", "application/pdf", use_container_width=True)
             except Exception:
                 st.button("📑 PDF (N/A)", disabled=True, use_container_width=True)
         with col_dl7:
             try:
                 pdf_sum2 = generate_pdf_summary(tree_data2, "Org Chart Summary — Seluruh Perusahaan",
-                                               div_name="Semua Divisi", bu_name="Seluruh BU")
+                                               div_name="Semua Department", bu_name="Seluruh Division")
                 st.download_button("📑 PDF (Summary)", pdf_sum2, "orgchart_perusahaan_summary.pdf", "application/pdf", use_container_width=True)
             except Exception:
                 st.button("📑 Summary (N/A)", disabled=True, use_container_width=True)
@@ -2655,7 +2655,7 @@ elif _active == 1:
             df[df["Division"] == bu_f]["Department"].unique().tolist() if bu_f != "Semua"
             else df["Department"].unique().tolist()
         )
-        div_f = st.selectbox("Filter Divisi", div_opts, key="t2div")
+        div_f = st.selectbox("Filter Department", div_opts, key="t2div")
     with c4:
         sbu_src = df.copy()
         if bu_f != "Semua": sbu_src = sbu_src[sbu_src["Division"] == bu_f]
@@ -2772,7 +2772,7 @@ elif _active == 2:
     # ── Data Tidak Konsisten ──────────────────────────────────────
     with cc_t2:
         if st.session_state.lang == "id":
-            _mis_note = "Karyawan dengan Job ID yang <b>cocok</b> antara Employee Data dan MPP, namun terdapat <b>perbedaan nilai pada field tertentu</b> (contoh: Divisi di Employee Data berbeda dengan Divisi di MPP). Ini mengindikasikan data tidak sinkron — perlu direkonsiliasi."
+            _mis_note = "Karyawan dengan Job ID yang <b>cocok</b> antara Employee Data dan MPP, namun terdapat <b>perbedaan nilai pada field tertentu</b> (contoh: Department di Employee Data berbeda dengan Department di MPP). Ini mengindikasikan data tidak sinkron — perlu direkonsiliasi."
         else:
             _mis_note = "Employees whose Job ID <b>matches</b> between Employee Data and MPP, but have <b>field-level differences</b> (e.g., Department in Employee Data differs from MPP). This indicates out-of-sync data that needs reconciliation."
         st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>🔀 <b>{'Data Tidak Konsisten' if st.session_state.lang == 'id' else 'Data Inconsistency'}</b> — {_mis_note}</div>", unsafe_allow_html=True)
@@ -2861,7 +2861,7 @@ elif _active == 2:
                 bu_v = st.selectbox("Filter BU", _bu_v_opts, key="cc_vac_bu")
             with col_v2:
                 _div_v_opts = ["Semua"] + sorted(vac_df["Department"].dropna().unique().tolist()) if "Department" in vac_df.columns else ["Semua"]
-                div_v = st.selectbox("Filter Divisi", _div_v_opts, key="cc_vac_div")
+                div_v = st.selectbox("Filter Department", _div_v_opts, key="cc_vac_div")
             with col_v3:
                 _status_v_opts = ["Semua"] + sorted(vac_df["Fulfillment Status"].dropna().unique().tolist()) if "Fulfillment Status" in vac_df.columns else ["Semua"]
                 status_v = st.selectbox("Filter Fulfillment Status", _status_v_opts, key="cc_vac_status")
@@ -2959,7 +2959,7 @@ elif _active == 3:
     with col_m3:
         div_mgr_opts = (["Semua"] + sorted(mgr_df[mgr_df["Division"] == bu_mgr]["Department"].dropna().unique().tolist())
                         if bu_mgr != "Semua" else ["Semua"] + sorted(mgr_df["Department"].dropna().unique().tolist()))
-        div_mgr = st.selectbox("Filter Divisi", div_mgr_opts, key="div_mgr")
+        div_mgr = st.selectbox("Filter Department", div_mgr_opts, key="div_mgr")
     with col_m4:
         level_filter = st.selectbox("🎯 Filter Level Hierarki", ["Semua", "Chief", "C-1", "C-2"], key="level_mgr",
                                     help="Chief = bawahan langsung SLKR001 | C-1 = 1 tingkat di bawah Chief | C-2 = 2 tingkat di bawah Chief")
