@@ -55,9 +55,9 @@ LANG = {
         "header_subtitle":"Dashboard Visualisasi Data Organisasi","header_metric":"Total Karyawan",
         "mode_label":"MODE TAMPILAN","mode_division":"Per Divisi","mode_company":"Seluruh Perusahaan",
         "search_label":"Cari Karyawan","search_ph":"Ketik nama karyawan...",
-        "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Divisi",
-        "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
-        "filter_all_sbu":"Semua SBU","filter_all_div":"Semua (divisi penuh)",
+        "filter_label":"Filter","filter_bu":"🏢 Division","filter_div":"📁 Divisi",
+        "filter_sbu":"🏷️ Unit","filter_leader":"👤 Filter by Leader",
+        "filter_all_sbu":"Semua Unit","filter_all_div":"Semua (divisi penuh)",
         "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
         "showing_emp":"Menampilkan","employees":"karyawan",
         "emp_found":"Ditemukan","emp_not_found":"Tidak ada karyawan bernama",
@@ -80,7 +80,7 @@ LANG = {
         "tab_cr_sub":"Kelola permintaan perubahan struktur organisasi",
         "showing":"Menampilkan","breakdown_div":"Breakdown per Divisi",
         "download_csv":"📄 CSV","download_excel":"📊 Excel",
-        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Divisi",
+        "filter_bu_plain":"Filter Division","filter_div_plain":"Filter Divisi",
         "emp_in_div":"karyawan di divisi ini","emp_found_in":"ada di divisi ini",
     },
     "en": {
@@ -91,11 +91,11 @@ LANG = {
         "data_source_local":"Local · CSV","auto_refresh":"Auto-refresh every 5 minutes",
         "menu_label":"Menu","header_supra":"People","header_title":"Organization Dashboard",
         "header_subtitle":"Organizational Data Visualization Dashboard","header_metric":"Total Employees",
-        "mode_label":"VIEW MODE","mode_division":"By Division","mode_company":"Entire Company",
+        "mode_label":"VIEW MODE","mode_division":"By Department","mode_company":"Entire Company",
         "search_label":"Search Employee","search_ph":"Type employee name...",
-        "filter_label":"Filter","filter_bu":"🏢 Business Unit","filter_div":"📁 Division",
-        "filter_sbu":"🏷️ SBU/Tribe","filter_leader":"👤 Filter by Leader",
-        "filter_all_sbu":"All SBUs","filter_all_div":"All (full division)",
+        "filter_label":"Filter","filter_bu":"🏢 Division","filter_div":"📁 Department",
+        "filter_sbu":"🏷️ Unit","filter_leader":"👤 Filter by Leader",
+        "filter_all_sbu":"All Units","filter_all_div":"All (full division)",
         "expand_level":"📶 Expand Level","download_data":"⬇️ Download Data",
         "showing_emp":"Showing","employees":"employees",
         "emp_found":"Found","emp_not_found":"No employee named",
@@ -116,9 +116,9 @@ LANG = {
         "tab_mgr_sub":"All employees with direct reports and Span of Control analysis",
         "tab_cr_title":"Structure Change Request",
         "tab_cr_sub":"Manage organizational structure change requests",
-        "showing":"Showing","breakdown_div":"Breakdown by Division",
+        "showing":"Showing","breakdown_div":"Breakdown by Department",
         "download_csv":"📄 CSV","download_excel":"📊 Excel",
-        "filter_bu_plain":"Filter Business Unit","filter_div_plain":"Filter Division",
+        "filter_bu_plain":"Filter Division","filter_div_plain":"Filter Department",
         "emp_in_div":"employees in this division","emp_found_in":"found in this division",
     },
 }
@@ -150,7 +150,7 @@ def run_compliance_checks(emp_df: pd.DataFrame, mpp_df: pd.DataFrame) -> dict:
         (emp_df["Manager ID"].astype(str).str.strip() == "") |
         (emp_df["Manager ID"].isna()) |
         (emp_df["Manager ID"].astype(str).str.strip() == "nan")
-    ][["Employee ID","Employee Name","Job Position","Division","Business Unit","SBU/Tribe","Manager ID"]].copy()
+    ][["Employee ID","Employee Name","Job Position","Department","Division","Unit","Manager ID"]].copy()
     missing["Severity"] = "High"
     results["missing_manager"] = missing
 
@@ -172,14 +172,14 @@ def run_compliance_checks(emp_df: pd.DataFrame, mpp_df: pd.DataFrame) -> dict:
 
     # Ghost: emp not in mpp
     ghost_ids = emp_ids - mpp_ids
-    ghost_cols = [c for c in ["Employee ID","Employee Name","Job ID","Job Position","Division","Business Unit","SBU/Tribe"] if c in emp_valid.columns]
+    ghost_cols = [c for c in ["Employee ID","Employee Name","Job ID","Job Position","Department","Division","Unit"] if c in emp_valid.columns]
     ghost_df = emp_valid[emp_valid["Job ID"].isin(ghost_ids)][ghost_cols].copy()
     ghost_df["Severity"] = "Medium"
     results["ghost"] = ghost_df
 
     # Vacancy: mpp not in emp
     vacancy_ids = mpp_ids - emp_ids
-    vac_cols = [c for c in ["MPP Status 2026","JOBID","Job Position","MPP Career Stage","Division","BU","SBU","Primary Budget Holder","Fulfillment Status"] if c in mpp_valid.columns]
+    vac_cols = [c for c in ["MPP Status 2026","JOBID","Job Position","MPP Career Stage","Department","BU","Unit","Primary Budget Holder","Fulfillment Status"] if c in mpp_valid.columns]
     vacancy_df = mpp_valid[mpp_valid["JOBID"].isin(vacancy_ids)][vac_cols].copy()
     results["vacancy"] = vacancy_df
 
@@ -187,9 +187,9 @@ def run_compliance_checks(emp_df: pd.DataFrame, mpp_df: pd.DataFrame) -> dict:
     merged = emp_valid.merge(mpp_valid, left_on="Job ID", right_on="JOBID", how="inner", suffixes=("_emp","_mpp"))
 
     FIELD_MAP = [
-        ("Business Unit",  "Business Unit",   "BU",                   "High"),
-        ("Division",       "Division_emp",    "Division_mpp",          "High"),
-        ("SBU/Tribe",      "SBU/Tribe",       "Tribe/Squad/Function",  "Medium"),
+        ("Division",  "Division",   "BU",                   "High"),
+        ("Department",       "Division_emp",    "Division_mpp",          "High"),
+        ("Unit",      "Unit",       "Tribe/Squad/Function",  "Medium"),
         ("Job Position",   "Job Position_emp","Job Position_mpp",      "High"),
         ("Career Stage",   "Career Stage",    "MPP Career Stage",      "Medium"),
     ]
@@ -404,7 +404,7 @@ def apply_rbac_filter(df: pd.DataFrame, user_info: dict) -> pd.DataFrame:
     if role in ("admin", "cxo"):
         return df
 
-    # ── Leader: BU + SBU scope ────────────────────────────────────
+    # ── Leader: BU + Unit scope ────────────────────────────────────
     if role == "leader":
         raw_bus  = user_info.get("allowed_bus", "*").strip()
         raw_sbus = user_info.get("allowed_sbus", "*").strip()
@@ -416,16 +416,16 @@ def apply_rbac_filter(df: pd.DataFrame, user_info: dict) -> pd.DataFrame:
         filtered = df.copy()
 
         if allowed_bus:  # non-empty = restricted
-            if "Business Unit" in filtered.columns:
-                filtered = filtered[filtered["Business Unit"].isin(allowed_bus)]
+            if "Division" in filtered.columns:
+                filtered = filtered[filtered["Division"].isin(allowed_bus)]
 
         if allowed_sbus:
-            if "SBU/Tribe" in filtered.columns:
-                # Tetap tampilkan node tanpa SBU (atasan lintas unit tetap visible)
+            if "Unit" in filtered.columns:
+                # Tetap tampilkan node tanpa Unit (atasan lintas unit tetap visible)
                 sbu_mask = (
-                    filtered["SBU/Tribe"].isin(allowed_sbus) |
-                    filtered["SBU/Tribe"].isin(["", "nan"]) |
-                    filtered["SBU/Tribe"].isna()
+                    filtered["Unit"].isin(allowed_sbus) |
+                    filtered["Unit"].isin(["", "nan"]) |
+                    filtered["Unit"].isna()
                 )
                 filtered = filtered[sbu_mask]
 
@@ -562,12 +562,12 @@ def reset_user_password(email: str, new_password: str) -> bool:
 #   Employee ID                           → Employee ID       (same)
 #   Full Name                             → Employee Name     (rename)
 #   Employment Approval Line Employee ID  → Manager ID        (rename)
-#   Organization                          → Division          (rename)
+#   Organization                          → Department          (rename)
 #   Career Stage                          → Career Stage      (same)
 #   Job ID                                → Job ID            (same)
 #   Job Position                          → Job Position      (same)
-#   SBU/Tribe                             → SBU/Tribe         (same)
-#   Business Unit                         → Business Unit     (same)
+#   Unit                             → Unit         (same)
+#   Division                         → Division     (same)
 #   Email                                 → Email             (new — auth mapping)
 #   Employment Type Status                → (filter: Permanent/Intern/Probation/Contract, then drop)
 #
@@ -613,7 +613,7 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
          Employment Approval Line Employee ID → Manager ID
          Employment Approval Line Name        → Manager Name
          Employment Approval Line Email       → Manager Email
-         Organization                         → Division
+         Organization                         → Department
     4. Drop kolom yang tidak diperlukan
     5. Pastikan semua kolom wajib tersedia
     6. Type-cast dan clean values
@@ -658,7 +658,10 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
         "Employment Approval Line Employee ID":  "Manager ID",
         "Employment Approval Line Name":         "Manager Name",
         "Employment Approval Line Email":        "Manager Email",
-        "Organization":                          "Division",
+        # NOTE (T-101, 20 Okt 2026): baris "Organization" -> "Division" versi lama
+        # dihapus karena header Sheet employee_data sekarang sudah langsung
+        # bernama Division/Department/Unit (dikonfirmasi Dave). Tidak perlu
+        # rename untuk tiga kolom hierarki ini lagi.
     }
     # Hanya rename kolom yang memang ada (defensive)
     rename_map = {k: v for k, v in rename_map.items() if k in df.columns}
@@ -681,9 +684,9 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
         "Manager ID":     "",
         "Manager Name":   "",
         "Manager Email":  "",
-        "Division":       "",
-        "Business Unit":  "",
-        "SBU/Tribe":      "",
+        "Department":       "",
+        "Division":  "",
+        "Unit":      "",
         "Job Position":   "",
         "Job ID":         "",
         "Career Stage":   "",
@@ -696,7 +699,7 @@ def normalize_people_db(df: pd.DataFrame) -> pd.DataFrame:
     # ── Step 6: Type-cast & clean ─────────────────────────────────
     df["Employee ID"]   = df["Employee ID"].astype(str).str.strip()
     df["Manager ID"]    = df["Manager ID"].fillna("").astype(str).str.strip()
-    df["SBU/Tribe"]     = df["SBU/Tribe"].fillna("").astype(str).str.strip()
+    df["Unit"]     = df["Unit"].fillna("").astype(str).str.strip()
     df["Career Stage"]  = df["Career Stage"].fillna("").astype(str).str.strip()
     df["Email"]         = df["Email"].fillna("").astype(str).str.strip().str.lower()
 
@@ -794,7 +797,7 @@ def get_cr_sheet():
 #   logout         → user logout
 #   view_orgchart  → user melihat/merender org chart
 #   search         → user melakukan pencarian karyawan
-#   filter_change  → user mengubah filter BU/Division/SBU
+#   filter_change  → user mengubah filter BU/Department/Unit
 #   export         → user mengekspor data (Excel/PDF)
 #   view_tab       → user berpindah tab (admin only tabs)
 #   acl_change     → admin mengubah ACL user
@@ -954,9 +957,9 @@ def build_tree_json(full_data: pd.DataFrame, selected_div: str, root_ids: list, 
     _tree_df = full_data.drop_duplicates(subset=["Employee ID"], keep="last")
     info_map: dict = (
         _tree_df
-        .set_index("Employee ID")[["Employee Name", "Job Position", "Division", "SBU/Tribe", "Business Unit"]]
+        .set_index("Employee ID")[["Employee Name", "Job Position", "Department", "Unit", "Division"]]
         .rename(columns={"Employee Name": "name", "Job Position": "position",
-                         "Division": "division", "SBU/Tribe": "sbu", "Business Unit": "bu"})
+                         "Department": "division", "Unit": "sbu", "Division": "bu"})
         .to_dict(orient="index")
     )
 
@@ -1100,7 +1103,7 @@ def _wrap_text(text: str, max_chars: int) -> list:
 
 def generate_pdf(tree_nodes, title_text, div_name="", bu_name=""):
     """
-    PDF Full — semua level, node lebih besar, nama+posisi+SBU lengkap,
+    PDF Full — semua level, node lebih besar, nama+posisi+Unit lengkap,
     header profesional dengan metadata waktu & divisi.
     """
     if not REPORTLAB_OK:
@@ -1244,7 +1247,7 @@ def generate_pdf(tree_nodes, title_text, div_name="", bu_name=""):
             c.drawCentredString(text_x, pos_y - li * 10, pl)
         sbu_y = pos_y - len(pos_lines[:2]) * 10 - 5
 
-        # Baris 3: SBU/Tribe (jika ada)
+        # Baris 3: Unit (jika ada)
         sbu_clean = sbu.strip() if sbu and sbu.strip() not in ("", "nan") else ""
         if sbu_clean and sbu_y > y_bottom + 6:
             c.setFont("Helvetica-Oblique", 6.5)
@@ -1278,7 +1281,7 @@ def generate_pdf(tree_nodes, title_text, div_name="", bu_name=""):
 def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
     """
     PDF Summary — tampilkan hingga Level 2, node lebih informatif,
-    header profesional, nama + posisi + SBU lengkap.
+    header profesional, nama + posisi + Unit lengkap.
     """
     if not REPORTLAB_OK:
         raise ImportError("ReportLab tidak tersedia")
@@ -1452,7 +1455,7 @@ def generate_pdf_summary(tree_nodes, title_text, div_name="", bu_name=""):
             c.drawCentredString(nx, sbu_y, div_short)
             sbu_y -= 9
 
-        # SBU
+        # Unit
         sbu_clean = sbu.strip() if sbu and sbu.strip() not in ("", "nan") else ""
         if sbu_clean and sbu_y > y_bot + 7:
             c.setFont("Helvetica-Oblique", 6.5)
@@ -2110,7 +2113,7 @@ _sb_copy = {
         "workspace": "Organization", "workflows": "Workflows",
         "admin": "Administration", "overview": "Data overview",
         "scope": "Personal beta dataset", "employees": "Employees",
-        "managers": "Managers", "divisions": "Divisions", "business_units": "Business units",
+        "managers": "Managers", "divisions": "Departments", "business_units": "Business units",
         "refresh": "Refresh", "refresh_help": "Reload dashboard data",
         "sheets": "Data from Google Sheets", "local": "Data from local CSV",
     },
@@ -2304,8 +2307,8 @@ with st.sidebar:
 
     # Keep beta's existing navigation scope; metrics are secondary to tasks.
     total_karyawan = len(df)
-    total_bu = df["Business Unit"].nunique()
-    total_div = df["Division"].nunique()
+    total_bu = df["Division"].nunique()
+    total_div = df["Department"].nunique()
     total_mgr = df[df["Employee ID"].isin(df["Manager ID"].unique())]["Employee ID"].nunique()
     with st.container(key="sb_overview"):
         with st.expander(_sb_copy["overview"], expanded=False):
@@ -2424,7 +2427,7 @@ if _active == 0:
                 st.markdown(f"""<div style="padding:8px 12px;background:#dcfce7;border-radius:8px;
                     font-size:12px;color:#166534;margin-top:4px;">
                     ✅ Ditemukan: <b>{emp['Employee Name']}</b> — {emp.get('Job Position','')},
-                    <b>{emp.get('Division','')}</b> ({emp.get('Business Unit','')})</div>""",
+                    <b>{emp.get('Department','')}</b> ({emp.get('Division','')})</div>""",
                     unsafe_allow_html=True)
             else:
                 names_list = ", ".join(matched_global["Employee Name"].tolist()[:4])
@@ -2438,7 +2441,7 @@ if _active == 0:
     selected_emp_row = None
     if len(matched_global) > 1:
         emp_choices = ["— Pilih karyawan —"] + [
-            f"{r['Employee Name']}  ·  {r.get('Division','')}  ·  {r.get('Business Unit','')}"
+            f"{r['Employee Name']}  ·  {r.get('Department','')}  ·  {r.get('Division','')}"
             for _, r in matched_global.iterrows()
         ]
         chosen_emp = st.selectbox("Pilih karyawan:", emp_choices,
@@ -2451,15 +2454,15 @@ if _active == 0:
 
     # AUTO-SET filter BU & Divisi berdasarkan karyawan yang ditemukan/dipilih
     if selected_emp_row is not None:
-        _tbu  = str(selected_emp_row.get("Business Unit", ""))
-        _tdiv = str(selected_emp_row.get("Division", ""))
-        _bu_list_all = sorted(df["Business Unit"].dropna().unique().tolist())
+        _tbu  = str(selected_emp_row.get("Division", ""))
+        _tdiv = str(selected_emp_row.get("Department", ""))
+        _bu_list_all = sorted(df["Division"].dropna().unique().tolist())
         if _tbu in _bu_list_all:
             st.session_state["sel_bu"] = _tbu
-        _div_list_for = sorted(df[df["Business Unit"] == _tbu]["Division"].dropna().unique().tolist())
+        _div_list_for = sorted(df[df["Division"] == _tbu]["Department"].dropna().unique().tolist())
         if _tdiv in _div_list_for:
             st.session_state["sel_div"] = _tdiv
-        st.session_state["sel_sbu"]    = "Semua SBU"
+        st.session_state["sel_sbu"]    = "Semua Unit"
         st.session_state["sel_leader"] = "Semua (divisi penuh)"
 
     # ── Auto-highlight: lookup Employee ID dari email login ─────────
@@ -2472,9 +2475,9 @@ if _active == 0:
             _auto_highlight_id = str(_self_row.iloc[0].get("Employee ID", ""))
             # Auto-set filter ke divisi user sendiri saat pertama kali buka
             if not st.session_state.get("_auto_filter_set", False) and selected_emp_row is None:
-                _tbu_self  = str(_self_row.iloc[0].get("Business Unit", ""))
-                _tdiv_self = str(_self_row.iloc[0].get("Division", ""))
-                _bu_list_all = sorted(df["Business Unit"].dropna().unique().tolist())
+                _tbu_self  = str(_self_row.iloc[0].get("Division", ""))
+                _tdiv_self = str(_self_row.iloc[0].get("Department", ""))
+                _bu_list_all = sorted(df["Division"].dropna().unique().tolist())
                 if _tbu_self in _bu_list_all:
                     st.session_state["sel_bu"]  = _tbu_self
                     st.session_state["sel_div"] = _tdiv_self
@@ -2493,20 +2496,20 @@ if _active == 0:
         """, unsafe_allow_html=True)
         col_a, col_b, col_c, col_d = st.columns([2, 2, 2, 2])
         with col_a:
-            bu_list    = sorted(df["Business Unit"].dropna().unique().tolist())
-            selected_bu = st.selectbox("🏢 Business Unit", bu_list, key="sel_bu")
+            bu_list    = sorted(df["Division"].dropna().unique().tolist())
+            selected_bu = st.selectbox("🏢 Division", bu_list, key="sel_bu")
         with col_b:
-            div_list    = sorted(df[df["Business Unit"] == selected_bu]["Division"].dropna().unique().tolist())
+            div_list    = sorted(df[df["Division"] == selected_bu]["Department"].dropna().unique().tolist())
             selected_div = st.selectbox("📁 Divisi", div_list, key="sel_div")
         with col_c:
             sbu_opts_raw = [s for s in df[
-                (df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)
-            ]["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""]
-            selected_sbu = st.selectbox("🏷️ SBU/Tribe", ["Semua SBU"] + sorted(sbu_opts_raw), key="sel_sbu")
+                (df["Division"] == selected_bu) & (df["Department"] == selected_div)
+            ]["Unit"].dropna().unique().tolist() if s.strip() != ""]
+            selected_sbu = st.selectbox("🏷️ Unit", ["Semua Unit"] + sorted(sbu_opts_raw), key="sel_sbu")
 
-        filtered = df[(df["Business Unit"] == selected_bu) & (df["Division"] == selected_div)].copy()
-        if selected_sbu != "Semua SBU":
-            filtered = filtered[filtered["SBU/Tribe"] == selected_sbu].copy()
+        filtered = df[(df["Division"] == selected_bu) & (df["Department"] == selected_div)].copy()
+        if selected_sbu != "Semua Unit":
+            filtered = filtered[filtered["Unit"] == selected_sbu].copy()
 
         all_leaders = filtered[filtered["Employee ID"].isin(df["Manager ID"].unique())]["Employee Name"].tolist()
         with col_d:
@@ -2527,7 +2530,7 @@ if _active == 0:
 
         # ── Cross-division subordinate fix ────────────────────────────
         # Ketika user search nama seseorang, subordinate mereka yang ada
-        # di divisi lain tidak masuk ke filtered (karena filter by Division).
+        # di divisi lain tidak masuk ke filtered (karena filter by Department).
         # Fix: BFS downward dari search target di SELURUH df, lalu gabungkan
         # hasilnya dengan filtered agar semua subordinate lintas divisi muncul.
         if search_highlight_id and selected_emp_row is not None:
@@ -2646,25 +2649,25 @@ elif _active == 1:
 
     c1, c2, c3, c4 = st.columns(4)
     with c1: search = st.text_input("🔍 Cari nama karyawan")
-    with c2: bu_f   = st.selectbox("Filter BU", ["Semua"] + sorted(df["Business Unit"].unique().tolist()), key="t2bu")
+    with c2: bu_f   = st.selectbox("Filter BU", ["Semua"] + sorted(df["Division"].unique().tolist()), key="t2bu")
     with c3:
         div_opts = ["Semua"] + sorted(
-            df[df["Business Unit"] == bu_f]["Division"].unique().tolist() if bu_f != "Semua"
-            else df["Division"].unique().tolist()
+            df[df["Division"] == bu_f]["Department"].unique().tolist() if bu_f != "Semua"
+            else df["Department"].unique().tolist()
         )
         div_f = st.selectbox("Filter Divisi", div_opts, key="t2div")
     with c4:
         sbu_src = df.copy()
-        if bu_f != "Semua": sbu_src = sbu_src[sbu_src["Business Unit"] == bu_f]
-        if div_f != "Semua": sbu_src = sbu_src[sbu_src["Division"] == div_f]
-        sbu_opts_t2 = ["Semua"] + sorted([s for s in sbu_src["SBU/Tribe"].dropna().unique().tolist() if s.strip() != ""])
-        sbu_f = st.selectbox("Filter SBU/Tribe", sbu_opts_t2, key="t2sbu")
+        if bu_f != "Semua": sbu_src = sbu_src[sbu_src["Division"] == bu_f]
+        if div_f != "Semua": sbu_src = sbu_src[sbu_src["Department"] == div_f]
+        sbu_opts_t2 = ["Semua"] + sorted([s for s in sbu_src["Unit"].dropna().unique().tolist() if s.strip() != ""])
+        sbu_f = st.selectbox("Filter Unit", sbu_opts_t2, key="t2sbu")
 
     data_view = df.copy()
     if search:       data_view = data_view[data_view["Employee Name"].str.contains(search, case=False, na=False)]
-    if bu_f  != "Semua": data_view = data_view[data_view["Business Unit"] == bu_f]
-    if div_f != "Semua": data_view = data_view[data_view["Division"] == div_f]
-    if sbu_f != "Semua": data_view = data_view[data_view["SBU/Tribe"] == sbu_f]
+    if bu_f  != "Semua": data_view = data_view[data_view["Division"] == bu_f]
+    if div_f != "Semua": data_view = data_view[data_view["Department"] == div_f]
+    if sbu_f != "Semua": data_view = data_view[data_view["Unit"] == sbu_f]
 
     st.caption(f"Menampilkan **{len(data_view)}** karyawan")
     st.dataframe(data_view, use_container_width=True, height=480)
@@ -2741,16 +2744,16 @@ elif _active == 2:
             col_f1, col_f2, col_f3 = st.columns([2, 2, 2])
             with col_f1:
                 bu_nr = st.selectbox(L["filter_bu_plain"],
-                    [_all_txt] + sorted(miss_df["Business Unit"].dropna().unique().tolist()), key="cc_bu_nr")
+                    [_all_txt] + sorted(miss_df["Division"].dropna().unique().tolist()), key="cc_bu_nr")
             with col_f2:
-                _div_opts = sorted(miss_df[miss_df["Business Unit"]==bu_nr]["Division"].dropna().unique().tolist()) if bu_nr != _all_txt else sorted(miss_df["Division"].dropna().unique().tolist())
+                _div_opts = sorted(miss_df[miss_df["Division"]==bu_nr]["Department"].dropna().unique().tolist()) if bu_nr != _all_txt else sorted(miss_df["Department"].dropna().unique().tolist())
                 div_nr = st.selectbox(L["filter_div_plain"], [_all_txt] + _div_opts, key="cc_div_nr")
             with col_f3:
                 jobid_search_nr = st.text_input("🔑 Cari Job ID", placeholder="Ketik Job ID...", key="cc_nr_jobid_search")
 
             view_miss = miss_df.copy()
-            if bu_nr  != _all_txt: view_miss = view_miss[view_miss["Business Unit"] == bu_nr]
-            if div_nr != _all_txt: view_miss = view_miss[view_miss["Division"] == div_nr]
+            if bu_nr  != _all_txt: view_miss = view_miss[view_miss["Division"] == bu_nr]
+            if div_nr != _all_txt: view_miss = view_miss[view_miss["Department"] == div_nr]
             if jobid_search_nr.strip() and "Job ID" in view_miss.columns:
                 view_miss = view_miss[view_miss["Job ID"].astype(str).str.contains(jobid_search_nr.strip(), case=False, na=False)]
 
@@ -2759,7 +2762,7 @@ elif _active == 2:
 
             _bkd_title = L["breakdown_div"]
             st.markdown(f"<div style='font-size:14px;font-weight:600;color:{T['text']};margin:16px 0 8px 0;'>{_bkd_title}</div>", unsafe_allow_html=True)
-            bkd = view_miss.groupby(["Business Unit","Division"]).size().reset_index(name="Count").sort_values("Count",ascending=False)
+            bkd = view_miss.groupby(["Division","Department"]).size().reset_index(name="Count").sort_values("Count",ascending=False)
             st.dataframe(bkd, use_container_width=True, height=220)
             st.divider()
             c1, c2, _ = st.columns([1,1,3])
@@ -2771,7 +2774,7 @@ elif _active == 2:
         if st.session_state.lang == "id":
             _mis_note = "Karyawan dengan Job ID yang <b>cocok</b> antara Employee Data dan MPP, namun terdapat <b>perbedaan nilai pada field tertentu</b> (contoh: Divisi di Employee Data berbeda dengan Divisi di MPP). Ini mengindikasikan data tidak sinkron — perlu direkonsiliasi."
         else:
-            _mis_note = "Employees whose Job ID <b>matches</b> between Employee Data and MPP, but have <b>field-level differences</b> (e.g., Division in Employee Data differs from MPP). This indicates out-of-sync data that needs reconciliation."
+            _mis_note = "Employees whose Job ID <b>matches</b> between Employee Data and MPP, but have <b>field-level differences</b> (e.g., Department in Employee Data differs from MPP). This indicates out-of-sync data that needs reconciliation."
         st.markdown(f"<div style='background:{T['warn_bg']};border:1px solid {T['warn_bdr']};border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:{T['warn_txt']};'>🔀 <b>{'Data Tidak Konsisten' if st.session_state.lang == 'id' else 'Data Inconsistency'}</b> — {_mis_note}</div>", unsafe_allow_html=True)
 
         if mis_df.empty:
@@ -2819,7 +2822,7 @@ elif _active == 2:
         else:
             col_g1, col_g2, col_g3 = st.columns([2, 2, 2])
             with col_g1:
-                _bu_g_opts = ["Semua"] + sorted(ghost_df["Business Unit"].dropna().unique().tolist()) if "Business Unit" in ghost_df.columns else ["Semua"]
+                _bu_g_opts = ["Semua"] + sorted(ghost_df["Division"].dropna().unique().tolist()) if "Division" in ghost_df.columns else ["Semua"]
                 bu_g = st.selectbox(L["filter_bu_plain"], _bu_g_opts, key="cc_ghost_bu")
             with col_g2:
                 _jobid_opts_g = ["Semua"] + sorted(ghost_df["Job ID"].dropna().unique().tolist()) if "Job ID" in ghost_df.columns else ["Semua"]
@@ -2828,8 +2831,8 @@ elif _active == 2:
                 jobid_search_g = st.text_input("🔍 Cari Job ID (manual)", placeholder="Ketik Job ID...", key="cc_ghost_jobid_search")
 
             view_ghost = ghost_df.copy()
-            if "Business Unit" in view_ghost.columns and bu_g != "Semua":
-                view_ghost = view_ghost[view_ghost["Business Unit"] == bu_g]
+            if "Division" in view_ghost.columns and bu_g != "Semua":
+                view_ghost = view_ghost[view_ghost["Division"] == bu_g]
             if "Job ID" in view_ghost.columns:
                 if sel_jobid_g != "Semua": view_ghost = view_ghost[view_ghost["Job ID"] == sel_jobid_g]
                 if jobid_search_g.strip(): view_ghost = view_ghost[view_ghost["Job ID"].astype(str).str.contains(jobid_search_g.strip(), case=False, na=False)]
@@ -2857,7 +2860,7 @@ elif _active == 2:
                 _bu_v_opts = ["Semua"] + sorted(vac_df["BU"].dropna().unique().tolist()) if "BU" in vac_df.columns else ["Semua"]
                 bu_v = st.selectbox("Filter BU", _bu_v_opts, key="cc_vac_bu")
             with col_v2:
-                _div_v_opts = ["Semua"] + sorted(vac_df["Division"].dropna().unique().tolist()) if "Division" in vac_df.columns else ["Semua"]
+                _div_v_opts = ["Semua"] + sorted(vac_df["Department"].dropna().unique().tolist()) if "Department" in vac_df.columns else ["Semua"]
                 div_v = st.selectbox("Filter Divisi", _div_v_opts, key="cc_vac_div")
             with col_v3:
                 _status_v_opts = ["Semua"] + sorted(vac_df["Fulfillment Status"].dropna().unique().tolist()) if "Fulfillment Status" in vac_df.columns else ["Semua"]
@@ -2867,7 +2870,7 @@ elif _active == 2:
 
             view_vac = vac_df.copy()
             if "BU" in view_vac.columns and bu_v != "Semua":          view_vac = view_vac[view_vac["BU"] == bu_v]
-            if "Division" in view_vac.columns and div_v != "Semua":    view_vac = view_vac[view_vac["Division"] == div_v]
+            if "Department" in view_vac.columns and div_v != "Semua":    view_vac = view_vac[view_vac["Department"] == div_v]
             if "Fulfillment Status" in view_vac.columns and status_v != "Semua":
                 view_vac = view_vac[view_vac["Fulfillment Status"] == status_v]
             if jobid_search_v.strip() and "JOBID" in view_vac.columns:
@@ -2952,10 +2955,10 @@ elif _active == 3:
     with col_m1: search_mgr = st.text_input("🔍 Cari nama manager", key="search_mgr")
     with col_m2:
         bu_mgr = st.selectbox("Filter BU",
-                              ["Semua"] + sorted(mgr_df["Business Unit"].dropna().unique().tolist()), key="bu_mgr")
+                              ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist()), key="bu_mgr")
     with col_m3:
-        div_mgr_opts = (["Semua"] + sorted(mgr_df[mgr_df["Business Unit"] == bu_mgr]["Division"].dropna().unique().tolist())
-                        if bu_mgr != "Semua" else ["Semua"] + sorted(mgr_df["Division"].dropna().unique().tolist()))
+        div_mgr_opts = (["Semua"] + sorted(mgr_df[mgr_df["Division"] == bu_mgr]["Department"].dropna().unique().tolist())
+                        if bu_mgr != "Semua" else ["Semua"] + sorted(mgr_df["Department"].dropna().unique().tolist()))
         div_mgr = st.selectbox("Filter Divisi", div_mgr_opts, key="div_mgr")
     with col_m4:
         level_filter = st.selectbox("🎯 Filter Level Hierarki", ["Semua", "Chief", "C-1", "C-2"], key="level_mgr",
@@ -2966,8 +2969,8 @@ elif _active == 3:
 
     view_mgr = mgr_df.copy()
     if search_mgr:              view_mgr = view_mgr[view_mgr["Employee Name"].str.contains(search_mgr, case=False, na=False)]
-    if bu_mgr  != "Semua":     view_mgr = view_mgr[view_mgr["Business Unit"] == bu_mgr]
-    if div_mgr != "Semua":     view_mgr = view_mgr[view_mgr["Division"] == div_mgr]
+    if bu_mgr  != "Semua":     view_mgr = view_mgr[view_mgr["Division"] == bu_mgr]
+    if div_mgr != "Semua":     view_mgr = view_mgr[view_mgr["Department"] == div_mgr]
     if level_filter != "Semua": view_mgr = view_mgr[view_mgr["Level Hierarki"] == level_filter]
     if hide_level0:             view_mgr = view_mgr[~view_mgr["Ada Bawahan Level 0"]]
 
@@ -2985,8 +2988,8 @@ elif _active == 3:
 
     st.caption(f"Menampilkan **{len(view_mgr)}** manager")
     
-    display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Division",
-                        "Business Unit", "SBU/Tribe", "Level Hierarki", "Bawahan Langsung", "Total Span (Semua Bawahan)"]
+    display_cols_mgr = ["Employee ID", "Employee Name", "Job Position", "Department",
+                        "Division", "Unit", "Level Hierarki", "Bawahan Langsung", "Total Span (Semua Bawahan)"]
     available_display = [c for c in display_cols_mgr if c in view_mgr.columns]
     
     st.dataframe(view_mgr[available_display].reset_index(drop=True), use_container_width=True, height=480)
@@ -3362,7 +3365,7 @@ elif _active == 5:
                 "id":    str(_row.get("Employee ID",   "")),
                 "name":  str(_row.get("Employee Name", "")),
                 "title": str(_row.get("Job Position",  "")),
-                "div":   str(_row.get("Division",      "")),
+                "div":   str(_row.get("Department",      "")),
             })
 
     if "bld_nodes" not in st.session_state: st.session_state.bld_nodes = []
@@ -3873,7 +3876,7 @@ function renderNodes(){{
     tt.textContent=trunc(n.title,22);
     g.appendChild(tt);
 
-    // Division
+    // Department
     const td=mk('text');
     td.setAttribute('x','14');td.setAttribute('y','55');
     td.setAttribute('font-size','9');td.setAttribute('fill','#b0b0c8');
@@ -4217,13 +4220,13 @@ elif _active == 99:
             "Nama":        info.get("name", ""),
             "Role":        info.get("role", "employee"),
             "Allowed BU":  info.get("allowed_bus", "*"),
-            "Allowed SBU": info.get("allowed_sbus", "*"),
+            "Allowed Unit": info.get("allowed_sbus", "*"),
             "Employee ID": info.get("employee_id", ""),
             "Status":      "✅ Aktif" if info.get("is_active", True) else "🔴 Nonaktif",
             "Scope Note":  info.get("scope_note", ""),
         })
     acl_display_df = pd.DataFrame(acl_rows) if acl_rows else pd.DataFrame(
-        columns=["Email","Nama","Role","Allowed BU","Allowed SBU","Employee ID","Status","Scope Note"]
+        columns=["Email","Nama","Role","Allowed BU","Allowed Unit","Employee ID","Status","Scope Note"]
     )
 
     # ── Tab 1: Daftar User ────────────────────────────────────────
@@ -4314,9 +4317,9 @@ elif _active == 99:
 
         VALID_ROLES_AP = ["employee", "leader", "cxo", "admin"]
 
-        # Get BU & SBU options from live data
-        all_bus_ap  = sorted(df["Business Unit"].dropna().unique().tolist()) if df is not None else []
-        all_sbus_ap = sorted([s for s in df["SBU/Tribe"].dropna().unique().tolist()
+        # Get BU & Unit options from live data
+        all_bus_ap  = sorted(df["Division"].dropna().unique().tolist()) if df is not None else []
+        all_sbus_ap = sorted([s for s in df["Unit"].dropna().unique().tolist()
                               if str(s).strip() not in ("", "nan")]) if df is not None else []
 
         with st.form("ap_upsert_form", clear_on_submit=not is_edit_mode):
@@ -4343,7 +4346,7 @@ elif _active == 99:
 
             with col_f2:
                 f_bus_ap   = st.multiselect(
-                    "Allowed Business Unit",
+                    "Allowed Division",
                     options=["*"] + all_bus_ap,
                     default=(prefill.get("allowed_bus", "*").split(",")
                              if prefill.get("allowed_bus") and prefill.get("allowed_bus") != "*"
@@ -4352,13 +4355,13 @@ elif _active == 99:
                     help="Pilih '*' untuk semua BU. Hanya relevan untuk role 'leader'."
                 )
                 f_sbus_ap  = st.multiselect(
-                    "Allowed SBU / Tribe",
+                    "Allowed Unit",
                     options=["*"] + all_sbus_ap,
                     default=(prefill.get("allowed_sbus", "*").split(",")
                              if prefill.get("allowed_sbus") and prefill.get("allowed_sbus") != "*"
                              else ["*"]),
                     key="ap_f_sbus",
-                    help="Pilih '*' untuk semua SBU."
+                    help="Pilih '*' untuk semua Unit."
                 )
                 f_note_ap  = st.text_area("Scope Note (wajib diisi, untuk audit trail) *",
                                           value=prefill.get("scope_note", ""),
