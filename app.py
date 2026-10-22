@@ -391,6 +391,42 @@ def _validate_scope_string(scope_str: str) -> list:
             errors.append(f"Entri scope '{p}' tidak punya nilai — mis. division:A atau unit:*")
     return errors
 
+
+def _build_scope_string(sel_divisions, sel_units) -> str:
+    """[T-103b] Susun string scope dari pilihan Division/Unit di Admin Panel
+    (closed-UI — user tidak mengetik manual). Output deterministik: division
+    dulu lalu unit, nilai diurutkan & di-dedup agar string stabil untuk
+    audit. Return "" jika keduanya kosong."""
+    parts = []
+    divs = sorted({str(d).strip() for d in (sel_divisions or []) if str(d).strip()})
+    units = sorted({str(u).strip() for u in (sel_units or []) if str(u).strip()})
+    if divs:
+        parts.append("division:" + ",".join(divs))
+    if units:
+        parts.append("unit:" + ",".join(units))
+    return "|".join(parts)
+
+
+def _split_scope_to_selection(scope_str):
+    """[T-103b] Kebalikan _build_scope_string untuk mode edit: ekstrak nilai
+    division & unit dari string scope. Return (divisions, units, has_other)
+    — has_other=True jika ada grant jenis lain atau wildcard yang tidak
+    bisa direpresentasikan multiselect (harus ditampilkan via mode teks
+    bebas agar tidak hilang diam-diam)."""
+    divs, units, has_other = [], [], False
+    for kind, vals in _parse_scope_grants(scope_str or ""):
+        if _WILDCARD in vals:
+            has_other = True
+            continue
+        if kind == "division":
+            divs.extend(sorted(vals))
+        elif kind == "unit":
+            units.extend(sorted(vals))
+        else:
+            has_other = True
+    return divs, units, has_other
+
+
 # Role resmi [T-103, 22 Okt 2026] — REQ-AUTH-002 + admin (ditambahkan
 # PM 22 Okt 2026 sebagai role ke-4 resmi di REQUIREMENTS.md).
 _VALID_ROLES = ("admin", "od", "hrbp_user", "people_ops")
@@ -4490,15 +4526,55 @@ elif _active == 99:
                                                 "hrbp_user=data sesuai scope | people_ops=data sesuai scope")
 
             with col_f2:
-                f_scope_ap = st.text_input(
-                    "Scope (wajib untuk hrbp_user & people_ops)",
-                    value=prefill.get("scope", ""),
-                    placeholder="division:A,B|unit:X",
-                    key="ap_f_scope",
-                    help="Grant dipisah '|' dan dievaluasi OR. Jenis: division/department/unit/employee_id; "
-                         "nilai dipisah koma; '*' = semua untuk jenis itu. Contoh: division:Product,Tech|unit:Core. "
-                         "Kosongkan untuk admin/od. PERHATIAN: unit:* atau division:* berarti akses penuh."
+                # [T-103b] Closed-UI scope: opsi diambil langsung dari data
+                # nyata (prinsip produk #1 — "uji dengan mata"), tanpa ketik
+                # manual. String scope akhir tetap disimpan di kolom `scope`
+                # — skema sheet & mesin RBAC TIDAK berubah.
+                _ap_div_opts = sorted({str(v).strip() for v in df["Division"].dropna().unique()
+                                       if str(v).strip()}) if "Division" in df.columns else []
+                _ap_unit_opts = sorted({str(v).strip() for v in df["Unit"].dropna().unique()
+                                        if str(v).strip()}) if "Unit" in df.columns else []
+                _pre_divs, _pre_units, _pre_other = _split_scope_to_selection(prefill.get("scope", ""))
+                _pre_divs_ok = [d for d in _pre_divs if d in _ap_div_opts]
+                _pre_units_ok = [u for u in _pre_units if u in _ap_unit_opts]
+                # Scope lama yang tak terwakili multiselect (jenis lain /
+                # wildcard / nilai yang sudah tak ada di data) dijaga lewat
+                # mode teks bebas — tidak ada yang hilang diam-diam.
+                _adv_scope_init = prefill.get("scope", "") if (
+                    _pre_other
+                    or len(_pre_divs_ok) != len(_pre_divs)
+                    or len(_pre_units_ok) != len(_pre_units)
+                ) else ""
+                f_scope_div_ap = st.multiselect(
+                    "Division yang boleh dilihat",
+                    options=_ap_div_opts,
+                    default=_pre_divs_ok,
+                    key="ap_f_scope_div",
+                    help="Pilih satu atau lebih — user melihat gabungan (OR) semuanya. "
+                         "Kosongkan untuk role admin/od (mereka tidak dibatasi scope)."
                 )
+                f_scope_unit_ap = st.multiselect(
+                    "Unit yang boleh dilihat",
+                    options=_ap_unit_opts,
+                    default=_pre_units_ok,
+                    key="ap_f_scope_unit",
+                    help="Gabungan (OR) dengan Division. Kosongkan bila tidak perlu batasan unit tambahan."
+                )
+                _built_scope_ap = _build_scope_string(f_scope_div_ap, f_scope_unit_ap)
+                if _built_scope_ap:
+                    st.caption(f"📌 Scope tersimpan: `{_built_scope_ap}`")
+                else:
+                    st.caption("📌 Scope tersimpan: *(kosong — deny-all untuk role ber-scope)*")
+                with st.expander("⚙️ Mode teks bebas (kasus khusus)"):
+                    st.caption("Isi di sini MENIMPA pilihan Division/Unit di atas. Format: jenis:nilai, "
+                               "dipisah '|'. Jenis: division/department/unit/employee_id; '*' = semua. "
+                               "PERHATIAN: wildcard berarti akses penuh.")
+                    f_scope_ap = st.text_input(
+                        "Scope manual",
+                        value=_adv_scope_init,
+                        placeholder="division:A,B|unit:X",
+                        key="ap_f_scope_adv",
+                    )
                 f_scope_note_ap = st.text_input(
                     "Scope Note (catatan bebas untuk audit)",
                     value=prefill.get("scope_note", ""),
@@ -4530,7 +4606,8 @@ elif _active == 99:
             if not is_edit_mode and not f_pass_ap.strip():
                 errors_ap.append("Password awal harus diisi")
             # [T-103] Validasi scope: format grant OR + kewajiban per role
-            scope_clean_ap = f_scope_ap.strip()
+            # [T-103b] teks bebas (jika diisi) menimpa hasil closed-UI
+            scope_clean_ap = f_scope_ap.strip() or _built_scope_ap
             errors_ap.extend(_validate_scope_string(scope_clean_ap))
             if f_role_ap_f in ("hrbp_user", "people_ops") and not scope_clean_ap:
                 errors_ap.append(
