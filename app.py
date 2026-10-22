@@ -49,6 +49,7 @@ LANG = {
     "id": {
         "nav_org":"Org Chart","nav_data":"Data Karyawan","nav_compliance":"Compliance Check",
         "nav_manager":"Daftar Manager","nav_cr":"Change Request","nav_builder":"Org Builder",
+        "nav_admin":"Admin Panel",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Keluar",
         "lang_toggle":"🇬🇧 English","data_source_live":"Live · Google Sheets",
         "data_source_local":"Lokal · CSV","auto_refresh":"Auto-refresh setiap 5 menit",
@@ -87,6 +88,7 @@ LANG = {
     "en": {
         "nav_org":"Org Chart","nav_data":"Employee Data","nav_compliance":"Compliance Check",
         "nav_manager":"Manager List","nav_cr":"Change Request","nav_builder":"Org Builder",
+        "nav_admin":"Admin Panel",
         "btn_refresh":"Refresh","btn_mode":"Mode","btn_logout":"Sign Out",
         "lang_toggle":"🇮🇩 Bahasa","data_source_live":"Live · Google Sheets",
         "data_source_local":"Local · CSV","auto_refresh":"Auto-refresh every 5 minutes",
@@ -2384,18 +2386,27 @@ with st.sidebar:
     <div class="od-sb-source"><span class="od-sb-dot" aria-hidden="true"></span>{_source_label}</div>
     """, unsafe_allow_html=True)
 
-    st.caption(f"👤 {_user_info.get('name', st.session_state.user_email)} · {_user_role}")
-    if st.button(L["btn_logout"], key="btn_do_logout", use_container_width=True):
-        st.session_state.acl_user_info = None
-        st.session_state.user_email    = ""
-        st.rerun()
-
     if "active_tab" not in st.session_state:
         st.session_state.active_tab = 0
     active_idx = st.session_state.active_tab
+    # [T-102, 20 Okt 2026] Sebelumnya hanya Org Chart & Org Builder yang
+    # muncul di sini — Data Karyawan, Compliance Check, Daftar Manager,
+    # Change Request, dan Admin Panel sudah lengkap dibangun di kode (ada
+    # LANG label-nya, ada handler "elif _active == N"-nya) tapi tidak
+    # pernah bisa dibuka lewat sidebar sama sekali. Ini bug lama, bukan
+    # akibat perubahan T-102 — saya tambahkan di sini supaya semua tab
+    # yang sudah ada kodenya betul-betul bisa diakses sesuai role.
     _personal_nav = [("account_tree", L["nav_org"], 0),
-                     ("schema", L["nav_builder"], 5)]
-    if not _can_access_tab(_user_role, active_idx) or active_idx not in {0, 5}:
+                     ("badge", L["nav_data"], 1),
+                     ("fact_check", L["nav_compliance"], 2),
+                     ("supervisor_account", L["nav_manager"], 3),
+                     ("sync_alt", L["nav_cr"], 4),
+                     ("schema", L["nav_builder"], 5),
+                     ("admin_panel_settings", L["nav_admin"], 99)]
+    # [T-102] Sebelumnya dipaksa hanya boleh {0, 5} — itu sebabnya 5 tab
+    # lain (termasuk Admin Panel) tidak bisa dibuka meski tombolnya ada.
+    _valid_tab_idxs = {idx for _, _, idx in _personal_nav}
+    if not _can_access_tab(_user_role, active_idx) or active_idx not in _valid_tab_idxs:
         st.session_state.active_tab = 0
         active_idx = 0
     with st.container(key="sb_navigation"):
@@ -2433,17 +2444,25 @@ with st.sidebar:
             st.cache_data.clear(); st.rerun()
 
     with st.container(key="sb_account"):
-        st.markdown("""
+        # [T-102] Sebelumnya kartu ini hardcode "Beta Developer" — sekarang
+        # menampilkan user yang benar-benar login.
+        _acct_name    = _user_info.get("name", st.session_state.user_email)
+        _acct_initial = (_acct_name.strip()[:1] or "?").upper()
+        st.markdown(f"""
         <div class="od-sb-profile">
-            <div class="od-sb-avatar" aria-hidden="true">B</div>
+            <div class="od-sb-avatar" aria-hidden="true">{_acct_initial}</div>
             <div class="od-sb-identity">
-                <div class="od-sb-name">Beta Developer</div>
-                <div class="od-sb-role">Mode uji · tanpa login</div>
+                <div class="od-sb-name">{_acct_name}</div>
+                <div class="od-sb-role">{_user_role}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
         if st.button(L["lang_toggle"], icon=":material/language:", use_container_width=True, key="lang_btn"):
             st.session_state.lang = "en" if st.session_state.lang == "id" else "id"
+            st.rerun()
+        if st.button(L["btn_logout"], icon=":material/logout:", use_container_width=True, key="btn_do_logout"):
+            st.session_state.acl_user_info = None
+            st.session_state.user_email    = ""
             st.rerun()
 
 
@@ -3489,7 +3508,7 @@ elif _active == 5:
                     _ws.append_row(["draft_id","draft_name","created_by","created_at","nodes_json","edges_json"])
                 _ws.append_row([
                     str(_ub.uuid4())[:8], draft_name.strip(),
-                    _user_info.get("name","Beta Developer"),
+                    _user_info.get("name", st.session_state.get("user_email", "Unknown")),
                     _dtb.now().strftime("%Y-%m-%d %H:%M:%S"),
                     _jb.dumps(st.session_state.bld_nodes),
                     _jb.dumps(st.session_state.bld_edges),
