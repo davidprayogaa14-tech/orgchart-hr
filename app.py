@@ -236,45 +236,59 @@ def run_compliance_checks(emp_df: pd.DataFrame, mpp_df: pd.DataFrame) -> dict:
 # [T-102, 20 Okt 2026] Skema ACL diganti total sesuai REQ-AUTH-001:
 # password plaintext dihapus, diganti bcrypt password_hash. Kolom
 # allowed_bus/allowed_sbus (sisa istilah skema lama) digabung jadi satu
-# kolom `scope` (format dijelaskan di _decode_scope()), dibaca sebagai
-# allowed_divisions/allowed_units — tidak ada lagi field bernama
-# "bu"/"bus"/"sbu" di mana pun pada modul ini.
+# kolom `scope` — tidak ada lagi field bernama "bu"/"bus"/"sbu" di mana
+# pun pada modul ini.
 #
-# ROLE HIERARCHY & TAB VISIBILITY (role lama — od/hrbp_user/people_ops
-# menyusul di T-103, belum diubah di sini):
-#   admin    → Org Chart + semua tab operasional + Admin Panel
-#   cxo      → Org Chart only (full data, no filter)
-#   leader   → Org Chart only (filtered oleh allowed_divisions / allowed_units)
-#   employee → Org Chart only (subtree C-1 dari manager mereka)
+# [T-103, 22 Okt 2026] ROLE & SCOPE BARU (keputusan PM 22 Okt 2026):
 #
-# ACL dikelola sepenuhnya oleh Super Admin (OD Tim) via Admin Panel.
+# ROLE HIERARCHY & TAB VISIBILITY:
+#   admin      → Org Chart + semua tab operasional + Admin Panel
+#                (khusus Dave — ditambahkan PM sebagai role ke-4 resmi)
+#   od         → Org Chart + Data Karyawan, data PENUH org-wide
+#                (REQ-AUTH-002: "lihat & validasi semua request")
+#   hrbp_user  → Org Chart + Data Karyawan, data sesuai scope (OR)
+#   people_ops → Org Chart + Data Karyawan, data sesuai scope (OR)
+#   cxo / leader / employee → DIHAPUS. Baris ACL dengan role lama tidak
+#                bisa login (pesan generik yang sama, fail-closed) sampai
+#                Dave memperbarui role-nya lewat Admin Panel.
+#
+# SEMANTIK SCOPE (pengganti semantik leader lama yang AND implisit):
+# scope = kumpulan grant independen dipisah '|', dievaluasi OR (union):
+#   "division:A,B|unit:X" → lihat SEMUA data Division A & B, TAMBAH
+#                           SEMUA data Unit X (dua izin terpisah).
+#   "*" sebagai nilai     → wildcard satu jenis (unit:* = akses penuh).
+#   "" (kosong)           → tanpa grant → deny-all untuk role ber-scope.
+# Detail di _parse_scope_grants() / _row_matches_grants().
+#
+# ACL dikelola sepenuhnya oleh Dave (admin) via Admin Panel.
 # Primary key: email (lowercase). Password HANYA disimpan sebagai bcrypt
 # hash — tidak pernah plaintext, di Sheet maupun di kode (REQ-NFR-101).
 #
 # Google Sheets worksheet: 'app_users'
-# Kolom (REQ-AUTH-001, PERSIS 8 — urutan ini juga urutan header di Sheet):
+# Kolom (REQ-AUTH-001: 8 kolom + kolom ke-9 disetujui PM 22 Okt 2026;
+# urutan ini juga urutan header di Sheet):
 #   1. email          — primary key, lowercase
 #   2. name           — nama tampilan
 #   3. password_hash  — bcrypt hash (mis. "$2b$12$..."), BUKAN password asli
-#   4. role           — admin | cxo | leader | employee  (diganti T-103)
-#   5. scope          — string terenkode, lihat _decode_scope():
-#                        "division:*|unit:*"                → akses penuh
-#                        "division:Product,Tech|unit:*"     → dibatasi per Division
-#                        "division:*|unit:Core Product"     → dibatasi per Unit
-#                        "employee_id:E1023"                → khusus role employee
+#   4. role           — admin | od | hrbp_user | people_ops
+#   5. scope          — string grant OR, lihat _parse_scope_grants():
+#                        "division:*|unit:*"            → akses penuh
+#                        "division:Product,Tech|unit:*" → dua Division penuh
+#                        "division:Product|unit:Core"   → union kedua grant
+#                        "employee_id:E1023"            → satu pegawai
 #   6. is_active      — TRUE/FALSE
 #   7. created_at
 #   8. updated_at
-#
-# CATATAN: kolom lama `scope_note` (catatan bebas untuk audit) TIDAK ada
-# lagi di skema 8-kolom REQ-AUTH-001. Kalau Anda masih mau menyimpan
-# catatan audit itu, beri tahu saya — bisa ditambah sebagai kolom ke-9
-# di luar REQ-AUTH-001 (perlu persetujuan PM karena mengubah requirement).
+#   9. scope_note     — catatan bebas untuk audit (kolom ke-9, di luar
+#                        REQ-AUTH-001; disetujui PM 22 Okt 2026). Tidak
+#                        memengaruhi akses. SHEET LAMA: tambahkan header
+#                        "scope_note" di sel I1 sebelum pakai fitur ini.
 # ══════════════════════════════════════════════════════════════════
 
 _ACL_COLS = [
     "email", "name", "password_hash", "role",
     "scope", "is_active", "created_at", "updated_at",
+    "scope_note",  # [T-103] kolom ke-9, disetujui PM 22 Okt 2026
 ]
 
 
@@ -301,54 +315,107 @@ def _verify_password(plain: str, hashed: str) -> bool:
 _DUMMY_HASH = bcrypt.hashpw(b"not-a-real-password-just-for-timing", bcrypt.gensalt()).decode("utf-8")
 
 
-def _encode_scope(divisions: list[str] | None, units: list[str] | None,
-                   employee_id: str = "") -> str:
-    """Encode scope jadi satu string untuk disimpan di kolom `scope`."""
-    if employee_id:
-        return f"employee_id:{employee_id}"
-    div_part  = "*" if not divisions or "*" in divisions else ",".join(divisions)
-    unit_part = "*" if not units or "*" in units else ",".join(units)
-    return f"division:{div_part}|unit:{unit_part}"
+# ── Scope engine [T-103, 22 Okt 2026] ────────────────────────────
+# Semantik BARU (keputusan PM 22 Okt 2026): scope = kumpulan grant
+# independen dipisah '|', dievaluasi OR (union), BUKAN filter gabungan
+# (AND) seperti semantik leader lama. Contoh:
+#   "division:A,B|unit:X"  → lihat SEMUA data Division A dan B, TAMBAH
+#                            SEMUA data Unit X.
+#   "unit:*"               → semua unit → efektif akses penuh.
+#   "" (kosong)            → tanpa grant → deny-all untuk role ber-scope.
+# Jenis grant yang dikenal (fail-closed: selain ini diabaikan saat parse,
+# ditolak saat validasi di Admin Panel):
+_SCOPE_KINDS = ("division", "department", "unit", "employee_id")
+_SCOPE_KIND_TO_COL = {
+    "division":    "Division",
+    "department":  "Department",
+    "unit":        "Unit",
+    "employee_id": "Employee ID",
+}
+_WILDCARD = "*"
 
 
-def _decode_scope(scope_str: str) -> dict:
-    """
-    Decode kolom `scope` jadi dict siap pakai:
-    {"divisions": [] (kosong=semua) | [...], "units": [] | [...], "employee_id": ""}
-    """
-    result = {"divisions": [], "units": [], "employee_id": ""}
-    scope_str = (scope_str or "").strip()
-    if not scope_str:
-        return result
-    for part in scope_str.split("|"):
-        if ":" not in part:
+def _parse_scope_grants(scope_str: str) -> list:
+    """Parse kolom `scope` → list grant (kind, {nilai}). Entri tak dikenal
+    dilewati (fail-closed). "*" di dalam nilai = wildcard satu jenis."""
+    grants = []
+    for part in (scope_str or "").split("|"):
+        part = part.strip()
+        if not part or ":" not in part:
             continue
-        key, val = part.split(":", 1)
-        key, val = key.strip(), val.strip()
-        if key == "employee_id":
-            result["employee_id"] = val
-        elif key == "division":
-            result["divisions"] = [] if val == "*" else [v.strip() for v in val.split(",") if v.strip()]
-        elif key == "unit":
-            result["units"] = [] if val == "*" else [v.strip() for v in val.split(",") if v.strip()]
-    return result
+        key, _, val = part.partition(":")
+        key = key.strip().lower()
+        vals = {v.strip() for v in val.split(",") if v.strip()}
+        if key in _SCOPE_KINDS and vals:
+            grants.append((key, vals))
+    return grants
 
-# Role → tab access mapping
-# admin   : semua tab (0=OrgChart, 1=Data, 2=Compliance, 3=Manager, 4=CR, 99=AdminPanel)
-# cxo     : hanya tab 0
-# leader  : hanya tab 0
-# employee: hanya tab 0
+
+def _row_matches_grants(grants, row) -> bool:
+    """True jika baris cocok dengan MINIMAL SATU grant (semantik OR).
+    Wildcard pada jenis apa pun = akses penuh. Baris tanpa nilai pada
+    kolom grant tidak cocok (kecuali wildcard)."""
+    for kind, vals in grants:
+        if _WILDCARD in vals:
+            return True
+        col = _SCOPE_KIND_TO_COL.get(kind)
+        if col is None:
+            continue
+        v = str(row.get(col, "") or "").strip()
+        if v and v != "nan" and v in vals:
+            return True
+    return False
+
+
+def _validate_scope_string(scope_str: str) -> list:
+    """Validasi format scope untuk Admin Panel. Return daftar pesan error
+    (kosong = valid). Fungsi murni — dipakai QA juga untuk T-105."""
+    errors = []
+    s = (scope_str or "").strip()
+    if not s:
+        return errors  # kosong = valid (berarti deny-all untuk role ber-scope)
+    for part in s.split("|"):
+        p = part.strip()
+        if not p:
+            errors.append("Ada entri scope kosong — periksa pemisah '|' ganda.")
+            continue
+        if ":" not in p:
+            errors.append(f"Entri scope '{p}' tidak valid — format: jenis:nilai, mis. division:A,B")
+            continue
+        key, _, val = p.partition(":")
+        key = key.strip().lower()
+        vals = [v.strip() for v in val.split(",") if v.strip()]
+        if key not in _SCOPE_KINDS:
+            errors.append(f"Jenis scope '{key}' tidak dikenal — gunakan: {', '.join(_SCOPE_KINDS)}")
+        elif not vals:
+            errors.append(f"Entri scope '{p}' tidak punya nilai — mis. division:A atau unit:*")
+    return errors
+
+# Role resmi [T-103, 22 Okt 2026] — REQ-AUTH-002 + admin (ditambahkan
+# PM 22 Okt 2026 sebagai role ke-4 resmi di REQUIREMENTS.md).
+_VALID_ROLES = ("admin", "od", "hrbp_user", "people_ops")
+
+# Role → tab access mapping [T-103]
+# admin      : semua tab (0=OrgChart, 1=Data, 2=Compliance, 3=Manager,
+#              4=CR lama, 5=Builder, 99=AdminPanel)
+# od         : tab 0+1 (data penuh org-wide)
+# hrbp_user  : tab 0+1 (data ter-filter scope OR)
+# people_ops : tab 0+1 (data ter-filter scope OR)
+# CATATAN: tab 2/3/4/5 sengaja belum dibuka untuk role baru — jalur data
+# tab-tab itu belum terverifikasi RLS (Compliance memuat mpp_data
+# terpisah; CR lama dibekukan menunggu keputusan; Builder belum diaudit).
+# Pembukaan bertahap menyusul di Fase 1 setelah QA (T-105) berjalan.
 _ROLE_TAB_ACCESS = {
-    "admin":    {0, 1, 2, 3, 4, 5, 99},
-    "cxo":      {0},
-    "leader":   {0},
-    "employee": {0},
+    "admin":      {0, 1, 2, 3, 4, 5, 99},
+    "od":         {0, 1},
+    "hrbp_user":  {0, 1},
+    "people_ops": {0, 1},
 }
 
 
 def _can_access_tab(role: str, tab_idx: int) -> bool:
-    """Return True jika role boleh mengakses tab_idx."""
-    return tab_idx in _ROLE_TAB_ACCESS.get(role, {0})
+    """Return True jika role boleh mengakses tab_idx. Role tak dikenal → False (fail-closed)."""
+    return tab_idx in _ROLE_TAB_ACCESS.get(role, set())
 
 
 @st.cache_data(ttl=120)
@@ -371,16 +438,15 @@ def load_acl_table() -> dict:
             email_key = str(r.get("email", "")).strip().lower()
             if not email_key:
                 continue
-            scope_decoded = _decode_scope(str(r.get("scope", "")))
+            scope_raw = str(r.get("scope", "")).strip()
             acl[email_key] = {
-                "name":              str(r.get("name", "")).strip(),
-                "role":              str(r.get("role", "employee")).strip().lower(),
-                "password_hash":     str(r.get("password_hash", "")).strip(),
-                "scope":             str(r.get("scope", "")).strip(),
-                "allowed_divisions": scope_decoded["divisions"],
-                "allowed_units":     scope_decoded["units"],
-                "employee_id":       scope_decoded["employee_id"],
-                "is_active":         str(r.get("is_active", "TRUE")).strip().upper() in ("TRUE", "1", "YES"),
+                "name":          str(r.get("name", "")).strip(),
+                "role":          str(r.get("role", "")).strip().lower(),
+                "password_hash": str(r.get("password_hash", "")).strip(),
+                "scope":         scope_raw,
+                "scope_grants":  _parse_scope_grants(scope_raw),
+                "scope_note":    str(r.get("scope_note") or "").strip(),
+                "is_active":     str(r.get("is_active", "TRUE")).strip().upper() in ("TRUE", "1", "YES"),
             }
         return acl
     except Exception:
@@ -441,7 +507,7 @@ def authenticate_user(email: str, password: str) -> dict | None:
         if _verify_password(password, boot_hash):
             return {
                 "name": "Bootstrap Admin", "role": "admin",
-                "allowed_divisions": [], "allowed_units": [], "employee_id": "",
+                "scope": "", "scope_grants": [], "scope_note": "",
                 "is_active": True,
             }
         # salah password untuk email bootstrap — tetap lanjut cek ACL Sheet
@@ -453,7 +519,13 @@ def authenticate_user(email: str, password: str) -> dict | None:
     user = acl.get(email_lower)
     if user is not None and user.get("is_active", True):
         if _verify_password(password, user.get("password_hash", "")):
-            return user
+            # [T-103] Role lama (cxo/leader/employee) atau role asing →
+            # gagal dengan pesan generik yang sama (fail-closed, tidak
+            # membocorkan apa pun). Migrasi role dilakukan Dave via
+            # Admin Panel.
+            if user.get("role", "") in _VALID_ROLES:
+                return user
+            return None
     else:
         _verify_password(password, _DUMMY_HASH)  # samakan waktu respons
 
@@ -463,76 +535,35 @@ def authenticate_user(email: str, password: str) -> dict | None:
 def apply_rbac_filter(df: pd.DataFrame, user_info: dict) -> pd.DataFrame:
     """
     Row-Level Security — filter DataFrame berdasarkan role & scope user.
-
-    Mapping:
-    - admin / cxo   → full access, no filter
-    - leader        → filter by allowed_divisions + allowed_units
-    - employee      → subtree C-1 (direct reports of their manager only)
-
+    [T-103, 22 Okt 2026] Semantik scope baru (keputusan PM 22 Okt): grant
+    independen dipisah '|', dievaluasi OR (union). Mapping per role:
+      - admin      → full access, tanpa filter (+ Admin Panel)
+      - od         → full access (REQ-AUTH-002: "lihat & validasi semua request")
+      - hrbp_user  → filter scope OR; tanpa grant → DENY ALL (fail-closed)
+      - people_ops → filter scope OR; tanpa grant → DENY ALL (fail-closed)
+      - role lain / tak dikenal (termasuk cxo/leader/employee lama) → DENY ALL
     PENTING: fungsi ini hanya dipanggil SETELAH auth berhasil.
     df yang dikembalikan adalah satu-satunya data yang boleh dilihat user.
     """
-    role = user_info.get("role", "employee")
+    role = user_info.get("role", "")
 
     # ── Full access ───────────────────────────────────────────────
-    if role in ("admin", "cxo"):
+    if role in ("admin", "od"):
         return df
 
-    # ── Leader: Division + Unit scope ────────────────────────────
-    if role == "leader":
-        allowed_divisions = user_info.get("allowed_divisions", []) or []
-        allowed_units      = user_info.get("allowed_units", []) or []
+    # ── Hanya role ber-scope resmi yang lewat jalur grant ────────
+    if role not in ("hrbp_user", "people_ops"):
+        return df.iloc[0:0]  # deny: role tak dikenal/lama → fail-closed
 
-        filtered = df.copy()
+    grants = user_info.get("scope_grants") or []
+    if not grants:
+        return df.iloc[0:0]  # deny: tanpa grant → tidak melihat apa pun
 
-        if allowed_divisions:  # non-empty = restricted
-            if "Division" in filtered.columns:
-                filtered = filtered[filtered["Division"].isin(allowed_divisions)]
+    if df.empty:
+        return df.copy()
 
-        if allowed_units:
-            if "Unit" in filtered.columns:
-                # Tetap tampilkan node tanpa Unit (atasan lintas unit tetap visible)
-                unit_mask = (
-                    filtered["Unit"].isin(allowed_units) |
-                    filtered["Unit"].isin(["", "nan"]) |
-                    filtered["Unit"].isna()
-                )
-                filtered = filtered[unit_mask]
-
-        return filtered
-
-    # ── Employee: subtree C-1 (hanya bawahan dari manager mereka) ──
-    emp_id = user_info.get("employee_id", "").strip()
-    if not emp_id or emp_id == "nan":
-        return df.iloc[0:0]  # deny: tidak ada EID → empty
-
-    user_row = df[df["Employee ID"] == emp_id]
-    if user_row.empty:
-        return df.iloc[0:0]
-
-    manager_id = str(user_row.iloc[0].get("Manager ID", "")).strip()
-    if not manager_id or manager_id in ("", "nan"):
-        return df.iloc[0:0]
-
-    # BFS downward dari manager (max depth 1 = hanya direct reports)
-    children_map = (
-        df[df["Manager ID"].notna() & (df["Manager ID"] != "")]
-        .groupby("Manager ID")["Employee ID"]
-        .apply(list)
-        .to_dict()
-    )
-    visible = set()
-    queue   = [(manager_id, 0)]
-    while queue:
-        node, depth = queue.pop(0)
-        if node in visible or depth > 1:
-            continue
-        visible.add(node)
-        if depth < 1:
-            for child in children_map.get(node, []):
-                queue.append((child, depth + 1))
-
-    return df[df["Employee ID"].isin(visible)].copy()
+    mask = df.apply(lambda row: _row_matches_grants(grants, row), axis=1)
+    return df[mask].copy()
 
 
 def save_acl_user(user_data: dict) -> bool:
@@ -555,21 +586,21 @@ def save_acl_user(user_data: dict) -> bool:
         else:
             pw_hash = user_data.get("password_hash", "")
 
-        scope_val = _encode_scope(
-            user_data.get("divisions", []),
-            user_data.get("units", []),
-            user_data.get("employee_id", ""),
-        )
+        # [T-103] Scope disimpan sebagai string apa adanya (grant OR).
+        # Tidak ada lagi encoding dari multiselect — format divalidasi
+        # lewat _validate_scope_string() di Admin Panel.
+        scope_val = user_data.get("scope", "").strip()
 
         row_vals = [
             email_clean,
             user_data.get("name", ""),
             pw_hash,
-            user_data.get("role", "employee"),
+            user_data.get("role", ""),
             scope_val,
             "TRUE" if user_data.get("is_active", True) else "FALSE",
             user_data.get("created_at", now_str),
             now_str,  # updated_at always = now
+            user_data.get("scope_note", ""),  # [T-103] kolom ke-9 (PM 22 Okt 2026)
         ]
 
         # Cek apakah email sudah ada di sheet
@@ -1776,12 +1807,10 @@ st.set_page_config(page_title="DAVE", layout="wide", page_icon=_favicon_b64, ini
 # ══════════════════════════════════════════════════════════════════
 # LOGIN GATE — [T-102, 20 Okt 2026] Mode beta tanpa-auth DIHAPUS.
 # Semua akses sekarang wajib lewat email + password (bcrypt) lebih dulu.
-# CATATAN: penghapusan mode beta ini seharusnya formal tugas T-103 di
-# TASKS.md, tapi ditarik maju ke T-102 supaya bukti selesai T-102
-# ("login berhasil dengan hash") benar-benar bisa diuji QA — tanpa ini,
-# tidak ada jalan masuk untuk mencobanya sama sekali. Role yang berlaku
-# di bawah MASIH role lama (admin/cxo/leader/employee); od/hrbp_user/
-# people_ops menyusul di T-103.
+# [T-103, 22 Okt 2026] Role resmi: admin/od/hrbp_user/people_ops
+# (REQ-AUTH-002 + admin dari PM 22 Okt). Role lama cxo/leader/employee
+# DIHAPUS: baris ACL ber-role lama ditolak login dengan pesan generik
+# yang sama (fail-closed) sampai Dave memperbarui role-nya via Admin Panel.
 # ══════════════════════════════════════════════════════════════════
 
 if "acl_user_info" not in st.session_state:
@@ -1814,9 +1843,10 @@ if st.session_state.acl_user_info is None:
     st.stop()  # blokir render apa pun di bawah ini sampai login berhasil
 
 _user_info = st.session_state.acl_user_info
-_user_role = _user_info.get("role", "employee")
+_user_role = _user_info.get("role", "")
 _is_admin  = _user_role == "admin"
-_is_cxo    = _user_role in ("admin", "cxo")
+# [T-103] _is_cxo dihapus — role cxo tidak ada lagi (dead code: sejak
+# T-102 variabel ini tidak pernah dipakai di mana pun).
 
 st.session_state.dark_mode = True  # Personal dashboard: dark theme only
 if "lang" not in st.session_state:
@@ -4338,16 +4368,15 @@ elif _active == 99:
     acl_rows = []
     for em, info in acl_dict.items():
         acl_rows.append({
-            "Email":       em,
-            "Nama":        info.get("name", ""),
-            "Role":        info.get("role", "employee"),
-            "Allowed Division": ", ".join(info.get("allowed_divisions", [])) or "* (semua)",
-            "Allowed Unit":     ", ".join(info.get("allowed_units", [])) or "* (semua)",
-            "Employee ID": info.get("employee_id", ""),
-            "Status":      "✅ Aktif" if info.get("is_active", True) else "🔴 Nonaktif",
+            "Email":      em,
+            "Nama":       info.get("name", ""),
+            "Role":       info.get("role", ""),
+            "Scope":      info.get("scope", "") or "(kosong — deny-all)",
+            "Scope Note": info.get("scope_note", ""),
+            "Status":     "✅ Aktif" if info.get("is_active", True) else "🔴 Nonaktif",
         })
     acl_display_df = pd.DataFrame(acl_rows) if acl_rows else pd.DataFrame(
-        columns=["Email","Nama","Role","Allowed Division","Allowed Unit","Employee ID","Status"]
+        columns=["Email", "Nama", "Role", "Scope", "Scope Note", "Status"]
     )
 
     # ── Tab 1: Daftar User ────────────────────────────────────────
@@ -4363,7 +4392,7 @@ elif _active == 99:
         if not acl_display_df.empty:
             col_af1, col_af2, col_af3 = st.columns(3)
             with col_af1:
-                f_role_ap = st.selectbox("Filter Role", ["Semua", "admin", "cxo", "leader", "employee"], key="ap_f_role")
+                f_role_ap = st.selectbox("Filter Role", ["Semua", "admin", "od", "hrbp_user", "people_ops"], key="ap_f_role")
             with col_af2:
                 f_status_ap = st.selectbox("Filter Status", ["Semua", "✅ Aktif", "🔴 Nonaktif"], key="ap_f_status")
             with col_af3:
@@ -4436,12 +4465,10 @@ elif _active == 99:
                 edit_target_email = edit_choice
                 prefill = acl_dict.get(edit_choice, {})
 
-        VALID_ROLES_AP = ["employee", "leader", "cxo", "admin"]
+        VALID_ROLES_AP = ["admin", "od", "hrbp_user", "people_ops"]
 
-        # Get Division & Unit options from live data
-        all_div_ap  = sorted(df["Division"].dropna().unique().tolist()) if df is not None else []
-        all_unit_ap = sorted([s for s in df["Unit"].dropna().unique().tolist()
-                              if str(s).strip() not in ("", "nan")]) if df is not None else []
+        # [T-103] Opsi Division/Unit dari data live tidak dibutuhkan lagi —
+        # scope kini string bebas ber-format grant OR (divalidasi saat simpan).
 
         with st.form("ap_upsert_form", clear_on_submit=not is_edit_mode):
             col_f1, col_f2 = st.columns(2)
@@ -4456,29 +4483,28 @@ elif _active == 99:
                                             placeholder="Nama lengkap user",
                                             key="ap_f_name")
                 f_role_ap_f = st.selectbox("Role *", VALID_ROLES_AP,
-                                           index=VALID_ROLES_AP.index(prefill.get("role", "employee"))
-                                           if prefill.get("role") in VALID_ROLES_AP else 0,
+                                           index=VALID_ROLES_AP.index(prefill.get("role", "hrbp_user"))
+                                           if prefill.get("role") in VALID_ROLES_AP else 2,
                                            key="ap_f_role_form",
-                                           help="admin=full access | cxo=org chart full | leader=org chart per Division/Unit | employee=org chart C-1")
-                f_eid_ap    = st.text_input("Employee ID (opsional, wajib untuk role 'employee')",
-                                            value=prefill.get("employee_id", ""),
-                                            placeholder="SLKRXXX",
-                                            key="ap_f_eid")
+                                           help="admin=akses penuh + Admin Panel | od=data penuh org-wide | "
+                                                "hrbp_user=data sesuai scope | people_ops=data sesuai scope")
 
             with col_f2:
-                f_div_ap   = st.multiselect(
-                    "Allowed Division",
-                    options=["*"] + all_div_ap,
-                    default=(prefill.get("allowed_divisions", []) or ["*"]),
-                    key="ap_f_div",
-                    help="Pilih '*' untuk semua Division. Hanya relevan untuk role 'leader'."
+                f_scope_ap = st.text_input(
+                    "Scope (wajib untuk hrbp_user & people_ops)",
+                    value=prefill.get("scope", ""),
+                    placeholder="division:A,B|unit:X",
+                    key="ap_f_scope",
+                    help="Grant dipisah '|' dan dievaluasi OR. Jenis: division/department/unit/employee_id; "
+                         "nilai dipisah koma; '*' = semua untuk jenis itu. Contoh: division:Product,Tech|unit:Core. "
+                         "Kosongkan untuk admin/od. PERHATIAN: unit:* atau division:* berarti akses penuh."
                 )
-                f_unit_ap  = st.multiselect(
-                    "Allowed Unit",
-                    options=["*"] + all_unit_ap,
-                    default=(prefill.get("allowed_units", []) or ["*"]),
-                    key="ap_f_unit",
-                    help="Pilih '*' untuk semua Unit."
+                f_scope_note_ap = st.text_input(
+                    "Scope Note (catatan bebas untuk audit)",
+                    value=prefill.get("scope_note", ""),
+                    placeholder="mis. HRBP Divisi A & B",
+                    key="ap_f_scope_note",
+                    help="Kolom ke-9 (disetujui PM 22 Okt 2026). Tidak memengaruhi akses — hanya catatan."
                 )
                 if not is_edit_mode:
                     f_pass_ap = st.text_input("Password Awal *",
@@ -4503,10 +4529,14 @@ elif _active == 99:
                 errors_ap.append("Nama lengkap harus diisi")
             if not is_edit_mode and not f_pass_ap.strip():
                 errors_ap.append("Password awal harus diisi")
-            if f_role_ap_f == "employee" and not f_eid_ap.strip():
-                errors_ap.append("Employee ID wajib untuk role 'employee' agar RLS bisa berjalan")
-            if f_role_ap_f in ("admin", "cxo") and "*" not in f_div_ap:
-                errors_ap.append("Role admin dan cxo harus memiliki Division scope '*' (full access)")
+            # [T-103] Validasi scope: format grant OR + kewajiban per role
+            scope_clean_ap = f_scope_ap.strip()
+            errors_ap.extend(_validate_scope_string(scope_clean_ap))
+            if f_role_ap_f in ("hrbp_user", "people_ops") and not scope_clean_ap:
+                errors_ap.append(
+                    f"Role {f_role_ap_f} wajib memiliki scope minimal satu entri "
+                    "(mis. division:A) — tanpa scope, user melihat kosong (deny-all)."
+                )
 
             if errors_ap:
                 for e in errors_ap:
@@ -4518,9 +4548,8 @@ elif _active == 99:
                     "role":          f_role_ap_f,
                     "password":      f_pass_ap.strip(),  # "" = save_acl_user akan pakai password_hash lama
                     "password_hash": prefill.get("password_hash", ""),
-                    "divisions":     [] if "*" in f_div_ap  else f_div_ap,
-                    "units":         [] if "*" in f_unit_ap else f_unit_ap,
-                    "employee_id":   f_eid_ap.strip(),
+                    "scope":         scope_clean_ap,
+                    "scope_note":    f_scope_note_ap.strip(),
                     "is_active":     True,
                     "created_at":    prefill.get("created_at", ""),  # preserve jika edit
                 }
