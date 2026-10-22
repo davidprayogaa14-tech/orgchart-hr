@@ -606,9 +606,18 @@ def save_acl_user(user_data: dict) -> bool:
     """
     Upsert user di worksheet app_users.
     Jika email sudah ada → update row. Jika baru → append.
+    [T-103c] Kegagalan TIDAK lagi diam-diam: worksheet tak bisa dibuka/
+    dibuat → pesan error eksplisit (dugaan utama: service account belum
+    punya izin Editor pada spreadsheet).
     """
     ws = get_acl_sheet()
     if not ws:
+        st.error(
+            "❌ Gagal menyimpan: worksheet 'app_users' tidak bisa dibuka "
+            "atau dibuat. Kemungkinan besar service account (robot) belum "
+            "punya izin tulis pada spreadsheet — buka Bagikan dan pastikan "
+            "perannya **Editor** (bukan Viewer)."
+        )
         return False
     try:
         email_clean = user_data["email"].strip().lower()
@@ -4634,6 +4643,10 @@ elif _active == 99:
                     action = "diperbarui" if is_edit_mode else "ditambahkan"
                     st.success(f"✅ User **{email_clean_ap}** berhasil {action}.")
                     st.rerun()
+                else:
+                    # [T-103c] fallback: save_acl_user biasanya sudah menampilkan
+                    # pesan detail; ini pengaman agar tidak pernah gagal diam.
+                    st.error("❌ User tidak tersimpan — lihat pesan error di atas.")
 
     # ── Tab 3: Reset Password ─────────────────────────────────────
     with ap_tab3:
